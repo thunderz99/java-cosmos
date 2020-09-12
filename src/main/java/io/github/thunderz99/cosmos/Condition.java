@@ -1,15 +1,22 @@
 package io.github.thunderz99.cosmos;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.RegExUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +37,8 @@ public class Condition {
 	public Map<String, Object> filter = new LinkedHashMap<>();
 
 	public List<String> sort = List.of("_ts", "DESC");
+
+	public Set<String> fields = new LinkedHashSet<>();
 
 	public int offset = 0;
 	public int limit = 100;
@@ -85,6 +94,28 @@ public class Condition {
 		return this;
 	}
 
+	/**
+	 * Set select fields. Default is "*"
+	 *
+	 * <code>
+	 * Condition.filter().fields("id", "name", "employeeCode");
+	 * </code>
+	 *
+	 * Overwrites previous fields
+	 *
+	 * @param fields
+	 * @return
+	 */
+	public Condition fields(String... fields) {
+
+		if (fields == null || fields.length == 0) {
+			return this;
+		}
+
+		this.fields = new LinkedHashSet<>(List.of(fields));
+		return this;
+	}
+
 	public Condition offset(int offset) {
 		this.offset = offset;
 		return this;
@@ -105,7 +136,7 @@ public class Condition {
 
 	SqlQuerySpec toQuerySpec(boolean count) {
 
-		var select = count ? "COUNT(1)" : "*";
+		var select = count ? "COUNT(1)" : generateSelect();
 
 		var queryText = new StringBuilder(String.format("SELECT %s FROM c", select));
 		var params = new SqlParameterCollection();
@@ -160,6 +191,85 @@ public class Condition {
 
 		return new SqlQuerySpec(queryText.toString(), params);
 
+	}
+
+	/**
+	 * select parts generate.
+	 *
+	 * <pre>
+	 * e.g.
+	 * "id", "age", "fullName.first" -> VALUE {"id":c.id, "age":c.age, "fullName": {"first": c.fullName.first}}
+	 * </pre>
+	 *
+	 * @return
+	 */
+	String generateSelect() {
+
+		if(CollectionUtils.isEmpty(this.fields)){
+			return "*";
+		}
+		return this.fields.stream().map(f -> generateOneFieldSelect(f)).filter(Objects::nonNull).collect(Collectors.joining(", ", "VALUE {", "}"));
+	}
+
+
+	/**
+	 * generate a select for field.
+	 *
+	 * <pre>
+	 * e.g.
+	 * "name" -> "name": "c.name"
+	 *
+	 * "organization.leader.name" -> "organization": { "leader": {"name": c.organization.leader.name}}
+	 *
+	 * </pre>
+	 *
+	 * @see https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-working-with-json
+	 *
+	 * @param field
+	 * @return
+	 */
+	static String generateOneFieldSelect(String field){
+
+		//empty field will be skipped
+		if(StringUtils.isEmpty(field)){
+			return null;
+		}
+
+		var fullField = "c." + field;
+
+		//if not containing ".", return a simple json part
+		if(! field.contains(".")){
+			return String.format("\"%s\":%s", field, fullField);
+		}
+
+		var parts = new ArrayDeque<>(List.of(field.split("\\.")));
+
+		var map = createMap(parts, field);
+
+		// "organization.leader.name" -> c.organization.leader.name
+		var ret =  JsonUtil.toJsonNoIndent(map).replace("\"" + field + "\"", fullField);
+
+		ret = RegExUtils.removeFirst(ret, "\\{");
+		ret = StringUtils.removeEnd(ret, "}");
+
+		return ret;
+
+	}
+
+
+	/**
+	 * Recursively create json object for select
+	 * @param parts
+	 * @return
+	 */
+	static Map<String, Object> createMap(Deque<String> parts, String fullField){
+		var map = new LinkedHashMap<String, Object>();
+		if(parts.size() <= 1){
+			map.put(parts.pop(), fullField);
+			return map;
+		}
+		map.put(parts.pop(), createMap(parts, fullField));
+		return map;
 	}
 
 	@Override

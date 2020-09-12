@@ -208,14 +208,39 @@ class CosmosDatabaseTest {
                     .limit(10) //
                     .offset(0);
 
-            var users = db.find(
-                coll,
-                cond,
-                "Users"
-            ).toList(FullNameUser.class);
+				var users = db.find(
+					coll,
+					cond,
+					"Users"
+				).toList(FullNameUser.class);
 
-            assertThat(users.size()).isEqualTo(1);
-			assertThat(users.get(0).toString()).isEqualTo(user1.toString());
+				assertThat(users.size()).isEqualTo(1);
+				assertThat(users.get(0)).hasToString(user1.toString());
+			}
+
+			// test fields
+            {
+            	var cond = Condition.filter(
+                        "fullName.last",  "Hanks", //
+                        "fullName.first",  "Elise" //
+					)
+					.fields("id", "fullName.last", "age")//
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+				var users = db.find(
+					coll,
+					cond,
+					"Users"
+				).toList(FullNameUser.class);
+
+				assertThat(users.size()).isEqualTo(1);
+				assertThat(users.get(0).id).isEqualTo(user1.id);
+				assertThat(users.get(0).age).isEqualTo(user1.age);
+				assertThat(users.get(0).fullName.last).isEqualTo(user1.fullName.last);
+				assertThat(users.get(0).fullName.first).isNullOrEmpty();
+				assertThat(users.get(0).skills).isEmpty();
             }
 
 			// test IN find
@@ -238,7 +263,7 @@ class CosmosDatabaseTest {
                 ).toList(FullNameUser.class);
 
                 assertThat(users.size()).isEqualTo(2);
-				assertThat(users.get(0).toString()).isEqualTo(user2.toString());
+				assertThat(users.get(0)).hasToString(user2.toString());
 
 				//count
 
@@ -251,11 +276,11 @@ class CosmosDatabaseTest {
 			{
 				var users = db.find(coll, Condition.filter().limit(2), "Users").toList(FullNameUser.class);
 				assertThat(users.size()).isEqualTo(2);
-				assertThat(users.get(0).toString()).isEqualTo(user3.toString());
+				assertThat(users.get(0)).hasToString(user3.toString());
 
 				var maps = db.find(coll, Condition.filter().limit(2), "Users").toMap();
 				assertThat(maps.size()).isEqualTo(2);
-				assertThat(maps.get(1).get("id").toString()).isEqualTo(user2.id);
+				assertThat(maps.get(1).get("id")).hasToString(user2.id);
 				assertThat(maps.get(1).get("fullName").toString()).contains(user2.fullName.first);
 			}
 
@@ -271,7 +296,7 @@ class CosmosDatabaseTest {
 				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
 
 				assertThat(users.size()).isEqualTo(1);
-				assertThat(users.get(0).toString()).isEqualTo(user2.toString());
+				assertThat(users.get(0)).hasToString(user2.toString());
 
 				var count = db.count(coll, cond, "Users");
 
@@ -293,7 +318,7 @@ class CosmosDatabaseTest {
 				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
 
 				assertThat(users.size()).isEqualTo(1);
-				assertThat(users.get(0).toString()).isEqualTo(user2.toString());
+				assertThat(users.get(0)).hasToString(user2.toString());
 
 				var count = db.count(coll, cond, "Users");
 
