@@ -159,6 +159,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
       "desciption CONTAINS", "Project manager",// see cosmosdb CONTAINS
       "skill ARRAY_CONTAINS", "Java" // see cosmosdb ARRAY_CONTAINS
     )
+    .fields("id", "lastName", "age", "organization.name") // select certain fields
     .order("lastName", "ASC") //optional order
     .offset(0) //optional offset
     .limit(100); //optional limit

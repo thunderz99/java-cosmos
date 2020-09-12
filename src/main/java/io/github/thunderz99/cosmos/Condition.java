@@ -1,15 +1,22 @@
 package io.github.thunderz99.cosmos;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.RegExUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +37,8 @@ public class Condition {
 	public Map<String, Object> filter = new LinkedHashMap<>();
 
 	public List<String> sort = List.of("_ts", "DESC");
+
+	public Set<String> fields = new LinkedHashSet<>();
 
 	public int offset = 0;
 	public int limit = 100;
@@ -85,6 +94,28 @@ public class Condition {
 		return this;
 	}
 
+	/**
+	 * Set select fields. Default is "*"
+	 *
+	 * <code>
+	 * Condition.filter().fields("id", "name", "employeeCode");
+	 * </code>
+	 *
+	 * Overwrites previous fields
+	 *
+	 * @param fields
+	 * @return
+	 */
+	public Condition fields(String... fields) {
+
+		if (fields == null || fields.length == 0) {
+			return this;
+		}
+
+		this.fields = new LinkedHashSet<>(List.of(fields));
+		return this;
+	}
+
 	public Condition offset(int offset) {
 		this.offset = offset;
 		return this;
@@ -105,7 +136,7 @@ public class Condition {
 
 	SqlQuerySpec toQuerySpec(boolean count) {
 
-		var select = count ? "COUNT(1)" : "*";
+		var select = count ? "COUNT(1)" : generateSelect();
 
 		var queryText = new StringBuilder(String.format("SELECT %s FROM c", select));
 		var params = new SqlParameterCollection();
@@ -162,6 +193,89 @@ public class Condition {
 
 	}
 
+	/**
+	 * select parts generate.
+	 *
+	 * <pre>
+	 * e.g.
+	 * "id", "age", "fullName.first" -> VALUE {"id":c.id, "age":c.age, "fullName": {"first": c.fullName.first}}
+	 * </pre>
+	 *
+	 * @return
+	 */
+	String generateSelect() {
+
+		if (CollectionUtils.isEmpty(this.fields)) {
+			return "*";
+		}
+		return this.fields.stream().map(f -> generateOneFieldSelect(f)).filter(Objects::nonNull)
+				.collect(Collectors.joining(", ", "VALUE {", "}"));
+	}
+
+	/**
+	 * generate a select for field.
+	 *
+	 * <pre>
+	 * e.g.
+	 * "name" -> "name": "c.name"
+	 *
+	 * "organization.leader.name" -> "organization": { "leader": {"name": c.organization.leader.name}}
+	 *
+	 * </pre>
+	 *
+	 * @see https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-working-with-json
+	 *
+	 * @param field
+	 * @return
+	 */
+	static String generateOneFieldSelect(String field) {
+
+		// empty field will be skipped
+		if (StringUtils.isEmpty(field)) {
+			return null;
+		}
+
+		if (StringUtils.containsAny(field, "{", "}", ",", "\"", "'")) {
+			throw new IllegalArgumentException("field cannot contain '{', '}', ',', '\"', \"'\", field: " + field);
+		}
+
+		var fullField = "c." + field;
+
+		// if not containing ".", return a simple json part
+		if (!field.contains(".")) {
+			return String.format("\"%s\":%s", field, fullField);
+		}
+
+		var parts = new ArrayDeque<>(List.of(field.split("\\.")));
+
+		var map = createMap(parts, field);
+
+		// "organization.leader.name" -> c.organization.leader.name
+		var ret = JsonUtil.toJsonNoIndent(map).replace("\"" + field + "\"", fullField);
+
+		ret = RegExUtils.removeFirst(ret, "\\{");
+		ret = StringUtils.removeEnd(ret, "}");
+
+		return ret;
+
+	}
+
+	/**
+	 * Recursively create json object for select
+	 * 
+	 * @param parts
+	 * @return
+	 */
+	static Map<String, Object> createMap(Deque<String> parts, String fullField) {
+		var map = new LinkedHashMap<String, Object>();
+		if (parts.size() <= 1) {
+			map.put(parts.pop(), fullField);
+			return map;
+		}
+		map.put(parts.pop(), createMap(parts, fullField));
+		return map;
+	}
+
 	@Override
 	public String toString() {
 		return JsonUtil.toJson(this);
@@ -206,27 +320,25 @@ public class Condition {
 	}
 
 	public static final Pattern expressionPattern = Pattern
-	.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|=|!=|<|<=|>|>=)\\s*$");
+			.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|=|!=|<|<=|>|>=)\\s*$");
 
 	public static final Pattern functionPattern = Pattern.compile("\\w+");
 
-
 	public interface Expression {
 		public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex);
-
 
 		public static Expression parse(String key, Object value) {
 
 			var m = expressionPattern.matcher(key);
 
 			if (!m.find()) {
-				if(key.contains(" OR ")){
+				if (key.contains(" OR ")) {
 					return new OrExpressions(key, value);
 				} else {
 					return new SimpleExpression(key, value);
 				}
 			} else {
-				if(key.contains(" OR ")){
+				if (key.contains(" OR ")) {
 					return new OrExpressions(m.group(1), value, m.group(2));
 				} else {
 					return new SimpleExpression(m.group(1), value, m.group(2));
@@ -234,7 +346,7 @@ public class Condition {
 			}
 		}
 
-		public static SimpleExpression toSimpleExpression(String key, Object value){
+		public static SimpleExpression toSimpleExpression(String key, Object value) {
 			var exp = new SimpleExpression();
 			exp.key = key;
 			exp.value = value;
@@ -253,19 +365,20 @@ public class Condition {
 		public SimpleExpression() {
 		}
 
-		public SimpleExpression(String key, Object value){
+		public SimpleExpression(String key, Object value) {
 			this.key = key;
 			this.value = value;
 		}
 
-		public SimpleExpression(String key, Object value, String operator){
+		public SimpleExpression(String key, Object value, String operator) {
 			this.key = key;
 			this.value = value;
 			this.operator = operator;
 			this.type = functionPattern.asPredicate().test(operator) ? OperatorType.BINARY_FUNCTION
-			: OperatorType.BINARY_OPERATOR;
+					: OperatorType.BINARY_OPERATOR;
 		}
 
+		@Override
 		public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
 
 			var ret = new SqlQuerySpec();
@@ -299,6 +412,7 @@ public class Condition {
 
 		}
 
+		@Override
 		public String toString() {
 			return JsonUtil.toJson(this);
 		}
@@ -310,35 +424,38 @@ public class Condition {
 	 * @author zhang.lei
 	 *
 	 */
-	public static class OrExpressions implements Expression{
+	public static class OrExpressions implements Expression {
 
 		public List<SimpleExpression> simpleExps = new ArrayList<>();
 
-		public OrExpressions(){
+		public OrExpressions() {
 		}
 
-		public OrExpressions(List<SimpleExpression> simpleExps, Object value){
+		public OrExpressions(List<SimpleExpression> simpleExps, Object value) {
 			this.simpleExps = simpleExps;
 		}
 
-		public OrExpressions(String key, Object value){
+		public OrExpressions(String key, Object value) {
 			var keys = key.split(" OR ");
 
-			if(keys == null || keys.length == 0){
+			if (keys == null || keys.length == 0) {
 				return;
 			}
-			this.simpleExps = List.of(keys).stream().map(k -> new SimpleExpression(k, value)).collect(Collectors.toList());
+			this.simpleExps = List.of(keys).stream().map(k -> new SimpleExpression(k, value))
+					.collect(Collectors.toList());
 		}
 
-		public OrExpressions(String key, Object value, String operator){
+		public OrExpressions(String key, Object value, String operator) {
 			var keys = key.split(" OR ");
 
-			if(keys == null || keys.length == 0){
+			if (keys == null || keys.length == 0) {
 				return;
 			}
-			this.simpleExps = List.of(keys).stream().map(k -> new SimpleExpression(k, value, operator)).collect(Collectors.toList());
+			this.simpleExps = List.of(keys).stream().map(k -> new SimpleExpression(k, value, operator))
+					.collect(Collectors.toList());
 		}
 
+		@Override
 		public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
 
 			var ret = new SqlQuerySpec();
@@ -350,12 +467,10 @@ public class Condition {
 			var indexForQuery = paramIndex;
 			var indexForParam = new AtomicInteger(paramIndex.get());
 
-			var queryText = simpleExps.stream()
-					.map(exp -> exp.toQuerySpec(indexForQuery).getQueryText())
+			var queryText = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForQuery).getQueryText())
 					.collect(Collectors.joining(" OR", " (", " )"));
 
-			var params = simpleExps.stream()
-					.map(exp -> exp.toQuerySpec(indexForParam).getParameters())
+			var params = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForParam).getParameters())
 					.reduce(new SqlParameterCollection(), (sum, elm) -> {
 						sum.addAll(elm);
 						return sum;
