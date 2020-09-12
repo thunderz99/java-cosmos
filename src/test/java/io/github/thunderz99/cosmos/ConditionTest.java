@@ -140,8 +140,19 @@ class ConditionTest {
 	}
 
 	@Test
-	public void generate_field_should_work(){
-		assertThat(Condition.generateOneFieldSelect("org.leader.name")).isEqualTo("\"org\":{\"leader\":{\"name\":c.org.leader.name}}");
+	public void generate_field_should_work() {
+		assertThat(Condition.generateOneFieldSelect("org.leader.name"))
+				.isEqualTo("\"org\":{\"leader\":{\"name\":c.org.leader.name}}");
+	}
+
+	@Test
+	public void generate_field_should_throw_when_invalid_field() {
+		for (var ch : List.of("{", "}", ",", "\"", "'")) {
+			assertThatThrownBy(() -> Condition.generateOneFieldSelect(ch)).isInstanceOf(IllegalArgumentException.class)
+					.hasMessageContaining("field cannot").hasMessageContaining(ch);
+
+		}
+
 	}
 
 }

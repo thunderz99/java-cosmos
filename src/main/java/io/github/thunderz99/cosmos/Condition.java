@@ -205,12 +205,12 @@ public class Condition {
 	 */
 	String generateSelect() {
 
-		if(CollectionUtils.isEmpty(this.fields)){
+		if (CollectionUtils.isEmpty(this.fields)) {
 			return "*";
 		}
-		return this.fields.stream().map(f -> generateOneFieldSelect(f)).filter(Objects::nonNull).collect(Collectors.joining(", ", "VALUE {", "}"));
+		return this.fields.stream().map(f -> generateOneFieldSelect(f)).filter(Objects::nonNull)
+				.collect(Collectors.joining(", ", "VALUE {", "}"));
 	}
-
 
 	/**
 	 * generate a select for field.
@@ -228,17 +228,21 @@ public class Condition {
 	 * @param field
 	 * @return
 	 */
-	static String generateOneFieldSelect(String field){
+	static String generateOneFieldSelect(String field) {
 
-		//empty field will be skipped
-		if(StringUtils.isEmpty(field)){
+		// empty field will be skipped
+		if (StringUtils.isEmpty(field)) {
 			return null;
+		}
+
+		if (StringUtils.containsAny(field, "{", "}", ",", "\"", "'")) {
+			throw new IllegalArgumentException("field cannot contain '{', '}', ',', '\"', \"'\", field: " + field);
 		}
 
 		var fullField = "c." + field;
 
-		//if not containing ".", return a simple json part
-		if(! field.contains(".")){
+		// if not containing ".", return a simple json part
+		if (!field.contains(".")) {
 			return String.format("\"%s\":%s", field, fullField);
 		}
 
@@ -247,7 +251,7 @@ public class Condition {
 		var map = createMap(parts, field);
 
 		// "organization.leader.name" -> c.organization.leader.name
-		var ret =  JsonUtil.toJsonNoIndent(map).replace("\"" + field + "\"", fullField);
+		var ret = JsonUtil.toJsonNoIndent(map).replace("\"" + field + "\"", fullField);
 
 		ret = RegExUtils.removeFirst(ret, "\\{");
 		ret = StringUtils.removeEnd(ret, "}");
@@ -256,15 +260,15 @@ public class Condition {
 
 	}
 
-
 	/**
 	 * Recursively create json object for select
+	 * 
 	 * @param parts
 	 * @return
 	 */
-	static Map<String, Object> createMap(Deque<String> parts, String fullField){
+	static Map<String, Object> createMap(Deque<String> parts, String fullField) {
 		var map = new LinkedHashMap<String, Object>();
-		if(parts.size() <= 1){
+		if (parts.size() <= 1) {
 			map.put(parts.pop(), fullField);
 			return map;
 		}
@@ -316,27 +320,25 @@ public class Condition {
 	}
 
 	public static final Pattern expressionPattern = Pattern
-	.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|=|!=|<|<=|>|>=)\\s*$");
+			.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|=|!=|<|<=|>|>=)\\s*$");
 
 	public static final Pattern functionPattern = Pattern.compile("\\w+");
 
-
 	public interface Expression {
 		public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex);
-
 
 		public static Expression parse(String key, Object value) {
 
 			var m = expressionPattern.matcher(key);
 
 			if (!m.find()) {
-				if(key.contains(" OR ")){
+				if (key.contains(" OR ")) {
 					return new OrExpressions(key, value);
 				} else {
 					return new SimpleExpression(key, value);
 				}
 			} else {
-				if(key.contains(" OR ")){
+				if (key.contains(" OR ")) {
 					return new OrExpressions(m.group(1), value, m.group(2));
 				} else {
 					return new SimpleExpression(m.group(1), value, m.group(2));
@@ -344,7 +346,7 @@ public class Condition {
 			}
 		}
 
-		public static SimpleExpression toSimpleExpression(String key, Object value){
+		public static SimpleExpression toSimpleExpression(String key, Object value) {
 			var exp = new SimpleExpression();
 			exp.key = key;
 			exp.value = value;
@@ -363,19 +365,20 @@ public class Condition {
 		public SimpleExpression() {
 		}
 
-		public SimpleExpression(String key, Object value){
+		public SimpleExpression(String key, Object value) {
 			this.key = key;
 			this.value = value;
 		}
 
-		public SimpleExpression(String key, Object value, String operator){
+		public SimpleExpression(String key, Object value, String operator) {
 			this.key = key;
 			this.value = value;
 			this.operator = operator;
 			this.type = functionPattern.asPredicate().test(operator) ? OperatorType.BINARY_FUNCTION
-			: OperatorType.BINARY_OPERATOR;
+					: OperatorType.BINARY_OPERATOR;
 		}
 
+		@Override
 		public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
 
 			var ret = new SqlQuerySpec();
@@ -409,6 +412,7 @@ public class Condition {
 
 		}
 
+		@Override
 		public String toString() {
 			return JsonUtil.toJson(this);
 		}
@@ -420,35 +424,38 @@ public class Condition {
 	 * @author zhang.lei
 	 *
 	 */
-	public static class OrExpressions implements Expression{
+	public static class OrExpressions implements Expression {
 
 		public List<SimpleExpression> simpleExps = new ArrayList<>();
 
-		public OrExpressions(){
+		public OrExpressions() {
 		}
 
-		public OrExpressions(List<SimpleExpression> simpleExps, Object value){
+		public OrExpressions(List<SimpleExpression> simpleExps, Object value) {
 			this.simpleExps = simpleExps;
 		}
 
-		public OrExpressions(String key, Object value){
+		public OrExpressions(String key, Object value) {
 			var keys = key.split(" OR ");
 
-			if(keys == null || keys.length == 0){
+			if (keys == null || keys.length == 0) {
 				return;
 			}
-			this.simpleExps = List.of(keys).stream().map(k -> new SimpleExpression(k, value)).collect(Collectors.toList());
+			this.simpleExps = List.of(keys).stream().map(k -> new SimpleExpression(k, value))
+					.collect(Collectors.toList());
 		}
 
-		public OrExpressions(String key, Object value, String operator){
+		public OrExpressions(String key, Object value, String operator) {
 			var keys = key.split(" OR ");
 
-			if(keys == null || keys.length == 0){
+			if (keys == null || keys.length == 0) {
 				return;
 			}
-			this.simpleExps = List.of(keys).stream().map(k -> new SimpleExpression(k, value, operator)).collect(Collectors.toList());
+			this.simpleExps = List.of(keys).stream().map(k -> new SimpleExpression(k, value, operator))
+					.collect(Collectors.toList());
 		}
 
+		@Override
 		public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
 
 			var ret = new SqlQuerySpec();
@@ -460,12 +467,10 @@ public class Condition {
 			var indexForQuery = paramIndex;
 			var indexForParam = new AtomicInteger(paramIndex.get());
 
-			var queryText = simpleExps.stream()
-					.map(exp -> exp.toQuerySpec(indexForQuery).getQueryText())
+			var queryText = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForQuery).getQueryText())
 					.collect(Collectors.joining(" OR", " (", " )"));
 
-			var params = simpleExps.stream()
-					.map(exp -> exp.toQuerySpec(indexForParam).getParameters())
+			var params = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForParam).getParameters())
 					.reduce(new SqlParameterCollection(), (sum, elm) -> {
 						sum.addAll(elm);
 						return sum;
