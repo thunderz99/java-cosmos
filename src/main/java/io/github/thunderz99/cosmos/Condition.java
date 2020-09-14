@@ -36,7 +36,7 @@ public class Condition {
 
 	public Map<String, Object> filter = new LinkedHashMap<>();
 
-	public List<String> sort = List.of("_ts", "DESC");
+	public List<String> sort = List.of();
 
 	public Set<String> fields = new LinkedHashSet<>();
 
