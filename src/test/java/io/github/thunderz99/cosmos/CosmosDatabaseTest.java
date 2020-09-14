@@ -274,11 +274,11 @@ class CosmosDatabaseTest {
 
 			// test limit find
 			{
-				var users = db.find(coll, Condition.filter().limit(2), "Users").toList(FullNameUser.class);
+				var users = db.find(coll, Condition.filter().sort("_ts", "DESC").limit(2), "Users").toList(FullNameUser.class);
 				assertThat(users.size()).isEqualTo(2);
 				assertThat(users.get(0)).hasToString(user3.toString());
 
-				var maps = db.find(coll, Condition.filter().limit(2), "Users").toMap();
+				var maps = db.find(coll, Condition.filter().sort("_ts", "DESC").limit(2), "Users").toMap();
 				assertThat(maps.size()).isEqualTo(2);
 				assertThat(maps.get(1).get("id")).hasToString(user2.id);
 				assertThat(maps.get(1).get("fullName").toString()).contains(user2.fullName.first);
