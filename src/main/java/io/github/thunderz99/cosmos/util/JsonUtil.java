@@ -10,7 +10,6 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
@@ -92,6 +91,28 @@ public class JsonUtil {
 	 */
 	public static Map<String, Object> toMap(Object object) {
 		return mapper.convertValue(object, new TypeReference<LinkedHashMap<String, Object>>() {
+		});
+	}
+
+	/**
+	 * Convert to List of Map
+	 *
+	 * @param object
+	 * @return
+	 */
+	public static List<LinkedHashMap<String, Object>> toListOfMap(String json) {
+		return fromJson(json, new TypeReference<List<LinkedHashMap<String, Object>>>() {
+		});
+	}
+
+	/**
+	 * Convert to List of Map
+	 *
+	 * @param object
+	 * @return
+	 */
+	public static List<LinkedHashMap<String, Object>> toListOfMap(InputStream is) {
+		return fromJson(is, new TypeReference<List<LinkedHashMap<String, Object>>>() {
 		});
 	}
 
@@ -337,7 +358,6 @@ public class JsonUtil {
 	}
 
 	private static void processException(Object object, Exception e) {
-		log.error("json error: ", e);
 		throw new IllegalArgumentException("json process error.", e);
 	}
 
