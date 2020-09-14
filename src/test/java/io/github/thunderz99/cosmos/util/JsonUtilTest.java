@@ -40,12 +40,22 @@ public class JsonUtilTest {
 	}
 
 	@Test
-	public void shouldBeConvertToJsonByClassName2List() {
+	public void shouldConvertToList() {
 
 		var json = "[{\"id\":3}, {\"id\":5}]";
 
 		List<Data> data = JsonUtil.fromJson2List(json, this.getClass().getName() + "$Data");
 		assertThat(data.get(1).id).isEqualTo(5);
+
+	}
+
+	@Test
+	public void shouldConvertToListOfMap() {
+
+		var json = "[{\"id\":3}, {\"id\":5}]";
+
+		var data = JsonUtil.toListOfMap(json);
+		assertThat(data.get(1).get("id")).isEqualTo(5);
 
 	}
 
