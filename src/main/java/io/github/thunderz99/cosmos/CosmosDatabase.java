@@ -127,11 +127,10 @@ public class CosmosDatabase {
 
 		var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
-		var newData = JsonUtil.toMap(data);
 		// add partition info
-		newData.put(Cosmos.getDefaultPartitionKey(), partition);
+		map.put(Cosmos.getDefaultPartitionKey(), partition);
 
-		var resource = client.replaceDocument(documentLink, newData, requestOptions(partition)).getResource();
+		var resource = client.replaceDocument(documentLink, map, requestOptions(partition)).getResource();
 
 		log.info("updated Document: {}/docs/{}, partition:{}", coll, id, partition);
 
@@ -205,11 +204,10 @@ public class CosmosDatabase {
 
 		var collectionLink = Cosmos.getCollectionLink(db, coll);
 
-		var newData = JsonUtil.toMap(data);
 		// add partition info
-		newData.put(Cosmos.getDefaultPartitionKey(), partition);
+		map.put(Cosmos.getDefaultPartitionKey(), partition);
 
-		var resource = client.upsertDocument(collectionLink, newData, requestOptions(partition), true).getResource();
+		var resource = client.upsertDocument(collectionLink, map, requestOptions(partition), true).getResource();
 
 		log.info("upsert Document: {}/docs/{}, partition:{}", coll, id, partition);
 
