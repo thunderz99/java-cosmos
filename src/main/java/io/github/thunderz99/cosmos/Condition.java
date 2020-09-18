@@ -43,6 +43,8 @@ public class Condition {
 	public int offset = 0;
 	public int limit = 100;
 
+	public SqlQuerySpec rawQuerySpec = null;
+
 	public static Condition filter(Object... filters) {
 
 		Condition cond = new Condition();
@@ -135,6 +137,11 @@ public class Condition {
 	}
 
 	SqlQuerySpec toQuerySpec(boolean count) {
+
+		// When rawSql is set, other filter / limit / offset / sort will be ignored.
+		if (rawQuerySpec != null) {
+			return rawQuerySpec;
+		}
 
 		var select = count ? "COUNT(1)" : generateSelect();
 
@@ -262,7 +269,7 @@ public class Condition {
 
 	/**
 	 * Recursively create json object for select
-	 * 
+	 *
 	 * @param parts
 	 * @return
 	 */
@@ -483,6 +490,33 @@ public class Condition {
 
 		}
 
+	}
+
+	/**
+	 * Use raw sql and params to do custom complex queries. When rawSql is set,
+	 * other filter / limit / offset / sort will be ignored.
+	 *
+	 * @param queryText
+	 * @param params
+	 * @return
+	 */
+	public static Condition rawSql(String queryText, SqlParameterCollection params) {
+		var cond = new Condition();
+		cond.rawQuerySpec = new SqlQuerySpec(queryText, params);
+		return cond;
+	}
+
+	/**
+	 * Use raw sql to do custom complex queries. When rawSql is set, other filter /
+	 * limit / offset / sort will be ignored.
+	 *
+	 * @param queryText
+	 * @return
+	 */
+	public static Condition rawSql(String queryText) {
+		var cond = new Condition();
+		cond.rawQuerySpec = new SqlQuerySpec(queryText);
+		return cond;
 	}
 
 }

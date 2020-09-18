@@ -11,6 +11,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import com.microsoft.azure.documentdb.DocumentClientException;
+import com.microsoft.azure.documentdb.SqlParameter;
+import com.microsoft.azure.documentdb.SqlParameterCollection;
 
 import io.github.cdimascio.dotenv.Dotenv;
 import io.github.thunderz99.cosmos.util.JsonUtil;
@@ -163,6 +165,7 @@ class CosmosDatabaseTest {
 			}
 		}
 
+		@Override
 		public String toString() {
 			return JsonUtil.toJson(this);
 		}
@@ -180,6 +183,7 @@ class CosmosDatabaseTest {
 			this.last = last;
 		}
 
+		@Override
 		public String toString(){
 			return JsonUtil.toJson(this);
 		}
@@ -331,5 +335,41 @@ class CosmosDatabaseTest {
 			db.delete(coll, user3.id, "Users");
         }
     }
+
+	@Test
+	void raw_query_spec_should_work() throws Exception {
+		// test json from cosmosdb official site
+		// https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
+
+		var partition = "Families";
+
+		try (var is1 = this.getClass().getResourceAsStream("family1.json");
+				var is2 = this.getClass().getResourceAsStream("family2.json")) {
+
+
+			var family1 = JsonUtil.toMap(is1);
+			var family2 = JsonUtil.toMap(is2);
+
+			db.upsert(coll, family1, partition);
+			db.upsert(coll, family2, partition);
+
+
+			var queryText = "SELECT c.gender, c.grade\n" + "    FROM Families f\n"
+					+ "    JOIN c IN f.children WHERE f.address.state = @state ORDER BY f.id ASC";
+
+			var params = new SqlParameterCollection(new SqlParameter("@state", "NY"));
+
+			var cond = Condition.rawSql(queryText, params);
+
+			var children = db.find(coll, cond, partition).toMap();
+
+			assertThat(children).hasSize(2);
+
+			assertThat(children.get(0).get("gender")).hasToString("female");
+			assertThat(children.get(1).get("grade")).hasToString("8");
+		}
+
+
+	}
 
 }
