@@ -79,7 +79,7 @@ class User{
 ```
 
 
-## Examples
+## More examples
 
 ### Work with partitions 
 
@@ -168,4 +168,19 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
 }
 
 
+```
+
+
+### Raw SQL queries
+
+```java
+    var queryText = "SELECT c.gender, c.grade\n" + 
+    "    FROM Families f\n" + 
+    "    JOIN c IN f.children WHERE f.address.state = @state ORDER BY f.id ASC";
+
+		var params = new SqlParameterCollection(new SqlParameter("@state", "NY"));
+
+		var cond = Condition.rawSql(queryText, params);
+		var children = db.find(coll, cond, partition);
+}
 ```
