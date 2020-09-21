@@ -15,6 +15,7 @@ import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
 
 import io.github.cdimascio.dotenv.Dotenv;
+import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 
 class CosmosDatabaseTest {
@@ -42,9 +43,11 @@ class CosmosDatabaseTest {
 	}
 
 	@BeforeAll
-	public static void beforeAll() throws DocumentClientException {
+	public static void beforeAll() throws Exception {
 		cosmos = new Cosmos(dotenv.get("COSMOSDB_CONNECTION_STRING"));
 		db = cosmos.createIfNotExist(dbName, coll);
+
+		initFamiliesData();
 
 	}
 
@@ -78,7 +81,8 @@ class CosmosDatabaseTest {
 	@Test
 	void createShouldThrowWhenDataNull() throws DocumentClientException {
 		User user = null;
-		assertThatThrownBy(() -> db.create(coll, user, "Users")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("create data UnitTest Users");
+		assertThatThrownBy(() -> db.create(coll, user, "Users")).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("create data UnitTest Users");
 
 	}
 
@@ -184,7 +188,7 @@ class CosmosDatabaseTest {
 		}
 
 		@Override
-		public String toString(){
+		public String toString() {
 			return JsonUtil.toJson(this);
 		}
 	}
@@ -196,48 +200,36 @@ class CosmosDatabaseTest {
 		var user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "Typescript", "Javascript", "React");
 		var user3 = new FullNameUser("id_find_filter3", "Tom", "Henry", 45, "Java", "Go", "Python");
 
-        try {
-            // prepare
+		try {
+			// prepare
 			db.upsert(coll, user1, "Users");
 			db.upsert(coll, user2, "Users");
 			db.upsert(coll, user3, "Users");
 
 			// test basic find
-            {
-            	var cond = Condition.filter(
-                        "fullName.last",  "Hanks", //
-                        "fullName.first",  "Elise" //
-                    )
-                    .sort("id", "ASC") //
-                    .limit(10) //
-                    .offset(0);
+			{
+				var cond = Condition.filter("fullName.last", "Hanks", //
+						"fullName.first", "Elise" //
+				).sort("id", "ASC") //
+						.limit(10) //
+						.offset(0);
 
-				var users = db.find(
-					coll,
-					cond,
-					"Users"
-				).toList(FullNameUser.class);
+				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
 
 				assertThat(users.size()).isEqualTo(1);
 				assertThat(users.get(0)).hasToString(user1.toString());
 			}
 
 			// test fields
-            {
-            	var cond = Condition.filter(
-                        "fullName.last",  "Hanks", //
-                        "fullName.first",  "Elise" //
-					)
-					.fields("id", "fullName.last", "age")//
-                    .sort("id", "ASC") //
-                    .limit(10) //
-                    .offset(0);
+			{
+				var cond = Condition.filter("fullName.last", "Hanks", //
+						"fullName.first", "Elise" //
+				).fields("id", "fullName.last", "age")//
+						.sort("id", "ASC") //
+						.limit(10) //
+						.offset(0);
 
-				var users = db.find(
-					coll,
-					cond,
-					"Users"
-				).toList(FullNameUser.class);
+				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
 
 				assertThat(users.size()).isEqualTo(1);
 				assertThat(users.get(0).id).isEqualTo(user1.id);
@@ -245,40 +237,33 @@ class CosmosDatabaseTest {
 				assertThat(users.get(0).fullName.last).isEqualTo(user1.fullName.last);
 				assertThat(users.get(0).fullName.first).isNullOrEmpty();
 				assertThat(users.get(0).skills).isEmpty();
-            }
+			}
 
 			// test IN find
 
-            {
-				var cond = Condition.filter(
-                    "fullName.last",  "Hanks", //
-                    "id", List.of(user1.id, user2.id, user3.id)
-                )
-	            .sort("_ts", "DESC") //
-	            .limit(10) //
-	            .offset(0);
+			{
+				var cond = Condition.filter("fullName.last", "Hanks", //
+						"id", List.of(user1.id, user2.id, user3.id)).sort("_ts", "DESC") //
+						.limit(10) //
+						.offset(0);
 
+				// test find
+				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
 
-                // test find
-                var users = db.find(
-                    coll,
-                    cond,
-                    "Users"
-                ).toList(FullNameUser.class);
-
-                assertThat(users.size()).isEqualTo(2);
+				assertThat(users.size()).isEqualTo(2);
 				assertThat(users.get(0)).hasToString(user2.toString());
 
-				//count
+				// count
 
 				var count = db.count(coll, cond, "Users");
 
 				assertThat(count).isEqualTo(2);
-            }
+			}
 
 			// test limit find
 			{
-				var users = db.find(coll, Condition.filter().sort("_ts", "DESC").limit(2), "Users").toList(FullNameUser.class);
+				var users = db.find(coll, Condition.filter().sort("_ts", "DESC").limit(2), "Users")
+						.toList(FullNameUser.class);
 				assertThat(users.size()).isEqualTo(2);
 				assertThat(users.get(0)).hasToString(user3.toString());
 
@@ -329,12 +314,12 @@ class CosmosDatabaseTest {
 				assertThat(count).isEqualTo(1);
 			}
 
-        } finally {
+		} finally {
 			db.delete(coll, user1.id, "Users");
 			db.delete(coll, user2.id, "Users");
 			db.delete(coll, user3.id, "Users");
-        }
-    }
+		}
+	}
 
 	@Test
 	void raw_query_spec_should_work() throws Exception {
@@ -343,32 +328,56 @@ class CosmosDatabaseTest {
 
 		var partition = "Families";
 
-		try (var is1 = this.getClass().getResourceAsStream("family1.json");
-				var is2 = this.getClass().getResourceAsStream("family2.json")) {
+		var queryText = "SELECT c.gender, c.grade\n" + "    FROM Families f\n"
+				+ "    JOIN c IN f.children WHERE f.address.state = @state ORDER BY f.id ASC";
 
+		var params = new SqlParameterCollection(new SqlParameter("@state", "NY"));
+
+		var cond = Condition.rawSql(queryText, params);
+
+		var children = db.find(coll, cond, partition).toMap();
+
+		assertThat(children).hasSize(2);
+
+		assertThat(children.get(0).get("gender")).hasToString("female");
+		assertThat(children.get(1).get("grade")).hasToString("8");
+
+	}
+
+	@Test
+	void sub_cond_query_should_work() throws Exception {
+		// test json from cosmosdb official site
+		// https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
+
+		var partition = "Families";
+
+		var cond = Condition.filter("SUB_COND_OR", List.of( //
+				Condition.filter("address.state", "WA"), //
+				Condition.filter("id", "WakefieldFamily"))) //
+				.sort("id", "ASC") //
+		;
+
+		var items = db.find(coll, cond, partition).toMap();
+
+		assertThat(items).hasSize(2);
+
+		assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+		assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
+
+	}
+
+	static void initFamiliesData() throws Exception {
+		var partition = "Families";
+
+		try (var is1 = CosmosDatabaseTest.class.getResourceAsStream("family1.json");
+				var is2 = CosmosDatabaseTest.class.getResourceAsStream("family2.json")) {
 
 			var family1 = JsonUtil.toMap(is1);
 			var family2 = JsonUtil.toMap(is2);
 
 			db.upsert(coll, family1, partition);
 			db.upsert(coll, family2, partition);
-
-
-			var queryText = "SELECT c.gender, c.grade\n" + "    FROM Families f\n"
-					+ "    JOIN c IN f.children WHERE f.address.state = @state ORDER BY f.id ASC";
-
-			var params = new SqlParameterCollection(new SqlParameter("@state", "NY"));
-
-			var cond = Condition.rawSql(queryText, params);
-
-			var children = db.find(coll, cond, partition).toMap();
-
-			assertThat(children).hasSize(2);
-
-			assertThat(children.get(0).get("gender")).hasToString("female");
-			assertThat(children.get(1).get("grade")).hasToString("8");
 		}
-
 
 	}
 

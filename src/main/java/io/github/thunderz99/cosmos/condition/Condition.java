@@ -1,8 +1,7 @@
-package io.github.thunderz99.cosmos;
+package io.github.thunderz99.cosmos.condition;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -20,7 +19,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
 import com.microsoft.azure.documentdb.SqlQuerySpec;
 
@@ -145,32 +143,15 @@ public class Condition {
 
 		var select = count ? "COUNT(1)" : generateSelect();
 
-		var queryText = new StringBuilder(String.format("SELECT %s FROM c", select));
-		var params = new SqlParameterCollection();
+		var initialText = new StringBuilder(String.format("SELECT %s FROM c", select));
+		var initialParams = new SqlParameterCollection();
+		var initialConditionIndex = new AtomicInteger(0);
+		var initialParamIndex = new AtomicInteger(0);
 
-		// filter
+		var filterQuery = generateFilterQuery(initialText, initialParams, initialConditionIndex, initialParamIndex);
 
-		int conditionIndex = 0;
-
-		AtomicInteger paramIndex = new AtomicInteger(0);
-
-		for (var entry : this.filter.entrySet()) {
-
-			var exp = Expression.parse(entry.getKey(), entry.getValue());
-
-			if (conditionIndex == 0) {
-				queryText.append(" WHERE");
-			} else {
-				queryText.append(" AND");
-			}
-
-			var expQuerySpec = exp.toQuerySpec(paramIndex);
-			queryText.append(expQuerySpec.getQueryText());
-			params.addAll(expQuerySpec.getParameters());
-
-			conditionIndex++;
-
-		}
+		var queryText = filterQuery.queryText;
+		var params = filterQuery.params;
 
 		// sort
 		if (!count && !CollectionUtils.isEmpty(sort) && sort.size() > 1) {
@@ -198,6 +179,65 @@ public class Condition {
 
 		return new SqlQuerySpec(queryText.toString(), params);
 
+	}
+
+	/**
+	 * filter parts
+	 *
+	 * @param queryText
+	 * @param params
+	 */
+	FilterQuery generateFilterQuery(StringBuilder queryText, SqlParameterCollection params,
+			AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+
+		for (var entry : this.filter.entrySet()) {
+			// filter parts
+			var connectPart = getConnectPart(conditionIndex);
+
+			if (SubConditionType.SUB_COND_OR.name().equals(entry.getKey())) {
+				// sub query
+				var value = entry.getValue();
+				if (!(value instanceof List<?>)) {
+					continue;
+				}
+				@SuppressWarnings("unchecked")
+				var list = (List<Condition>) value;
+
+				List<String> subTexts = new ArrayList<>();
+
+				for (var subCond : list) {
+					var subFilterQuery = subCond.generateFilterQuery(new StringBuilder(), params, conditionIndex,
+							paramIndex);
+
+					subTexts.add(removeConnectPart(subFilterQuery.queryText.toString()));
+
+					params = subFilterQuery.params;
+					conditionIndex = subFilterQuery.conditionIndex;
+					paramIndex = subFilterQuery.paramIndex;
+				}
+
+				var subFilterQueryText = subTexts.stream().collect(Collectors.joining(" OR ", connectPart + " (", ")"));
+				queryText.append(subFilterQueryText);
+
+			} else {
+				var exp = parse(entry.getKey(), entry.getValue());
+				var expQuerySpec = exp.toQuerySpec(paramIndex);
+				queryText.append(connectPart + expQuerySpec.getQueryText());
+				params.addAll(expQuerySpec.getParameters());
+			}
+
+			conditionIndex.getAndIncrement();
+		}
+
+		return new FilterQuery(queryText, params, conditionIndex, paramIndex);
+	}
+
+	private String removeConnectPart(String subQueryText) {
+		return StringUtils.removeStart(StringUtils.removeStart(subQueryText, " WHERE"), " AND").trim();
+	}
+
+	static String getConnectPart(AtomicInteger conditionIndex) {
+		return conditionIndex.get() == 0 ? " WHERE" : " AND";
 	}
 
 	/**
@@ -289,32 +329,6 @@ public class Condition {
 	}
 
 	/**
-	 * A helper function to generate c.foo IN (...) queryText
-	 *
-	 * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
-	 * "( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )", and add
-	 * paramsValue into params
-	 */
-	static String buildArray(String key, String paramName, Collection<?> paramValue, SqlParameterCollection params) {
-		var ret = new StringBuilder(String.format(" (c.%s IN (", key));
-
-		int index = 0;
-
-		var paramNameList = new ArrayList<String>();
-		for (var v : paramValue) {
-			var paramNameIdx = String.format("%s__%d", paramName, index);
-			paramNameList.add(paramNameIdx);
-			params.add(new SqlParameter(paramNameIdx, v));
-			index++;
-		}
-		ret.append(paramNameList.stream().collect(Collectors.joining(", ")));
-
-		ret.append("))");
-
-		return ret.toString();
-	}
-
-	/**
 	 *
 	 * BINARY_OPERATORの例： =, !=, >, >=, <, <= BINARY_FUCTIONの例： STARTSWITH,
 	 * ENDSWITH, CONTAINS, ARRAY_CONTAINS
@@ -329,168 +343,33 @@ public class Condition {
 	public static final Pattern expressionPattern = Pattern
 			.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|=|!=|<|<=|>|>=)\\s*$");
 
-	public static final Pattern functionPattern = Pattern.compile("\\w+");
+	public static Expression parse(String key, Object value) {
 
-	public interface Expression {
-		public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex);
+		var m = expressionPattern.matcher(key);
 
-		public static Expression parse(String key, Object value) {
-
-			var m = expressionPattern.matcher(key);
-
-			if (!m.find()) {
-				if (key.contains(" OR ")) {
-					return new OrExpressions(key, value);
-				} else {
-					return new SimpleExpression(key, value);
-				}
+		if (!m.find()) {
+			if (key.contains(" OR ")) {
+				return new OrExpressions(key, value);
 			} else {
-				if (key.contains(" OR ")) {
-					return new OrExpressions(m.group(1), value, m.group(2));
-				} else {
-					return new SimpleExpression(m.group(1), value, m.group(2));
-				}
+				return new SimpleExpression(key, value);
 			}
-		}
-
-		public static SimpleExpression toSimpleExpression(String key, Object value) {
-			var exp = new SimpleExpression();
-			exp.key = key;
-			exp.value = value;
-			return exp;
-		}
-
-	}
-
-	public static class SimpleExpression implements Expression {
-
-		public String key;
-		public Object value;
-		public OperatorType type = OperatorType.BINARY_OPERATOR;
-		public String operator = "=";
-
-		public SimpleExpression() {
-		}
-
-		public SimpleExpression(String key, Object value) {
-			this.key = key;
-			this.value = value;
-		}
-
-		public SimpleExpression(String key, Object value, String operator) {
-			this.key = key;
-			this.value = value;
-			this.operator = operator;
-			this.type = functionPattern.asPredicate().test(operator) ? OperatorType.BINARY_FUNCTION
-					: OperatorType.BINARY_OPERATOR;
-		}
-
-		@Override
-		public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
-
-			var ret = new SqlQuerySpec();
-			var params = new SqlParameterCollection();
-
-			// fullName.last -> @param001_fullName__last
-			var paramName = String.format("@param%03d_%s", paramIndex.getAndIncrement(), this.key.replace(".", "__"));
-			var paramValue = this.value;
-
-			if (paramValue instanceof Collection<?>) {
-				// e.g ( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )
-				if (!"=".equals(this.operator) && !"IN".equals(this.operator)) {
-					throw new IllegalArgumentException("IN collection expression not supported for " + this.operator);
-				}
-				ret.setQueryText(buildArray(this.key, paramName, (Collection<?>) paramValue, params));
-
+		} else {
+			if (key.contains(" OR ")) {
+				return new OrExpressions(m.group(1), value, m.group(2));
 			} else {
-
-				// other types
-				if (this.type == OperatorType.BINARY_OPERATOR) {
-					ret.setQueryText(String.format(" (c.%s %s %s)", this.key, this.operator, paramName));
-				} else {
-					ret.setQueryText(String.format(" (%s(c.%s, %s))", this.operator, this.key, paramName));
-				}
-				params.add(new SqlParameter(paramName, paramValue));
+				return new SimpleExpression(m.group(1), value, m.group(2));
 			}
-
-			ret.setParameters(params);
-
-			return ret;
-
-		}
-
-		@Override
-		public String toString() {
-			return JsonUtil.toJson(this);
 		}
 	}
 
-	/**
-	 * Expressions like "firstName OR lastName STARTSWITH" : "H"
-	 *
-	 * @author zhang.lei
-	 *
-	 */
-	public static class OrExpressions implements Expression {
-
-		public List<SimpleExpression> simpleExps = new ArrayList<>();
-
-		public OrExpressions() {
-		}
-
-		public OrExpressions(List<SimpleExpression> simpleExps, Object value) {
-			this.simpleExps = simpleExps;
-		}
-
-		public OrExpressions(String key, Object value) {
-			var keys = key.split(" OR ");
-
-			if (keys == null || keys.length == 0) {
-				return;
-			}
-			this.simpleExps = List.of(keys).stream().map(k -> new SimpleExpression(k, value))
-					.collect(Collectors.toList());
-		}
-
-		public OrExpressions(String key, Object value, String operator) {
-			var keys = key.split(" OR ");
-
-			if (keys == null || keys.length == 0) {
-				return;
-			}
-			this.simpleExps = List.of(keys).stream().map(k -> new SimpleExpression(k, value, operator))
-					.collect(Collectors.toList());
-		}
-
-		@Override
-		public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
-
-			var ret = new SqlQuerySpec();
-
-			if (simpleExps == null || simpleExps.isEmpty()) {
-				return ret;
-			}
-
-			var indexForQuery = paramIndex;
-			var indexForParam = new AtomicInteger(paramIndex.get());
-
-			var queryText = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForQuery).getQueryText())
-					.collect(Collectors.joining(" OR", " (", " )"));
-
-			var params = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForParam).getParameters())
-					.reduce(new SqlParameterCollection(), (sum, elm) -> {
-						sum.addAll(elm);
-						return sum;
-					});
-
-			ret.setQueryText(queryText);
-			ret.setParameters(params);
-
-			return ret;
-
-		}
-
+	public static SimpleExpression toSimpleExpression(String key, Object value) {
+		var exp = new SimpleExpression();
+		exp.key = key;
+		exp.value = value;
+		return exp;
 	}
+
+
 
 	/**
 	 * Use raw sql and params to do custom complex queries. When rawSql is set,
@@ -517,6 +396,15 @@ public class Condition {
 		var cond = new Condition();
 		cond.rawQuerySpec = new SqlQuerySpec(queryText);
 		return cond;
+	}
+
+	/**
+	 * sub query 's OR / AND / NOT operator
+	 *
+	 * TODO SUB_COND_AND / SUB_COND_NOT operator
+	 */
+	public enum SubConditionType {
+		SUB_COND_OR
 	}
 
 }

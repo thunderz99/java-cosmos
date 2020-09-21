@@ -1,4 +1,4 @@
-package io.github.thunderz99.cosmos;
+package io.github.thunderz99.cosmos.condition;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -153,6 +153,50 @@ class ConditionTest {
 
 		}
 
+	}
+
+	@Test
+	public void buildQuerySpec_should_work_for_sub_cond() {
+
+		var q = Condition.filter("fullName.last", "Hanks", //
+				"SUB_COND_OR",
+				List.of(Condition.filter("position", "leader"), Condition.filter("organization", "executive")), //
+				"age", 30) //
+				.sort("_ts", "DESC") //
+				.offset(10) //
+				.limit(20) //
+				.toQuerySpec();
+
+		assertThat(q.getQueryText().trim()).isEqualTo(
+				"SELECT * FROM c WHERE (c.fullName.last = @param000_fullName__last) AND ((c.position = @param001_position) OR (c.organization = @param002_organization)) AND (c.age = @param003_age) ORDER BY c._ts DESC OFFSET 10 LIMIT 20");
+
+		var params = List.copyOf(q.getParameters());
+
+		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
+		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_position", "leader").toJson());
+		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_organization", "executive").toJson());
+		assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param003_age", 30).toJson());
+	}
+
+	@Test
+	public void buildQuerySpec_should_work_for_sub_cond_from_the_beginning() {
+
+		var q = Condition.filter( //
+				"SUB_COND_OR",
+				List.of(Condition.filter("position", "leader"), Condition.filter("organization", "executive")) //
+		) //
+				.sort("_ts", "DESC") //
+				.offset(10) //
+				.limit(20) //
+				.toQuerySpec();
+
+		assertThat(q.getQueryText().trim()).isEqualTo(
+				"SELECT * FROM c WHERE ((c.position = @param000_position) OR (c.organization = @param001_organization)) ORDER BY c._ts DESC OFFSET 10 LIMIT 20");
+
+		var params = List.copyOf(q.getParameters());
+
+		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_position", "leader").toJson());
+		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_organization", "executive").toJson());
 	}
 
 }
