@@ -267,4 +267,27 @@ class ConditionTest {
 
 	}
 
+	@Test
+	public void buildQuerySpec_should_work_for_raw_cond() {
+
+		{
+			var q = Condition.filter("SUB_COND_RAW", //
+					"1=0").toQuerySpec();
+
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (1=0) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).isEmpty();
+		}
+
+		{
+			var q = Condition.filter("open", true, //
+				"SUB_COND_RAW", //
+					"1=1").toQuerySpec();
+
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (c.open = @param000_open) AND (1=1) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).hasSize(1);
+
+		}
+
+	}
+
 }
