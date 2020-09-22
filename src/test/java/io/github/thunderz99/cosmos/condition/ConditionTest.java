@@ -199,4 +199,72 @@ class ConditionTest {
 		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_organization", "executive").toJson());
 	}
 
+	@Test
+	public void buildQuerySpec_should_work_for_empty() {
+
+		var q = Condition.filter().toQuerySpec();
+
+		assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c OFFSET 0 LIMIT 100");
+
+		assertThat(q.getParameters()).isEmpty();
+
+	}
+
+	@Test
+	public void buildQuerySpec_should_work_for_empty_sub_query() {
+
+		{
+			var q = Condition.filter("SUB_COND_OR", //
+					List.of()).toQuerySpec();
+
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).isEmpty();
+		}
+
+		{
+			var q = Condition.filter("SUB_COND_OR", //
+					List.of(Condition.filter("id", 1))).toQuerySpec();
+
+			assertThat(q.getQueryText().trim())
+					.isEqualTo("SELECT * FROM c WHERE ((c.id = @param000_id)) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).hasSize(1);
+		}
+
+		{
+			var q = Condition.filter("id", 1, "SUB_COND_OR", //
+					List.of()).toQuerySpec();
+
+			assertThat(q.getQueryText().trim())
+					.isEqualTo("SELECT * FROM c WHERE (c.id = @param000_id) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).hasSize(1);
+		}
+
+		{
+			var q = Condition.filter("SUB_COND_OR", //
+					List.of(Condition.filter(), Condition.filter())).toQuerySpec();
+
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).hasSize(0);
+		}
+
+		{
+			var q = Condition.filter("id", 1, "SUB_COND_OR", //
+					List.of(Condition.filter())).toQuerySpec();
+
+			assertThat(q.getQueryText().trim())
+					.isEqualTo("SELECT * FROM c WHERE (c.id = @param000_id) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).hasSize(1);
+		}
+
+		{
+			var q = Condition.filter("id", 1, "SUB_COND_OR", //
+					List.of(Condition.filter(), Condition.filter("name", "Tom"))).toQuerySpec();
+
+			assertThat(q.getQueryText().trim()).isEqualTo(
+					"SELECT * FROM c WHERE (c.id = @param000_id) AND ((c.name = @param001_name)) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).hasSize(2);
+		}
+
+	}
+
 }
