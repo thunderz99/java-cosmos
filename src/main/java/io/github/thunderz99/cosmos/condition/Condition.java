@@ -194,7 +194,19 @@ public class Condition {
 			// filter parts
 			var connectPart = getConnectPart(conditionIndex);
 
-			if (SubConditionType.SUB_COND_OR.name().equals(entry.getKey())) {
+			var subFilterQueryToAdd = "";
+
+			if (SubConditionType.SUB_COND_RAW.name().equals(entry.getKey())) {
+				//raw condition. Used to generate always true/false cond. E.g. "1=1", "1=0"
+
+				var rawText = entry.getValue().toString();
+				if(StringUtils.isEmpty(rawText)){
+					continue;
+				}
+
+				subFilterQueryToAdd = connectPart + " (" + rawText + ")";
+			
+			} else if (SubConditionType.SUB_COND_OR.name().equals(entry.getKey())) {
 				// sub query
 				var value = entry.getValue();
 				if (!(value instanceof List<?>)) {
@@ -216,20 +228,19 @@ public class Condition {
 					paramIndex = subFilterQuery.paramIndex;
 				}
 
-				var subFilterQueryText = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
+				subFilterQueryToAdd = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
 						.collect(Collectors.joining(" OR ", connectPart + " (", ")"));
-
-				// remove empty sub queries
-				subFilterQueryText = StringUtils.removeStart(subFilterQueryText, connectPart + " ()");
-				queryText.append(subFilterQueryText);
-
+					// remove empty sub queries
+				subFilterQueryToAdd = StringUtils.removeStart(subFilterQueryToAdd, connectPart + " ()");
+					
 			} else {
 				var exp = parse(entry.getKey(), entry.getValue());
 				var expQuerySpec = exp.toQuerySpec(paramIndex);
-				queryText.append(connectPart + expQuerySpec.getQueryText());
+				subFilterQueryToAdd = connectPart + expQuerySpec.getQueryText();
 				params.addAll(expQuerySpec.getParameters());
 			}
 
+			queryText.append(subFilterQueryToAdd);
 			conditionIndex.getAndIncrement();
 		}
 
@@ -408,7 +419,7 @@ public class Condition {
 	 * TODO SUB_COND_AND / SUB_COND_NOT operator
 	 */
 	public enum SubConditionType {
-		SUB_COND_OR
+		SUB_COND_OR, SUB_COND_RAW
 	}
 
 }
