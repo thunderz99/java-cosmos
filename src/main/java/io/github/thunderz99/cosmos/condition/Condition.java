@@ -216,7 +216,11 @@ public class Condition {
 					paramIndex = subFilterQuery.paramIndex;
 				}
 
-				var subFilterQueryText = subTexts.stream().collect(Collectors.joining(" OR ", connectPart + " (", ")"));
+				var subFilterQueryText = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
+						.collect(Collectors.joining(" OR ", connectPart + " (", ")"));
+
+				// remove empty sub queries
+				subFilterQueryText = StringUtils.removeStart(subFilterQueryText, connectPart + " ()");
 				queryText.append(subFilterQueryText);
 
 			} else {
