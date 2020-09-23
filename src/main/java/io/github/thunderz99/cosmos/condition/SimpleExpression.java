@@ -45,7 +45,7 @@ public class SimpleExpression implements Expression {
 		var params = new SqlParameterCollection();
 
 		// fullName.last -> @param001_fullName__last
-		var paramName = String.format("@param%03d_%s", paramIndex.getAndIncrement(), this.key.replace(".", "__"));
+		var paramName = String.format("@param%03d_%s", paramIndex.get(), this.key.replace(".", "__"));
 		var paramValue = this.value;
 
 		if (paramValue instanceof Collection<?>) {
@@ -53,10 +53,20 @@ public class SimpleExpression implements Expression {
 			if (!"=".equals(this.operator) && !"IN".equals(this.operator)) {
 				throw new IllegalArgumentException("IN collection expression not supported for " + this.operator);
 			}
-			ret.setQueryText(buildArray(this.key, paramName, (Collection<?>) paramValue, params));
+
+			var coll = (Collection<?>) paramValue;
+
+			if(coll.isEmpty()){
+				//if paramValue is empty, return a FALSE queryText.
+				ret.setQueryText(" (1=0)");
+			} else {
+				paramIndex.getAndIncrement();
+				ret.setQueryText(buildArray(this.key, paramName, (Collection<?>) paramValue, params));
+			}
 
 		} else {
 
+			paramIndex.getAndIncrement();
 			// other types
 			if (this.type == OperatorType.BINARY_OPERATOR) {
 				ret.setQueryText(String.format(" (c.%s %s %s)", this.key, this.operator, paramName));
