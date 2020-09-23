@@ -290,4 +290,32 @@ class ConditionTest {
 
 	}
 
+
+	@Test
+	public void buildQuerySpec_should_work_empty_list() {
+
+		{
+			var q = Condition.filter("id", List.of()).toQuerySpec();
+
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (1=0) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).isEmpty();
+		}
+
+		{
+			var q = Condition.filter("id", List.of(), "name", "Tom").toQuerySpec();
+
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (1=0) AND (c.name = @param000_name) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).hasSize(1);
+		}
+
+		{
+			var q = Condition.filter("name", "Tom", "id", List.of()).toQuerySpec();
+
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (c.name = @param000_name) AND (1=0) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).hasSize(1);
+		}
+
+
+	}
+
 }
