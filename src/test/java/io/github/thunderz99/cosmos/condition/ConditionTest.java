@@ -23,7 +23,7 @@ class ConditionTest {
 				.toQuerySpec();
 
 		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT * FROM c WHERE (c.fullName.last = @param000_fullName__last) AND (c.id IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c.age = @param002_age) ORDER BY c._ts DESC OFFSET 10 LIMIT 20");
+				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"id\"] IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c[\"age\"] = @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
 		var params = List.copyOf(q.getParameters());
 
@@ -46,7 +46,7 @@ class ConditionTest {
 				.toQuerySpecForCount();
 
 		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT COUNT(1) FROM c WHERE (c.fullName.last = @param000_fullName__last) AND (c.id IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c.age = @param002_age)");
+				"SELECT COUNT(1) FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"id\"] IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c[\"age\"] = @param002_age)");
 
 		var params = List.copyOf(q.getParameters());
 
@@ -71,7 +71,7 @@ class ConditionTest {
 				.toQuerySpec();
 
 		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT * FROM c WHERE (c.fullName.last = @param000_fullName__last) AND (c.id IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c.age >= @param002_age) AND (c.fullName.last != @param003_fullName__last) ORDER BY c._ts DESC OFFSET 10 LIMIT 20");
+				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"id\"] IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c[\"age\"] >= @param002_age) AND (c[\"fullName\"][\"last\"] != @param003_fullName__last) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
 		var params = List.copyOf(q.getParameters());
 
@@ -99,7 +99,7 @@ class ConditionTest {
 				.toQuerySpec();
 
 		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT * FROM c WHERE (c.fullName.last = @param000_fullName__last) AND (c.id IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c.age = @param002_age) AND ( (STARTSWITH(c.fullName.first, @param003_fullName__first)) OR (STARTSWITH(c.fullName.last, @param004_fullName__last)) ) AND (CONTAINS(c.fullName.last, @param005_fullName__last)) AND (ARRAY_CONTAINS(c.skill, @param006_skill)) ORDER BY c._ts DESC OFFSET 10 LIMIT 20");
+				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"id\"] IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c[\"age\"] = @param002_age) AND ( (STARTSWITH(c[\"fullName\"][\"first\"], @param003_fullName__first)) OR (STARTSWITH(c[\"fullName\"][\"last\"], @param004_fullName__last)) ) AND (CONTAINS(c[\"fullName\"][\"last\"], @param005_fullName__last)) AND (ARRAY_CONTAINS(c[\"skill\"], @param006_skill)) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
 		var params = List.copyOf(q.getParameters());
 
@@ -128,7 +128,7 @@ class ConditionTest {
 				.toQuerySpec();
 
 		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT VALUE {\"id\":c.id, \"fullName\":{\"first\":c.fullName.first}, \"age\":c.age} FROM c WHERE (c.fullName.last = @param000_fullName__last) AND (c.id IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c.age = @param002_age) ORDER BY c._ts DESC OFFSET 10 LIMIT 20");
+				"SELECT VALUE {\"id\":c.id, \"fullName\":{\"first\":c.fullName.first}, \"age\":c.age} FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"id\"] IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c[\"age\"] = @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
 		var params = List.copyOf(q.getParameters());
 
@@ -168,7 +168,7 @@ class ConditionTest {
 				.toQuerySpec();
 
 		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT * FROM c WHERE (c.fullName.last = @param000_fullName__last) AND ((c.position = @param001_position) OR (c.organization = @param002_organization)) AND (c.age = @param003_age) ORDER BY c._ts DESC OFFSET 10 LIMIT 20");
+				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND ((c[\"position\"] = @param001_position) OR (c[\"organization\"] = @param002_organization)) AND (c[\"age\"] = @param003_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
 		var params = List.copyOf(q.getParameters());
 
@@ -191,7 +191,7 @@ class ConditionTest {
 				.toQuerySpec();
 
 		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT * FROM c WHERE ((c.position = @param000_position) OR (c.organization = @param001_organization)) ORDER BY c._ts DESC OFFSET 10 LIMIT 20");
+				"SELECT * FROM c WHERE ((c[\"position\"] = @param000_position) OR (c[\"organization\"] = @param001_organization)) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
 		var params = List.copyOf(q.getParameters());
 
@@ -226,7 +226,7 @@ class ConditionTest {
 					List.of(Condition.filter("id", 1))).toQuerySpec();
 
 			assertThat(q.getQueryText().trim())
-					.isEqualTo("SELECT * FROM c WHERE ((c.id = @param000_id)) OFFSET 0 LIMIT 100");
+					.isEqualTo("SELECT * FROM c WHERE ((c[\"id\"] = @param000_id)) OFFSET 0 LIMIT 100");
 			assertThat(q.getParameters()).hasSize(1);
 		}
 
@@ -235,7 +235,7 @@ class ConditionTest {
 					List.of()).toQuerySpec();
 
 			assertThat(q.getQueryText().trim())
-					.isEqualTo("SELECT * FROM c WHERE (c.id = @param000_id) OFFSET 0 LIMIT 100");
+					.isEqualTo("SELECT * FROM c WHERE (c[\"id\"] = @param000_id) OFFSET 0 LIMIT 100");
 			assertThat(q.getParameters()).hasSize(1);
 		}
 
@@ -252,7 +252,7 @@ class ConditionTest {
 					List.of(Condition.filter())).toQuerySpec();
 
 			assertThat(q.getQueryText().trim())
-					.isEqualTo("SELECT * FROM c WHERE (c.id = @param000_id) OFFSET 0 LIMIT 100");
+					.isEqualTo("SELECT * FROM c WHERE (c[\"id\"] = @param000_id) OFFSET 0 LIMIT 100");
 			assertThat(q.getParameters()).hasSize(1);
 		}
 
@@ -261,7 +261,7 @@ class ConditionTest {
 					List.of(Condition.filter(), Condition.filter("name", "Tom"))).toQuerySpec();
 
 			assertThat(q.getQueryText().trim()).isEqualTo(
-					"SELECT * FROM c WHERE (c.id = @param000_id) AND ((c.name = @param001_name)) OFFSET 0 LIMIT 100");
+					"SELECT * FROM c WHERE (c[\"id\"] = @param000_id) AND ((c[\"name\"] = @param001_name)) OFFSET 0 LIMIT 100");
 			assertThat(q.getParameters()).hasSize(2);
 		}
 
@@ -283,7 +283,7 @@ class ConditionTest {
 				"SUB_COND_RAW", //
 					"1=1").toQuerySpec();
 
-			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (c.open = @param000_open) AND (1=1) OFFSET 0 LIMIT 100");
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (c[\"open\"] = @param000_open) AND (1=1) OFFSET 0 LIMIT 100");
 			assertThat(q.getParameters()).hasSize(1);
 
 		}
@@ -304,14 +304,14 @@ class ConditionTest {
 		{
 			var q = Condition.filter("id", List.of(), "name", "Tom").toQuerySpec();
 
-			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (1=0) AND (c.name = @param000_name) OFFSET 0 LIMIT 100");
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (1=0) AND (c[\"name\"] = @param000_name) OFFSET 0 LIMIT 100");
 			assertThat(q.getParameters()).hasSize(1);
 		}
 
 		{
 			var q = Condition.filter("name", "Tom", "id", List.of()).toQuerySpec();
 
-			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (c.name = @param000_name) AND (1=0) OFFSET 0 LIMIT 100");
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (c[\"name\"] = @param000_name) AND (1=0) OFFSET 0 LIMIT 100");
 			assertThat(q.getParameters()).hasSize(1);
 		}
 

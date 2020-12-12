@@ -155,15 +155,21 @@ class CosmosDatabaseTest {
 
 		public int age;
 
+		/**
+		 * a reserved word in cosmosdb ( to test c["end"])
+		 */
+		public String end;
+
 		public List<String> skills = new ArrayList<>();
 
 		public FullNameUser() {
 		}
 
-		public FullNameUser(String id, String firstName, String lastName, int age, String... skills) {
+		public FullNameUser(String id, String firstName, String lastName, int age, String end, String... skills) {
 			this.id = id;
 			this.fullName = new FullName(firstName, lastName);
 			this.age = age;
+			this.end = end;
 			if (skills != null) {
 				this.skills.addAll(List.of(skills));
 			}
@@ -196,9 +202,9 @@ class CosmosDatabaseTest {
 	@Test
 	public void Find_should_work_with_filter() throws DocumentClientException {
 
-		var user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "Blanco");
-		var user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "Typescript", "Javascript", "React");
-		var user3 = new FullNameUser("id_find_filter3", "Tom", "Henry", 45, "Java", "Go", "Python");
+		var user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "2020-10-01", "Blanco");
+		var user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "2020-11-01", "Typescript", "Javascript", "React");
+		var user3 = new FullNameUser("id_find_filter3", "Tom", "Henry", 45, "2020-12-01", "Java", "Go", "Python");
 
 		try {
 			// prepare
@@ -218,6 +224,20 @@ class CosmosDatabaseTest {
 
 				assertThat(users.size()).isEqualTo(1);
 				assertThat(users.get(0)).hasToString(user1.toString());
+			}
+
+			// test reserved word find("end")
+			{
+				var cond = Condition.filter("fullName.last", "Hanks", //
+						"end >=", "2020-10-30" //
+				).sort("id", "ASC") //
+						.limit(10) //
+						.offset(0);
+
+				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+				assertThat(users.size()).isEqualTo(1);
+				assertThat(users.get(0)).hasToString(user2.toString());
 			}
 
 			// test fields

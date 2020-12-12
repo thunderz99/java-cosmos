@@ -165,7 +165,7 @@ public class Condition {
 			}
 
 			queryText.append(sortMap.entrySet().stream()
-					.map(entry -> String.format(" c.%s %s", entry.getKey(), entry.getValue().toUpperCase()))
+					.map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
 					.collect(Collectors.joining(",", " ORDER BY", "")));
 
 		}
@@ -420,6 +420,22 @@ public class Condition {
 	 */
 	public enum SubConditionType {
 		SUB_COND_OR, SUB_COND_RAW
+	}
+
+	/**
+	 * Instead of c.key, return c["key"] or c["key1"]["key2"] for query. In order for cosmosdb reserved words
+	 * @param key
+	 * @return
+	 */
+	static String getFormattedKey(String key) {
+		Checker.checkNotEmpty(key, "key");
+		var parts = key.split("\\.");
+		var sb = new StringBuilder();
+		sb.append("c");
+		for( var part : List.of(parts)){
+			sb.append("[\"" + part + "\"]");
+		}
+		return sb.toString();
 	}
 
 }
