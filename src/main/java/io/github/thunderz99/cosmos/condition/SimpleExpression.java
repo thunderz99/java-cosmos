@@ -68,10 +68,12 @@ public class SimpleExpression implements Expression {
 
 			paramIndex.getAndIncrement();
 			// other types
+			var formattedKey = Condition.getFormattedKey(this.key);
 			if (this.type == OperatorType.BINARY_OPERATOR) {
-				ret.setQueryText(String.format(" (c.%s %s %s)", this.key, this.operator, paramName));
+				//use c["key"] for cosmosdb reserved words
+				ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, paramName));
 			} else {
-				ret.setQueryText(String.format(" (%s(c.%s, %s))", this.operator, this.key, paramName));
+				ret.setQueryText(String.format(" (%s(%s, %s))", this.operator, formattedKey, paramName));
 			}
 			params.add(new SqlParameter(paramName, paramValue));
 		}
@@ -95,7 +97,7 @@ public class SimpleExpression implements Expression {
 	 * paramsValue into params
 	 */
 	static String buildArray(String key, String paramName, Collection<?> paramValue, SqlParameterCollection params) {
-		var ret = new StringBuilder(String.format(" (c.%s IN (", key));
+		var ret = new StringBuilder(String.format(" (%s IN (", Condition.getFormattedKey(key)));
 
 		int index = 0;
 

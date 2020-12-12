@@ -220,7 +220,6 @@ public class CosmosDatabase {
 	 *
 	 * @param coll
 	 * @param data
-	 * @param partition
 	 * @return
 	 * @throws DocumentClientException
 	 */
