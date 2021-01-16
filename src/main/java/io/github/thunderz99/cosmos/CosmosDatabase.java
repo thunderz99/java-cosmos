@@ -1,8 +1,10 @@
 package io.github.thunderz99.cosmos;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,12 +25,13 @@ public class CosmosDatabase {
 
 	String db;
 
+	String account;
+
 	DocumentClient client;
 
 	CosmosDatabase(DocumentClient client, String db) {
 		this.client = client;
 		this.db = db;
-
 	}
 
 
@@ -54,7 +57,7 @@ public class CosmosDatabase {
                 false
 		).getResource();
 
-		log.info("created Document: {}/docs/{}, partition:{}", coll, resource.getId(), partition);
+		log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, resource.getId(), partition, getAccount());
 
 		return new CosmosDocument(resource.toObject(JSONObject.class));
 	}
@@ -77,7 +80,7 @@ public class CosmosDatabase {
 
 		var resource = client.readDocument(documentLink, requestOptions(partition)).getResource();
 
-		log.info("read Document: {}/docs/{}, partition:{}", coll, id, partition);
+		log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
 		return new CosmosDocument(resource.toObject(JSONObject.class));
 	}
@@ -133,7 +136,7 @@ public class CosmosDatabase {
 
 		var resource = client.replaceDocument(documentLink, map, requestOptions(partition)).getResource();
 
-		log.info("updated Document: {}/docs/{}, partition:{}", coll, id, partition);
+		log.info("updated Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
 		return new CosmosDocument(resource.toObject(JSONObject.class));
 	}
@@ -170,7 +173,7 @@ public class CosmosDatabase {
 
 		var resource = client.replaceDocument(documentLink, merged, requestOptions(partition)).getResource();
 
-		log.info("updatePartial Document: {}/docs/{}, partition:{}", coll, id, partition);
+		log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
 		return new CosmosDocument(resource.toObject(JSONObject.class));
 	}
@@ -210,7 +213,7 @@ public class CosmosDatabase {
 
 		var resource = client.upsertDocument(collectionLink, map, requestOptions(partition), true).getResource();
 
-		log.info("upsert Document: {}/docs/{}, partition:{}", coll, id, partition);
+		log.info("upsert Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
 
 		return new CosmosDocument(resource.toObject(JSONObject.class));
 	}
@@ -259,7 +262,7 @@ public class CosmosDatabase {
 
 		var resource = client.upsertDocument(collectionLink, merged, requestOptions(partition), true).getResource();
 
-		log.info("upsertPartial Document: {}/docs/{}, partition:{}", coll, id, partition);
+		log.info("upsertPartial Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
 
 		return new CosmosDocument(resource.toObject(JSONObject.class));
 	}
@@ -291,11 +294,11 @@ public class CosmosDatabase {
 
 		try {
 			client.deleteDocument(documentLink, requestOptions(partition)).getResource();
-			log.info("deleted Document: {}/docs/{}, partition:{}", coll, id, partition);
+			log.info("deleted Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
 		} catch (Exception e) {
 			if (Cosmos.isResourceNotFoundException(e)) {
-				log.info("delete Document not exist. Ignored: {}/docs/{}, partition:{}", coll, id, partition);
+				log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 			}
 		}
 		return this;
@@ -325,7 +328,7 @@ public class CosmosDatabase {
 	 * @return
 	 */
 
-	public CosmosDocumentList find(String coll, Condition cond, String partition) {
+	public CosmosDocumentList find(String coll, Condition cond, String partition) throws DocumentClientException {
 
 		var collectionLink = Cosmos.getCollectionLink(db, coll);
 
@@ -337,7 +340,7 @@ public class CosmosDatabase {
 		var docs = client.queryDocuments(collectionLink, querySpec, options).getQueryIterable().toList();
 
 		if(log.isInfoEnabled()){
-			log.info(String.format("find Document: collection: %s, cond: %s, partition:%s", coll, cond, partition));
+			log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, partition, getAccount());
 		}
 
 		var jsonObjs = docs.stream().map(it -> it.toObject(JSONObject.class)).collect(Collectors.toList());
@@ -366,7 +369,7 @@ public class CosmosDatabase {
 	 * @return
 	 */
 
-	public int count(String coll, Condition cond, String partition) {
+	public int count(String coll, Condition cond, String partition) throws DocumentClientException {
 
 		var collectionLink = Cosmos.getCollectionLink(db, coll);
 
@@ -378,7 +381,7 @@ public class CosmosDatabase {
 		var docs = client.queryDocuments(collectionLink, querySpec, options).getQueryIterable().toList();
 
 		if(log.isInfoEnabled()){
-			log.info(String.format("count Document: collection: %s, cond: %s, partition:%s", coll, cond, partition));
+			log.info("count Document:{}, cond:{}, partition:{}, account:{}", coll, cond, partition, getAccount());
 		}
 
 		return docs.get(0).getInt("$1");
@@ -402,6 +405,19 @@ public class CosmosDatabase {
 	static Map<String, Object> merge(Map<String, Object> m1, Map<String, Object> m2) {
 		m1.putAll(m2);
 		return m1;
+	}
+
+	/**
+	 * Get cosmos db account id associated with this instance.
+	 * @return
+	 * @throws DocumentClientException
+	 */
+	String getAccount() throws DocumentClientException {
+		if(StringUtils.isNotEmpty(this.account)){
+			return this.account;
+		}
+		this.account = Cosmos.getAccount(this.client);
+		return this.account;
 	}
 
 }

@@ -285,7 +285,7 @@ public class Condition {
 	 *
 	 * </pre>
 	 *
-	 * @see https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-working-with-json
+	 * @see <a href="https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-working-with-json">sql-query-working-with-json</a>
 	 *
 	 * @param field
 	 * @return

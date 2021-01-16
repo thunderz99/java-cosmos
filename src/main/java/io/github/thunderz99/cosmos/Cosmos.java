@@ -14,6 +14,7 @@ import java.util.List;
  *
  */
 
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
@@ -50,6 +51,8 @@ public class Cosmos {
 	private static Logger log = LoggerFactory.getLogger(Cosmos.class);
 
 	DocumentClient client;
+
+	String account;
 
 	static Pattern p = Pattern.compile("AccountEndpoint=(?<endpoint>.+);AccountKey=(?<key>.+)");
 
@@ -116,12 +119,14 @@ public class Cosmos {
 			return database;
 		}
 
+		var account = getAccount(client);
+
 		var dbObj = new Database();
 		dbObj.setId(db);
 		var options = new RequestOptions();
 		options.setOfferThroughput(400);
 		var result = client.createDatabase(dbObj, options);
-		log.info("created nosql database: {}", db);
+		log.info("created database:{}, account:{}", db, getAccount(client));
 		return result.getResource();
 	}
 
@@ -147,10 +152,11 @@ public class Cosmos {
 			Checker.checkNotNull(client, "client");
 			Checker.checkNotBlank(db, "db");
 			client.deleteDatabase(getDatabaseLink(db), null);
+			log.info("delete Database:{}, account:{}", db, getAccount(client));
 		} catch (DocumentClientException de) {
 			// If not exist
 			if (isResourceNotFoundException(de)) {
-				log.info("delete Database not exist, ignored: {}", db);
+				log.info("delete Database not exist. Ignored:{}, account:{}", db, getAccount(client));
 			} else {
 				// Throw any other Exception
 				throw de;
@@ -159,15 +165,17 @@ public class Cosmos {
 	}
 
 	static void deleteCollection(DocumentClient client, String db, String coll) throws DocumentClientException {
+		var collectionLink = getCollectionLink(db, coll);
 		try {
 			Checker.checkNotNull(client, "client");
 			Checker.checkNotBlank(db, "db");
 			Checker.checkNotBlank(coll, "coll");
-			client.deleteCollection(getCollectionLink(db, coll), null);
+			client.deleteCollection(collectionLink, null);
+			log.info("delete Collection:{}, account:{}", collectionLink, getAccount(client));
 		} catch (DocumentClientException de) {
 			// If not exist
 			if (isResourceNotFoundException(de)) {
-				log.info("delete Collection not exist, ignored: {}/colls/{}", db, coll);
+				log.info("delete Collection not exist. Ignored:{}, account:{}", collectionLink, getAccount(client));
 			} else {
 				// Throw any other Exception
 				throw de;
@@ -197,8 +205,9 @@ public class Cosmos {
 
 		collectionInfo.setPartitionKey(partitionKeyDef);
 
-		var createdColl = client.createCollection(getDatabaseLink(db), collectionInfo, null);
-		log.info("Created nosql collection. db:{}, coll: {}");
+		var databaseLink = getDatabaseLink(db);
+		var createdColl = client.createCollection(databaseLink, collectionInfo, null);
+		log.info("create Collection:{}/colls/{}, account:{}", databaseLink, coll, getAccount(client));
 
 		return createdColl.getResource();
 
@@ -259,4 +268,24 @@ public class Cosmos {
 		return "_partition";
 	}
 
+	String getAccount() throws DocumentClientException {
+		if(StringUtils.isNotEmpty(this.account)){
+			return this.account;
+		}
+		this.account = getAccount(this.client);
+		return this.account;
+	}
+
+	/**
+	 * Get cosmos db account id from client
+	 * @param client
+	 * @return
+	 * @throws DocumentClientException
+	 */
+	static String getAccount(DocumentClient client) throws DocumentClientException {
+		if(Objects.isNull(client)){
+			return "";
+		}
+		return client.getDatabaseAccount().get("id").toString();
+	}
 }
