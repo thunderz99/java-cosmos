@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import org.assertj.core.util.Lists;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,8 @@ import com.microsoft.azure.documentdb.SqlParameterCollection;
 import io.github.cdimascio.dotenv.Dotenv;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
 
 class CosmosDatabaseTest {
 
@@ -26,6 +29,8 @@ class CosmosDatabaseTest {
 
 	static String dbName = "CosmosDB";
 	static String coll = "UnitTest";
+
+	Logger log = LoggerFactory.getLogger(CosmosDatabaseTest.class);
 
 	public static class User {
 		public String id;
@@ -375,7 +380,7 @@ class CosmosDatabaseTest {
 				Condition.filter("address.state", "WA"), //
 				Condition.filter("id", "WakefieldFamily"))) //
 				.sort("id", "ASC") //
-		;
+				;
 
 		var items = db.find(coll, cond, partition).toMap();
 
@@ -386,11 +391,65 @@ class CosmosDatabaseTest {
 
 	}
 
+	@Test
+	void check_invalid_id_should_work() throws Exception {
+		var ids = Lists.newArrayList("\ttabbefore", "tabafter\t", "tab\nbetween", "\ncrbefore", "crafter\r", "cr\n\rbetween");
+		for(var id: ids){
+			assertThatThrownBy( () -> CosmosDatabase.checkValidId(id)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("id cannot contain");
+		}
+
+	}
+	@Test
+	void invalid_id_should_be_checked() throws Exception {
+
+		var partition = "InvalidIdTest";
+		var ids = Lists.newArrayList("\ttabbefore", "cr\rbetween");
+		for(var id: ids) {
+			try {
+				var data = Map.of("id", id, "name", "Lee");
+				assertThatThrownBy( () -> db.create(coll, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
+				assertThatThrownBy( () -> db.upsert(coll, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
+			} finally {
+				var toDelete = db.find(coll, Condition.filter(), partition).toMap();
+				for(var map : toDelete){
+					var selfLink = map.get("_self").toString();
+					db.deleteBySelfLink(selfLink, partition);
+				}
+			}
+		}
+
+	}
+
+	@Test
+	void delete_by_self_link_should_work() throws Exception {
+
+		var partition = "SelfLink";
+		var id = "delete_by_self_link_should_work";
+		try {
+			var data = Map.of("id", id, "name", "Lee");
+			var upserted = db.upsert(coll, data, partition).toMap();
+			assertThat(upserted).isNotNull();
+
+			var selfLink = upserted.get("_self").toString();
+			assertThat(selfLink).isNotNull();
+
+			db.deleteBySelfLink(selfLink, partition);
+
+			var read = db.readSuppressing404(coll, id, partition);
+
+			//not exist after deleteBySelfLink
+			assertThat(read).isNull();
+
+		} finally {
+			db.delete(coll, id, partition);
+		}
+	}
+
 	static void initFamiliesData() throws Exception {
 		var partition = "Families";
 
 		try (var is1 = CosmosDatabaseTest.class.getResourceAsStream("family1.json");
-				var is2 = CosmosDatabaseTest.class.getResourceAsStream("family2.json")) {
+			 var is2 = CosmosDatabaseTest.class.getResourceAsStream("family2.json")) {
 
 			var family1 = JsonUtil.toMap(is1);
 			var family2 = JsonUtil.toMap(is2);
