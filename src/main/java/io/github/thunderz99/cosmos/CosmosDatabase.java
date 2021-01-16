@@ -50,6 +50,8 @@ public class CosmosDatabase {
 
 		var collectionLink = Cosmos.getCollectionLink(db, coll);
 
+		checkValidId(objectMap);
+
 		var resource = client.createDocument(
                 collectionLink,
                 objectMap,
@@ -60,6 +62,24 @@ public class CosmosDatabase {
 		log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, resource.getId(), partition, getAccount());
 
 		return new CosmosDocument(resource.toObject(JSONObject.class));
+	}
+
+	/**
+	 * Id cannot contain "\t", "\r", "\n", or cosmosdb will create invalid data.
+	 * @param objectMap
+	 */
+	static void checkValidId(Map<String, Object> objectMap) {
+		if(objectMap == null){
+			return;
+		}
+		var id = objectMap.getOrDefault("id", "").toString();
+		checkValidId(id);
+	}
+
+	static void checkValidId(String id) {
+		if(StringUtils.containsAny(id, "\t", "\n", "\r")){
+			throw new IllegalArgumentException("id cannot contain \\t or \\n or \\r. id:" + id);
+		}
 	}
 
 	public CosmosDocument create(String coll, Object data) throws DocumentClientException {
@@ -128,6 +148,7 @@ public class CosmosDatabase {
 		var id = map.getOrDefault("id", "").toString();
 
 		Checker.checkNotBlank(id, "id");
+		checkValidId(id);
 
 		var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
@@ -171,6 +192,7 @@ public class CosmosDatabase {
 		// Object.assign(origin, newData)
 		var merged = merge(origin, newData);
 
+		checkValidId(merged);
 		var resource = client.replaceDocument(documentLink, merged, requestOptions(partition)).getResource();
 
 		log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
@@ -202,6 +224,7 @@ public class CosmosDatabase {
 		var id = map.getOrDefault("id", "").toString();
 
 		Checker.checkNotBlank(id, "id");
+		checkValidId(id);
 		Checker.checkNotBlank(coll, "coll");
 		Checker.checkNotBlank(partition, "partition");
 		Checker.checkNotNull(data, "upsert data " + coll + " " + partition);
@@ -260,6 +283,7 @@ public class CosmosDatabase {
 
 		var merged = origin == null ? newData : merge(origin, newData);
 
+		checkValidId(merged);
 		var resource = client.upsertDocument(collectionLink, merged, requestOptions(partition), true).getResource();
 
 		log.info("upsertPartial Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
@@ -299,6 +323,29 @@ public class CosmosDatabase {
 		} catch (Exception e) {
 			if (Cosmos.isResourceNotFoundException(e)) {
 				log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+				return this;
+			}
+			throw e;
+		}
+		return this;
+
+	}
+
+	/**
+	 * Delete with "_self" link(In case you cannot delete by a normal id). Do nothing if object not exist
+	 */
+	public CosmosDatabase deleteBySelfLink(String selfLink, String partition) throws DocumentClientException {
+
+		Checker.checkNotBlank(selfLink, "selfLink");
+		Checker.checkNotBlank(partition, "partition");
+
+		try {
+			client.deleteDocument(selfLink, requestOptions(partition)).getResource();
+			log.info("deleted Document:{}, partition:{}, account:{}", selfLink, partition, getAccount());
+
+		} catch (Exception e) {
+			if (Cosmos.isResourceNotFoundException(e)) {
+				log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", selfLink, partition, getAccount());
 				return this;
 			}
 			throw e;
