@@ -97,7 +97,7 @@ public class JsonUtil {
 	/**
 	 * Convert to List of Map
 	 *
-	 * @param object
+	 * @param json
 	 * @return
 	 */
 	public static List<LinkedHashMap<String, Object>> toListOfMap(String json) {
@@ -108,7 +108,7 @@ public class JsonUtil {
 	/**
 	 * Convert to List of Map
 	 *
-	 * @param object
+	 * @param is
 	 * @return
 	 */
 	public static List<LinkedHashMap<String, Object>> toListOfMap(InputStream is) {
@@ -119,7 +119,7 @@ public class JsonUtil {
 	/**
 	 * Convert to Map
 	 *
-	 * @param object
+	 * @param json
 	 * @return
 	 */
 	public static Map<String, Object> toMap(String json) {
@@ -130,7 +130,8 @@ public class JsonUtil {
 	/**
 	 * Convert to Map. Only a part of json by path.
 	 *
-	 * @param object
+	 * @param json
+	 * @param path
 	 * @return
 	 */
 	public static Map<String, Object> toMap(String json, String path) {
@@ -217,7 +218,7 @@ public class JsonUtil {
 	/**
 	 * construct JavaType from raw className
 	 *
-	 * @param clazz
+	 * @param className
 	 * @return
 	 * @throws ClassNotFoundException
 	 */
@@ -229,7 +230,7 @@ public class JsonUtil {
 	/**
 	 * construct List JavaType from rawType className
 	 *
-	 * @param clazz
+	 * @param className
 	 * @return
 	 * @throws ClassNotFoundException
 	 */
