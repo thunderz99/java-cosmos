@@ -299,7 +299,9 @@ public class CosmosDatabase {
 		} catch (Exception e) {
 			if (Cosmos.isResourceNotFoundException(e)) {
 				log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+				return this;
 			}
+			throw e;
 		}
 		return this;
 
