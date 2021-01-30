@@ -11,11 +11,11 @@ import io.github.thunderz99.cosmos.util.JsonUtil;
 /**
  * Represent a list of CosmosDB document.
  *
- * Having toList and toJson util method to convert to List<T> or String
+ * <p>
+ * Having toList and toJson util method to convert to {@code List<T>} or String
  * conveniently.
- *
+ * </p>
  */
-
 public class CosmosDocumentList {
 
 	List<JSONObject> jsonObjs;

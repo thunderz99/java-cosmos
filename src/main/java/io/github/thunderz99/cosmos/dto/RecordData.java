@@ -30,10 +30,10 @@ public abstract class RecordData {
 	}
 
 	/**
-	 * copy by json util
+	 * deep copy using json util
+	 * @param <T> generic param for bean
 	 *
-	 * @param classOfT
-	 * @return
+	 * @return object copied
 	 */
 	public <T> T copy() {
 		return JsonUtil.fromJson(JsonUtil.toJson(this), this.getClass().getName());

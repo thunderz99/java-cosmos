@@ -19,6 +19,13 @@ import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 
+/**
+ * Class representing a database instance.
+ *
+ * <p>
+ *     Can do document' CRUD and find.
+ * </p>
+ */
 public class CosmosDatabase {
 
 	private static Logger log = LoggerFactory.getLogger(CosmosDatabase.class);
@@ -35,6 +42,14 @@ public class CosmosDatabase {
 	}
 
 
+	/**
+	 * Create a document
+	 * @param coll collection name
+	 * @param data data object
+	 * @param partition partition name
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos Client Exception
+	 */
 	public CosmosDocument create(String coll, Object data, String partition) throws DocumentClientException {
 
 
@@ -82,13 +97,25 @@ public class CosmosDatabase {
 		}
 	}
 
+	/**
+	 * Create a document using default partition
+	 * @param coll collection name
+	 * @param data data Object
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
+	 */
 	public CosmosDocument create(String coll, Object data) throws DocumentClientException {
 		return create(coll, data, coll);
 	}
 
 
 	/**
-	 * Throw 404 Not Found Exception if object not exist
+	 *
+	 * @param coll collection name
+	 * @param id id of the document
+	 * @param partition partition name
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Throw 404 Not Found Exception if object not exist
 	 */
 	public CosmosDocument read(String coll, String id, String partition) throws DocumentClientException {
 
@@ -106,14 +133,23 @@ public class CosmosDatabase {
 	}
 
 	/**
-	 * Throw 404 Not Found Exception if object not exist
+	 * Read a document by coll and id
+	 * @param coll collection name
+	 * @param id id of document
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Throw 404 Not Found Exception if object not exist
 	 */
 	public CosmosDocument read(String coll, String id) throws DocumentClientException {
 		return read(coll, id, coll);
 	}
 
 	/**
-	 * Return null if object not exist
+	 * Read a document by coll and id. Return null if object not exist
+	 * @param coll collection name
+	 * @param id id of document
+	 * @param partition partition name
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDocument readSuppressing404(String coll, String id, String partition) throws DocumentClientException {
 
@@ -128,7 +164,11 @@ public class CosmosDatabase {
 	}
 
 	/**
-	 * Return null if object not exist
+	 * Read a document by coll and id. Return null if object not exist
+	 * @param coll collection name
+	 * @param id id of document
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDocument readSuppressing404(String coll, String id) throws DocumentClientException {
 
@@ -137,6 +177,11 @@ public class CosmosDatabase {
 
 	/**
 	 * Update existing data. if not exist, throw Not Found Exception.
+	 * @param coll collection name
+	 * @param data data object
+	 * @param partition partition name
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDocument update(String coll, Object data, String partition) throws DocumentClientException {
 		
@@ -162,16 +207,26 @@ public class CosmosDatabase {
 		return new CosmosDocument(resource.toObject(JSONObject.class));
 	}
 
+
 	/**
 	 * Update existing data. if not exist, throw Not Found Exception.
+	 * @param coll collection name
+	 * @param data data object
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDocument update(String coll, Object data) throws DocumentClientException {
 		return update(coll, data, coll);
 	}
 
 	/**
-	 * Update existing data. Partial update supported(Only 1st json hierarchy
-	 * supported). If not exist, throw Not Found Exception.
+	 * Update existing data. Partial update supported(Only 1st json hierarchy supported). If not exist, throw Not Found Exception.
+	 * @param coll collection name
+	 * @param id id of document
+	 * @param data data object
+	 * @param partition partition name
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDocument updatePartial(String coll, String id, Object data, String partition)
 			throws DocumentClientException {
@@ -201,22 +256,24 @@ public class CosmosDatabase {
 	}
 
 	/**
-	 * Update existing data. Partial update supported(Only 1st json hierarchy
-	 * supported). If not exist, throw Not Found Exception.
+	 * Update existing data. Partial update supported(Only 1st json hierarchy supported). If not exist, throw Not Found Exception.
+	 * @param coll collection name
+	 * @param id id of document
+	 * @param data data object
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDocument updatePartial(String coll, String id, Object data) throws DocumentClientException {
 		return updatePartial(coll, id, data, coll);
 	}
 
 	/**
-	 * upsert data.if not exist, create the data. if already exist, update the data.
-	 * "id" field must be contained in data.
-	 *
-	 * @param coll
-	 * @param data
-	 * @param partition
-	 * @return
-	 * @throws DocumentClientException
+	 * Update existing data. Create a new one if not exist. "id" field must be contained in data.
+	 * @param coll collection name
+	 * @param data data object
+	 * @param partition partition name
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDocument upsert(String coll, Object data, String partition) throws DocumentClientException {
 
@@ -242,27 +299,27 @@ public class CosmosDatabase {
 	}
 
 	/**
-	 * upsert data. "id" field must be contained in data.
-	 *
-	 * @param coll
-	 * @param data
-	 * @return
-	 * @throws DocumentClientException
+	 * Update existing data. Create a new one if not exist. "id" field must be contained in data.
+	 * @param coll collection name
+	 * @param data data object
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDocument upsert(String coll, Object data) throws DocumentClientException {
 		return upsert(coll, data, coll);
 	}
 
 	/**
-	 * upsert data (Partial upsert supported. Only the 1st json hierarchy). if not
+	 * Upsert data (Partial upsert supported. Only the 1st json hierarchy). if not
 	 * exist, create the data. if already exist, update the data. "id" field must be
 	 * contained in data.
 	 *
-	 * @param coll
-	 * @param data
-	 * @param partition
-	 * @return
-	 * @throws DocumentClientException
+	 * @param coll collection name
+	 * @param id id of document
+	 * @param data data object
+	 * @param partition partition name
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDocument upsertPartial(String coll, String id, Object data, String partition)
 			throws DocumentClientException {
@@ -292,21 +349,27 @@ public class CosmosDatabase {
 	}
 
 	/**
-	 * upsert data (Partial upsert supported. Only the 1st json hierarchy). if not
+	 * Upsert data (Partial upsert supported. Only the 1st json hierarchy). if not
 	 * exist, create the data. if already exist, update the data. "id" field must be
 	 * contained in data.
 	 *
-	 * @param coll
-	 * @param data
-	 * @return
-	 * @throws DocumentClientException
+	 * @param coll collection name
+	 * @param id id of document
+	 * @param data data object
+	 * @return CosmosDocument instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDocument upsertPartial(String coll, String id, Object data) throws DocumentClientException {
 		return upsertPartial(coll, id, data, coll);
 	}
 
 	/**
-	 * Do nothing if object not exist
+	 * Delete a document. Do nothing if object not exist
+	 * @param coll collection name
+	 * @param id id of document
+	 * @param partition partition name
+	 * @return CosmosDatabase instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public CosmosDatabase delete(String coll, String id, String partition) throws DocumentClientException {
 
@@ -332,8 +395,13 @@ public class CosmosDatabase {
 	}
 
 	/**
-	 * Delete with "_self" link(In case you cannot delete by a normal id). Do nothing if object not exist
+	 * Delete a document by selfLink. Do nothing if object not exist
+	 * @param selfLink selfLink of a document
+	 * @param partition partition name
+	 * @return CosmosDatabase instance
+	 * @throws DocumentClientException Cosmos client exception
 	 */
+
 	public CosmosDatabase deleteBySelfLink(String selfLink, String partition) throws DocumentClientException {
 
 		Checker.checkNotBlank(selfLink, "selfLink");
@@ -357,7 +425,7 @@ public class CosmosDatabase {
 	/**
 	 * find data by condition
 	 *
-	 * <code>
+	 * {@code
 	 *  var cond = Condition.filter(
 	 *    "id>=", "id010", // id greater or equal to 'id010'
 	 *    "lastName", "Banks" // last name equal to Banks
@@ -368,13 +436,13 @@ public class CosmosDatabase {
 	 *
 	 *  var users = db.find("Collection1", cond).toList(User.class);
 	 *
-	 * </code>
+	 * }
 	 *
-	 *
-	 * @param coll
-	 * @param cond
-	 * @param partition
-	 * @return
+	 * @param coll collection name
+	 * @param cond condition to find
+	 * @param partition partition name
+	 * @throws DocumentClientException Cosmos client exception
+	 * @return CosmosDocumentList
 	 */
 
 	public CosmosDocumentList find(String coll, Condition cond, String partition) throws DocumentClientException {
@@ -401,7 +469,7 @@ public class CosmosDatabase {
 	/**
 	 * count data by condition
 	 *
-	 * <code>
+	 * {@code
 	 *  var cond = Condition.filter(
 	 *    "id>=", "id010", // id greater or equal to 'id010'
 	 *    "lastName", "Banks" // last name equal to Banks
@@ -409,13 +477,13 @@ public class CosmosDatabase {
 	 *
 	 *  var count = db.count("Collection1", cond, "Users");
 	 *
-	 * </code>
+	 * }
 	 *
-	 *
-	 * @param coll
-	 * @param cond
-	 * @param partition
-	 * @return
+	 * @param coll collection name
+	 * @param cond condition to find
+	 * @param partition partition name
+	 * @throws DocumentClientException Cosmos client exception
+	 * @return count of documents
 	 */
 
 	public int count(String coll, Condition cond, String partition) throws DocumentClientException {
@@ -459,7 +527,7 @@ public class CosmosDatabase {
 	/**
 	 * Get cosmos db account id associated with this instance.
 	 * @return
-	 * @throws DocumentClientException
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	String getAccount() throws DocumentClientException {
 		if(StringUtils.isNotEmpty(this.account)){

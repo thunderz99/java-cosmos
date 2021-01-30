@@ -25,10 +25,16 @@ import com.microsoft.azure.documentdb.SqlQuerySpec;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 
+/**
+ * Condition for find. (e.g. filter / sort / offset / limit)
+ */
 public class Condition {
 
 	private static Logger log = LoggerFactory.getLogger(Condition.class);
 
+	/**
+	 * Default constructor
+	 */
 	public Condition() {
 	}
 
@@ -41,8 +47,16 @@ public class Condition {
 	public int offset = 0;
 	public int limit = 100;
 
+	/**
+	 * a raw query spec which can use raw sql
+	 */
 	public SqlQuerySpec rawQuerySpec = null;
 
+	/**
+	 * add filters
+	 * @param filters search filters using key / value pair.
+	 * @return condition
+	 */
 	public static Condition filter(Object... filters) {
 
 		Condition cond = new Condition();
@@ -62,17 +76,14 @@ public class Condition {
 	}
 
 	/**
-	 * set Orders in this way:
+	 * set Orders in the following way. Overwrite previous orders.
 	 *
-	 * <code>
+	 * {@code
 	 * Condition.filter().order("lastName", "ASC");
-	 * </code>
+	 * }
 	 *
-	 * Overwrite previous orders.
-	 *
-	 *
-	 * @param sorts
-	 * @return
+	 * @param sorts sort strings
+	 * @return condition
 	 */
 	public Condition sort(String... sorts) {
 
@@ -95,16 +106,14 @@ public class Condition {
 	}
 
 	/**
-	 * Set select fields. Default is "*"
+	 * Set select fields. Default is "*". Overwrites previous fields
 	 *
-	 * <code>
+	 * {@code
 	 * Condition.filter().fields("id", "name", "employeeCode");
-	 * </code>
+	 * }
 	 *
-	 * Overwrites previous fields
-	 *
-	 * @param fields
-	 * @return
+	 * @param fields select fields
+	 * @return condition
 	 */
 	public Condition fields(String... fields) {
 
@@ -116,20 +125,38 @@ public class Condition {
 		return this;
 	}
 
+	/**
+	 * set the offset
+	 * @param offset offset
+	 * @return condition
+	 */
 	public Condition offset(int offset) {
 		this.offset = offset;
 		return this;
 	}
 
+	/**
+	 * set the limit
+	 * @param limit limit
+	 * @return condition
+	 */
 	public Condition limit(int limit) {
 		this.limit = limit;
 		return this;
 	}
 
+	/**
+	 * Generate a query spec from condition.
+	 * @return query spec which can be used in official DocumentClient
+	 */
 	public SqlQuerySpec toQuerySpec() {
 		return toQuerySpec(false);
 	}
 
+	/**
+	 * Generate a query spec for count from condition.
+	 * @return query spec which can be used in official DocumentClient
+	 */
 	public SqlQuerySpec toQuerySpecForCount() {
 		return toQuerySpec(true);
 	}
@@ -184,8 +211,8 @@ public class Condition {
 	/**
 	 * filter parts
 	 *
-	 * @param queryText
-	 * @param params
+	 * @param queryText queryText
+	 * @param params params
 	 */
 	FilterQuery generateFilterQuery(StringBuilder queryText, SqlParameterCollection params,
 			AtomicInteger conditionIndex, AtomicInteger paramIndex) {
@@ -258,12 +285,12 @@ public class Condition {
 	/**
 	 * select parts generate.
 	 *
-	 * <pre>
+	 * {@code
 	 * e.g.
 	 * "id", "age", "fullName.first" -> VALUE {"id":c.id, "age":c.age, "fullName": {"first": c.fullName.first}}
-	 * </pre>
+	 * }
 	 *
-	 * @return
+	 * @return select sql
 	 */
 	String generateSelect() {
 
@@ -277,18 +304,16 @@ public class Condition {
 	/**
 	 * generate a select for field.
 	 *
-	 * <pre>
+	 * {@code
 	 * e.g.
 	 * "name" -> "name": "c.name"
-	 *
 	 * "organization.leader.name" -> "organization": { "leader": {"name": c.organization.leader.name}}
-	 *
-	 * </pre>
+	 * }
 	 *
 	 * @see <a href="https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-working-with-json">sql-query-working-with-json</a>
 	 *
-	 * @param field
-	 * @return
+	 * @param field field name
+	 * @return one field select sql
 	 */
 	static String generateOneFieldSelect(String field) {
 
@@ -325,8 +350,9 @@ public class Condition {
 	/**
 	 * Recursively create json object for select
 	 *
-	 * @param parts
-	 * @return
+	 * @param parts parts splitted by "."
+	 * @param fullField full field name: e.g. c.name.first
+	 * @return a map for select. "organization.leader.name" -> c.organization.leader.name
 	 */
 	static Map<String, Object> createMap(Deque<String> parts, String fullField) {
 		var map = new LinkedHashMap<String, Object>();
@@ -344,11 +370,12 @@ public class Condition {
 	}
 
 	/**
+	 * OperatorType for WHERE clause
 	 *
-	 * BINARY_OPERATORの例： =, !=, >, >=, <, <= BINARY_FUCTIONの例： STARTSWITH,
-	 * ENDSWITH, CONTAINS, ARRAY_CONTAINS
-	 *
-	 * @author zhang.lei
+	 * {@code
+	 * BINARY_OPERATORの例：{@code =, !=, >, >=, <, <= }
+	 * BINARY_FUCTIONの例： STARTSWITH, ENDSWITH, CONTAINS, ARRAY_CONTAINS
+	 * }
 	 *
 	 */
 	public enum OperatorType {
@@ -358,6 +385,12 @@ public class Condition {
 	public static final Pattern expressionPattern = Pattern
 			.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|=|!=|<|<=|>|>=)\\s*$");
 
+	/**
+	 * parse key and value to generate a valid expression
+	 * @param key filter's key
+	 * @param value filter's value
+	 * @return expression for WHERE clause
+	 */
 	public static Expression parse(String key, Object value) {
 
 		var m = expressionPattern.matcher(key);
@@ -377,6 +410,12 @@ public class Condition {
 		}
 	}
 
+	/**
+	 * parse key and value to generate a simple expression (key = value)
+	 * @param key filter's key
+	 * @param value filter's value
+	 * @return expression for WHERE clause
+	 */
 	public static SimpleExpression toSimpleExpression(String key, Object value) {
 		var exp = new SimpleExpression();
 		exp.key = key;
@@ -390,9 +429,9 @@ public class Condition {
 	 * Use raw sql and params to do custom complex queries. When rawSql is set,
 	 * other filter / limit / offset / sort will be ignored.
 	 *
-	 * @param queryText
-	 * @param params
-	 * @return
+	 * @param queryText sql raw queryText
+	 * @param params params used in sql
+	 * @return condition
 	 */
 	public static Condition rawSql(String queryText, SqlParameterCollection params) {
 		var cond = new Condition();
@@ -404,8 +443,8 @@ public class Condition {
 	 * Use raw sql to do custom complex queries. When rawSql is set, other filter /
 	 * limit / offset / sort will be ignored.
 	 *
-	 * @param queryText
-	 * @return
+	 * @param queryText sql raw queryText
+	 * @return condition
 	 */
 	public static Condition rawSql(String queryText) {
 		var cond = new Condition();
@@ -414,9 +453,11 @@ public class Condition {
 	}
 
 	/**
-	 * sub query 's OR / AND / NOT operator
+	 * sub query 's OR / RAW operator
 	 *
+	 * <p>
 	 * TODO SUB_COND_AND / SUB_COND_NOT operator
+	 * </p>
 	 */
 	public enum SubConditionType {
 		SUB_COND_OR, SUB_COND_RAW
@@ -424,8 +465,9 @@ public class Condition {
 
 	/**
 	 * Instead of c.key, return c["key"] or c["key1"]["key2"] for query. In order for cosmosdb reserved words
-	 * @param key
-	 * @return
+	 *
+	 * @param key filter's key
+	 * @return formatted filter's key c["key1"]["key2"]
 	 */
 	static String getFormattedKey(String key) {
 		Checker.checkNotEmpty(key, "key");
