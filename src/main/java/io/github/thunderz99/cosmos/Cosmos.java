@@ -39,11 +39,13 @@ import io.github.thunderz99.cosmos.util.Checker;
 /***
  * class that represent a cosmos account
  *
+ * <pre>
  * Usage: var cosmos = new
  * Cosmos("AccountEndpoint=https://xxx.documents.azure.com:443/;AccountKey=xxx==;");
  * var db = cosmos.getDatabase("Database1");
  *
  * //Then use db to do CRUD / query db.upsert("Users", user);
+ * </pre>
  *
  */
 public class Cosmos {
@@ -81,6 +83,9 @@ public class Cosmos {
 
 	/**
      * Get a CosmosDatabase object by name
+	 *
+	 * @param db database name
+	 * @return CosmosDatabase instance
      */
     public CosmosDatabase getDatabase(String db) {
         Checker.checkNotEmpty(db, "db");
@@ -90,8 +95,10 @@ public class Cosmos {
 
 	/**
 	 * Create the db and coll if not exist. Coll creation will be skipped is empty.
-	 *
-	 * @throws DocumentClientException
+	 * @param db database name
+	 * @param coll collection name
+	 * @return CosmosDatabase instance
+	 * @throws DocumentClientException Cosmos client exception Cosmos client exception
 	 */
 	public CosmosDatabase createIfNotExist(String db, String coll) throws DocumentClientException {
 
@@ -104,10 +111,21 @@ public class Cosmos {
         return new CosmosDatabase(client, db);
     }
 
+	/**
+	 * Delete a database by name
+	 * @param db database name
+	 * @throws DocumentClientException Cosmos client exception
+	 */
 	public void deleteDatabase(String db) throws DocumentClientException {
 		deleteDatabase(client, db);
 	}
 
+	/**
+	 * Delete a collection by db name and coll name
+	 * @param db database name
+	 * @param coll collection name
+	 * @throws DocumentClientException Cosmos client exception
+	 */
 	public void deleteCollection(String db, String coll) throws DocumentClientException {
 		deleteDatabase(client, db);
 	}
@@ -264,6 +282,10 @@ public class Cosmos {
 		return message.contains("Resource Not Found") ? true : false;
 	}
 
+	/**
+	 * get the default partition key
+	 * @return default partition key
+	 */
 	public static String getDefaultPartitionKey() {
 		return "_partition";
 	}
@@ -278,9 +300,9 @@ public class Cosmos {
 
 	/**
 	 * Get cosmos db account id from client
-	 * @param client
-	 * @return
-	 * @throws DocumentClientException
+	 * @param client documentClient
+	 * @return cosmos db account id
+	 * @throws DocumentClientException Cosmos client exception
 	 */
 	static String getAccount(DocumentClient client) throws DocumentClientException {
 		if(Objects.isNull(client)){
