@@ -16,6 +16,17 @@
         </license>
     </licenses>
 
+    <scm>
+        <url>https://github.com/thunderz99/java-cosmos</url>
+    </scm>
+
+    <developers>
+        <developer>
+            <name>Zhang Lei</name>
+            <email>thunderz99@gmail.com</email>
+        </developer>
+    </developers>
+
     <properties>
         <java.version>11</java.version>
         <maven.compiler.target>${java.version}</maven.compiler.target>
@@ -104,6 +115,20 @@
 
     <build>
         <plugins>
+            <!--
+             see https://central.sonatype.org/pages/apache-maven.html
+            -->
+            <plugin>
+                <groupId>org.sonatype.plugins</groupId>
+                <artifactId>nexus-staging-maven-plugin</artifactId>
+                <version>1.6.8</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <serverId>ossrh</serverId>
+                    <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+                    <autoReleaseAfterClose>true</autoReleaseAfterClose>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -136,6 +161,26 @@
                         <goals>
                             <goal>jar</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <version>1.6</version>
+                <executions>
+                    <execution>
+                        <id>sign-artifacts</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>sign</goal>
+                        </goals>
+                        <configuration>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
