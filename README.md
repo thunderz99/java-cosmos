@@ -15,26 +15,12 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 
 ```xml
 
-<!-- Add a new repository in pom.xml -->
-
-<repositories>
-  <repository>
-    <id>central</id>
-    <name>bintray</name>
-    <url>https://jcenter.bintray.com</url>
-  </repository>
-</repositories>
-
-```
-
-```xml
-
 <!-- Add new dependency -->
 
 <dependency>
-  <groupId>io.github.thunderz99</groupId>
+  <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.1.13</version>
+  <version>0.2.0</version>
 </dependency>
 
 ```
