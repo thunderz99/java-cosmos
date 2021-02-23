@@ -13,14 +13,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import com.azure.cosmos.models.SqlParameter;
+import com.azure.cosmos.models.SqlQuerySpec;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.RegExUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
 
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
@@ -171,7 +170,7 @@ public class Condition {
 		var select = count ? "COUNT(1)" : generateSelect();
 
 		var initialText = new StringBuilder(String.format("SELECT %s FROM c", select));
-		var initialParams = new SqlParameterCollection();
+		var initialParams = new ArrayList<SqlParameter>();
 		var initialConditionIndex = new AtomicInteger(0);
 		var initialParamIndex = new AtomicInteger(0);
 
@@ -214,7 +213,7 @@ public class Condition {
 	 * @param queryText queryText
 	 * @param params params
 	 */
-	FilterQuery generateFilterQuery(StringBuilder queryText, SqlParameterCollection params,
+	FilterQuery generateFilterQuery(StringBuilder queryText, List<SqlParameter> params,
 			AtomicInteger conditionIndex, AtomicInteger paramIndex) {
 
 		for (var entry : this.filter.entrySet()) {
@@ -433,7 +432,7 @@ public class Condition {
 	 * @param params params used in sql
 	 * @return condition
 	 */
-	public static Condition rawSql(String queryText, SqlParameterCollection params) {
+	public static Condition rawSql(String queryText, List<SqlParameter> params) {
 		var cond = new Condition();
 		cond.rawQuerySpec = new SqlQuerySpec(queryText, params);
 		return cond;

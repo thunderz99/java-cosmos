@@ -4,9 +4,8 @@ import static org.assertj.core.api.Assertions.*;
 
 import java.util.List;
 
+import com.azure.cosmos.models.SqlParameter;
 import org.junit.jupiter.api.Test;
-
-import com.microsoft.azure.documentdb.SqlParameter;
 
 class ConditionTest {
 
@@ -27,11 +26,11 @@ class ConditionTest {
 
 		var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id__0", "id001").toJson());
-		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param001_id__1", "id002").toJson());
-		assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param001_id__2", "id005").toJson());
-		assertThat(params.get(4).toJson()).isEqualTo(new SqlParameter("@param002_age", 30).toJson());
+		assertThat(params.get(0)).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks"));
+		assertThat(params.get(1)).isEqualTo(new SqlParameter("@param001_id__0", "id001"));
+		assertThat(params.get(2)).isEqualTo(new SqlParameter("@param001_id__1", "id002"));
+		assertThat(params.get(3)).isEqualTo(new SqlParameter("@param001_id__2", "id005"));
+		assertThat(params.get(4)).isEqualTo(new SqlParameter("@param002_age", 30));
 	}
 
 	@Test
@@ -50,11 +49,11 @@ class ConditionTest {
 
 		var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id__0", "id001").toJson());
-		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param001_id__1", "id002").toJson());
-		assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param001_id__2", "id005").toJson());
-		assertThat(params.get(4).toJson()).isEqualTo(new SqlParameter("@param002_age", 30).toJson());
+		assertThat(params.get(0)).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks"));
+		assertThat(params.get(1)).isEqualTo(new SqlParameter("@param001_id__0", "id001"));
+		assertThat(params.get(2)).isEqualTo(new SqlParameter("@param001_id__1", "id002"));
+		assertThat(params.get(3)).isEqualTo(new SqlParameter("@param001_id__2", "id005"));
+		assertThat(params.get(4)).isEqualTo(new SqlParameter("@param002_age", 30));
 	}
 
 	@Test
@@ -75,12 +74,12 @@ class ConditionTest {
 
 		var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id__0", "id001").toJson());
-		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param001_id__1", "id002").toJson());
-		assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param001_id__2", "id005").toJson());
-		assertThat(params.get(4).toJson()).isEqualTo(new SqlParameter("@param002_age", 30).toJson());
-		assertThat(params.get(5).toJson()).isEqualTo(new SqlParameter("@param003_fullName__last", "ABC").toJson());
+		assertThat(params.get(0)).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks"));
+		assertThat(params.get(1)).isEqualTo(new SqlParameter("@param001_id__0", "id001"));
+		assertThat(params.get(2)).isEqualTo(new SqlParameter("@param001_id__1", "id002"));
+		assertThat(params.get(3)).isEqualTo(new SqlParameter("@param001_id__2", "id005"));
+		assertThat(params.get(4)).isEqualTo(new SqlParameter("@param002_age", 30));
+		assertThat(params.get(5)).isEqualTo(new SqlParameter("@param003_fullName__last", "ABC"));
 	}
 
 	@Test
@@ -103,15 +102,15 @@ class ConditionTest {
 
 		var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id__0", "id001").toJson());
-		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param001_id__1", "id002").toJson());
-		assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param001_id__2", "id005").toJson());
-		assertThat(params.get(4).toJson()).isEqualTo(new SqlParameter("@param002_age", 30).toJson());
-		assertThat(params.get(5).toJson()).isEqualTo(new SqlParameter("@param003_fullName__first", "F").toJson());
-		assertThat(params.get(6).toJson()).isEqualTo(new SqlParameter("@param004_fullName__last", "F").toJson());
-		assertThat(params.get(7).toJson()).isEqualTo(new SqlParameter("@param005_fullName__last", "L").toJson());
-		assertThat(params.get(8).toJson()).isEqualTo(new SqlParameter("@param006_skill", "Java").toJson());
+		assertThat(params.get(0)).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks"));
+		assertThat(params.get(1)).isEqualTo(new SqlParameter("@param001_id__0", "id001"));
+		assertThat(params.get(2)).isEqualTo(new SqlParameter("@param001_id__1", "id002"));
+		assertThat(params.get(3)).isEqualTo(new SqlParameter("@param001_id__2", "id005"));
+		assertThat(params.get(4)).isEqualTo(new SqlParameter("@param002_age", 30));
+		assertThat(params.get(5)).isEqualTo(new SqlParameter("@param003_fullName__first", "F"));
+		assertThat(params.get(6)).isEqualTo(new SqlParameter("@param004_fullName__last", "F"));
+		assertThat(params.get(7)).isEqualTo(new SqlParameter("@param005_fullName__last", "L"));
+		assertThat(params.get(8)).isEqualTo(new SqlParameter("@param006_skill", "Java"));
 	}
 
 	@Test
@@ -132,11 +131,11 @@ class ConditionTest {
 
 		var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id__0", "id001").toJson());
-		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param001_id__1", "id002").toJson());
-		assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param001_id__2", "id005").toJson());
-		assertThat(params.get(4).toJson()).isEqualTo(new SqlParameter("@param002_age", 30).toJson());
+		assertThat(params.get(0)).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks"));
+		assertThat(params.get(1)).isEqualTo(new SqlParameter("@param001_id__0", "id001"));
+		assertThat(params.get(2)).isEqualTo(new SqlParameter("@param001_id__1", "id002"));
+		assertThat(params.get(3)).isEqualTo(new SqlParameter("@param001_id__2", "id005"));
+		assertThat(params.get(4)).isEqualTo(new SqlParameter("@param002_age", 30));
 	}
 
 	@Test
@@ -172,10 +171,10 @@ class ConditionTest {
 
 		var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_position", "leader").toJson());
-		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_organization", "executive").toJson());
-		assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param003_age", 30).toJson());
+		assertThat(params.get(0)).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks"));
+		assertThat(params.get(1)).isEqualTo(new SqlParameter("@param001_position", "leader"));
+		assertThat(params.get(2)).isEqualTo(new SqlParameter("@param002_organization", "executive"));
+		assertThat(params.get(3)).isEqualTo(new SqlParameter("@param003_age", 30));
 	}
 
 	@Test
@@ -195,8 +194,8 @@ class ConditionTest {
 
 		var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_position", "leader").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_organization", "executive").toJson());
+		assertThat(params.get(0)).isEqualTo(new SqlParameter("@param000_position", "leader"));
+		assertThat(params.get(1)).isEqualTo(new SqlParameter("@param001_organization", "executive"));
 	}
 
 	@Test

@@ -1,19 +1,20 @@
 package io.github.thunderz99.cosmos;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import com.azure.cosmos.CosmosClient;
+import com.azure.cosmos.models.CosmosItemRequestOptions;
+import com.azure.cosmos.models.CosmosQueryRequestOptions;
+import com.azure.cosmos.models.PartitionKey;
+import com.azure.cosmos.models.SqlQuerySpec;
 import org.apache.commons.lang3.StringUtils;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.microsoft.azure.documentdb.DocumentClient;
-import com.microsoft.azure.documentdb.DocumentClientException;
-import com.microsoft.azure.documentdb.FeedOptions;
-import com.microsoft.azure.documentdb.PartitionKey;
-import com.microsoft.azure.documentdb.RequestOptions;
 
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.util.Checker;
@@ -34,11 +35,12 @@ public class CosmosDatabase {
 
 	String account;
 
-	DocumentClient client;
+	CosmosClient client;
 
-	CosmosDatabase(DocumentClient client, String db) {
+	CosmosDatabase(CosmosClient client, String db, String account) {
 		this.client = client;
 		this.db = db;
+		this.account = account;
 	}
 
 
@@ -48,9 +50,8 @@ public class CosmosDatabase {
 	 * @param data data object
 	 * @param partition partition name
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos Client Exception
 	 */
-	public CosmosDocument create(String coll, Object data, String partition) throws DocumentClientException {
+	public CosmosDocument create(String coll, Object data, String partition) {
 
 
         Checker.checkNotBlank(coll, "coll");
@@ -67,16 +68,15 @@ public class CosmosDatabase {
 
 		checkValidId(objectMap);
 
-		var resource = client.createDocument(
-                collectionLink,
-                objectMap,
-                requestOptions(partition),
-                false
-		).getResource();
+		var container = client.getDatabase(db).getContainer(coll);
 
-		log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, resource.getId(), partition, getAccount());
+		var item = container.createItem(objectMap, new PartitionKey(partition), new CosmosItemRequestOptions());
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
+		var map = item.getItem();
+
+		log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, map.getOrDefault("id", ""), partition, account);
+
+		return new CosmosDocument(map);
 	}
 
 	/**
@@ -102,9 +102,8 @@ public class CosmosDatabase {
 	 * @param coll collection name
 	 * @param data data Object
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument create(String coll, Object data) throws DocumentClientException {
+	public CosmosDocument create(String coll, Object data) {
 		return create(coll, data, coll);
 	}
 
@@ -115,9 +114,8 @@ public class CosmosDatabase {
 	 * @param id id of the document
 	 * @param partition partition name
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Throw 404 Not Found Exception if object not exist
 	 */
-	public CosmosDocument read(String coll, String id, String partition) throws DocumentClientException {
+	public CosmosDocument read(String coll, String id, String partition) {
 
 		Checker.checkNotBlank(id, "id");
 		Checker.checkNotBlank(coll, "coll");
@@ -125,11 +123,13 @@ public class CosmosDatabase {
 
 		var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
-		var resource = client.readDocument(documentLink, requestOptions(partition)).getResource();
+		var container = client.getDatabase(db).getContainer(coll);
+		var sampleMap = new LinkedHashMap<String, Object>();
+		var item = container.readItem(id, new PartitionKey(partition), new CosmosItemRequestOptions(), sampleMap.getClass());
 
 		log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
+		return new CosmosDocument(item.getItem());
 	}
 
 	/**
@@ -137,9 +137,8 @@ public class CosmosDatabase {
 	 * @param coll collection name
 	 * @param id id of document
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Throw 404 Not Found Exception if object not exist
 	 */
-	public CosmosDocument read(String coll, String id) throws DocumentClientException {
+	public CosmosDocument read(String coll, String id) {
 		return read(coll, id, coll);
 	}
 
@@ -149,13 +148,12 @@ public class CosmosDatabase {
 	 * @param id id of document
 	 * @param partition partition name
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument readSuppressing404(String coll, String id, String partition) throws DocumentClientException {
+	public CosmosDocument readSuppressing404(String coll, String id, String partition) {
 
 		try {
 			return read(coll, id, partition);
-		} catch (Exception e) {
+		} catch (RuntimeException e) {
 			if (Cosmos.isResourceNotFoundException(e)) {
 				return null;
 			}
@@ -168,9 +166,8 @@ public class CosmosDatabase {
 	 * @param coll collection name
 	 * @param id id of document
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument readSuppressing404(String coll, String id) throws DocumentClientException {
+	public CosmosDocument readSuppressing404(String coll, String id) {
 
 		return readSuppressing404(coll, id, coll);
 	}
@@ -181,9 +178,8 @@ public class CosmosDatabase {
 	 * @param data data object
 	 * @param partition partition name
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument update(String coll, Object data, String partition) throws DocumentClientException {
+	public CosmosDocument update(String coll, Object data, String partition) {
 		
 		Checker.checkNotBlank(coll, "coll");
 		Checker.checkNotBlank(partition, "partition");
@@ -200,11 +196,13 @@ public class CosmosDatabase {
 		// add partition info
 		map.put(Cosmos.getDefaultPartitionKey(), partition);
 
-		var resource = client.replaceDocument(documentLink, map, requestOptions(partition)).getResource();
+		var container = client.getDatabase(db).getContainer(coll);
+
+		var item = container.replaceItem(map, id, new PartitionKey(partition), new CosmosItemRequestOptions());
 
 		log.info("updated Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
+		return new CosmosDocument(item.getItem());
 	}
 
 
@@ -213,9 +211,8 @@ public class CosmosDatabase {
 	 * @param coll collection name
 	 * @param data data object
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument update(String coll, Object data) throws DocumentClientException {
+	public CosmosDocument update(String coll, Object data) {
 		return update(coll, data, coll);
 	}
 
@@ -226,10 +223,8 @@ public class CosmosDatabase {
 	 * @param data data object
 	 * @param partition partition name
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument updatePartial(String coll, String id, Object data, String partition)
-			throws DocumentClientException {
+	public CosmosDocument updatePartial(String coll, String id, Object data, String partition) {
 
 		Checker.checkNotBlank(id, "id");
 		Checker.checkNotBlank(coll, "coll");
@@ -248,11 +243,13 @@ public class CosmosDatabase {
 		var merged = merge(origin, newData);
 
 		checkValidId(merged);
-		var resource = client.replaceDocument(documentLink, merged, requestOptions(partition)).getResource();
+
+		var container = client.getDatabase(db).getContainer(coll);
+		var item = container.replaceItem(merged, id, new PartitionKey(partition), new CosmosItemRequestOptions());
 
 		log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
+		return new CosmosDocument(item.getItem());
 	}
 
 	/**
@@ -261,9 +258,8 @@ public class CosmosDatabase {
 	 * @param id id of document
 	 * @param data data object
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument updatePartial(String coll, String id, Object data) throws DocumentClientException {
+	public CosmosDocument updatePartial(String coll, String id, Object data) {
 		return updatePartial(coll, id, data, coll);
 	}
 
@@ -273,9 +269,8 @@ public class CosmosDatabase {
 	 * @param data data object
 	 * @param partition partition name
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument upsert(String coll, Object data, String partition) throws DocumentClientException {
+	public CosmosDocument upsert(String coll, Object data, String partition) {
 
 		var map = JsonUtil.toMap(data);
 		var id = map.getOrDefault("id", "").toString();
@@ -291,11 +286,12 @@ public class CosmosDatabase {
 		// add partition info
 		map.put(Cosmos.getDefaultPartitionKey(), partition);
 
-		var resource = client.upsertDocument(collectionLink, map, requestOptions(partition), true).getResource();
+		var container = client.getDatabase(db).getContainer(coll);
+		var item = container.upsertItem(map, new PartitionKey(partition), new CosmosItemRequestOptions());
 
 		log.info("upsert Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
+		return new CosmosDocument(item.getItem());
 	}
 
 	/**
@@ -303,9 +299,8 @@ public class CosmosDatabase {
 	 * @param coll collection name
 	 * @param data data object
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument upsert(String coll, Object data) throws DocumentClientException {
+	public CosmosDocument upsert(String coll, Object data) {
 		return upsert(coll, data, coll);
 	}
 
@@ -319,10 +314,8 @@ public class CosmosDatabase {
 	 * @param data data object
 	 * @param partition partition name
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument upsertPartial(String coll, String id, Object data, String partition)
-			throws DocumentClientException {
+	public CosmosDocument upsertPartial(String coll, String id, Object data, String partition) {
 
 		Checker.checkNotBlank(id, "id");
 		Checker.checkNotBlank(coll, "coll");
@@ -341,11 +334,13 @@ public class CosmosDatabase {
 		var merged = origin == null ? newData : merge(origin, newData);
 
 		checkValidId(merged);
-		var resource = client.upsertDocument(collectionLink, merged, requestOptions(partition), true).getResource();
+
+		var container = client.getDatabase(db).getContainer(coll);
+		var item = container.replaceItem(merged, id, new PartitionKey(partition), new CosmosItemRequestOptions());
 
 		log.info("upsertPartial Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
+		return new CosmosDocument(item.getItem());
 	}
 
 	/**
@@ -357,9 +352,8 @@ public class CosmosDatabase {
 	 * @param id id of document
 	 * @param data data object
 	 * @return CosmosDocument instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDocument upsertPartial(String coll, String id, Object data) throws DocumentClientException {
+	public CosmosDocument upsertPartial(String coll, String id, Object data) {
 		return upsertPartial(coll, id, data, coll);
 	}
 
@@ -369,51 +363,23 @@ public class CosmosDatabase {
 	 * @param id id of document
 	 * @param partition partition name
 	 * @return CosmosDatabase instance
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	public CosmosDatabase delete(String coll, String id, String partition) throws DocumentClientException {
+	public CosmosDatabase delete(String coll, String id, String partition) {
 
 		Checker.checkNotBlank(coll, "coll");
 		Checker.checkNotBlank(id, "id");
 		Checker.checkNotBlank(partition, "partition");
 
 		var documentLink = Cosmos.getDocumentLink(db, coll, id);
+		var container = client.getDatabase(db).getContainer(coll);
 
 		try {
-			client.deleteDocument(documentLink, requestOptions(partition)).getResource();
+			container.deleteItem(id, new PartitionKey(partition), new CosmosItemRequestOptions());
 			log.info("deleted Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-		} catch (Exception e) {
+		} catch (RuntimeException e) {
 			if (Cosmos.isResourceNotFoundException(e)) {
 				log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", documentLink, partition, getAccount());
-				return this;
-			}
-			throw e;
-		}
-		return this;
-
-	}
-
-	/**
-	 * Delete a document by selfLink. Do nothing if object not exist
-	 * @param selfLink selfLink of a document
-	 * @param partition partition name
-	 * @return CosmosDatabase instance
-	 * @throws DocumentClientException Cosmos client exception
-	 */
-
-	public CosmosDatabase deleteBySelfLink(String selfLink, String partition) throws DocumentClientException {
-
-		Checker.checkNotBlank(selfLink, "selfLink");
-		Checker.checkNotBlank(partition, "partition");
-
-		try {
-			client.deleteDocument(selfLink, requestOptions(partition)).getResource();
-			log.info("deleted Document:{}, partition:{}, account:{}", selfLink, partition, getAccount());
-
-		} catch (Exception e) {
-			if (Cosmos.isResourceNotFoundException(e)) {
-				log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", selfLink, partition, getAccount());
 				return this;
 			}
 			throw e;
@@ -441,28 +407,28 @@ public class CosmosDatabase {
 	 * @param coll collection name
 	 * @param cond condition to find
 	 * @param partition partition name
-	 * @throws DocumentClientException Cosmos client exception
 	 * @return CosmosDocumentList
 	 */
 
-	public CosmosDocumentList find(String coll, Condition cond, String partition) throws DocumentClientException {
+	public CosmosDocumentList find(String coll, Condition cond, String partition) {
 
 		var collectionLink = Cosmos.getCollectionLink(db, coll);
 
-		var options = new FeedOptions();
-		options.setPartitionKey(new PartitionKey(partition));
-
 		var querySpec = cond.toQuerySpec();
 
-		var docs = client.queryDocuments(collectionLink, querySpec, options).getQueryIterable().toList();
+		var container = client.getDatabase(db).getContainer(coll);
+
+		var options = new CosmosQueryRequestOptions();
+		options.setPartitionKey(new PartitionKey(partition));
+
+		var sampleMap = (Map<String, Object>) new LinkedHashMap<String, Object>();
+		var docs = container.queryItems(querySpec, options,  sampleMap.getClass()).stream().collect(Collectors.toList());
 
 		if(log.isInfoEnabled()){
 			log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, partition, getAccount());
 		}
 
-		var jsonObjs = docs.stream().map(it -> it.toObject(JSONObject.class)).collect(Collectors.toList());
-
-		return new CosmosDocumentList(jsonObjs);
+		return new CosmosDocumentList((List<Map<String, Object>>) docs);
 
 	}
 
@@ -482,34 +448,32 @@ public class CosmosDatabase {
 	 * @param coll collection name
 	 * @param cond condition to find
 	 * @param partition partition name
-	 * @throws DocumentClientException Cosmos client exception
 	 * @return count of documents
 	 */
 
-	public int count(String coll, Condition cond, String partition) throws DocumentClientException {
+	public int count(String coll, Condition cond, String partition) {
 
 		var collectionLink = Cosmos.getCollectionLink(db, coll);
 
-		var options = new FeedOptions();
+		var options = new CosmosQueryRequestOptions();
 		options.setPartitionKey(new PartitionKey(partition));
 
 		var querySpec = cond.toQuerySpecForCount();
 
-		var docs = client.queryDocuments(collectionLink, querySpec, options).getQueryIterable().toList();
+		var container = client.getDatabase(db).getContainer(coll);
+
+		var sampleMap = (Map<String, Object>) new LinkedHashMap<String, Object>();
+		var docs = container.queryItems(querySpec, options, sampleMap.getClass()).stream().collect(Collectors.toList());
 
 		if(log.isInfoEnabled()){
 			log.info("count Document:{}, cond:{}, partition:{}, account:{}", coll, cond, partition, getAccount());
 		}
 
-		return docs.get(0).getInt("$1");
+
+		return Integer.parseInt(docs.get(0).getOrDefault("$1", "0").toString());
 
 	}
 
-	RequestOptions requestOptions(String partition) {
-		var options = new RequestOptions();
-		options.setPartitionKey(new PartitionKey(partition));
-		return options;
-    }
 
 	/**
 	 *
@@ -527,13 +491,8 @@ public class CosmosDatabase {
 	/**
 	 * Get cosmos db account id associated with this instance.
 	 * @return
-	 * @throws DocumentClientException Cosmos client exception
 	 */
-	String getAccount() throws DocumentClientException {
-		if(StringUtils.isNotEmpty(this.account)){
-			return this.account;
-		}
-		this.account = Cosmos.getAccount(this.client);
+	String getAccount() {
 		return this.account;
 	}
 

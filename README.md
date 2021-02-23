@@ -28,7 +28,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 ### Start programming 
 
 ```java
-
+order
 import io.github.thunderz99.cosmos.Cosmos
 
 public static void main(String[] args) {
@@ -40,7 +40,7 @@ public static void main(String[] args) {
       "lastName", "Banks", // last name equal to Banks
       "firstName !=", "Andy", // not equal
     )
-    .order("lastName", "ASC") //optional order
+    .sort("lastName", "ASC") //optional sort order
     .offset(0) //optional offset
     .limit(100); //optional limit
     
@@ -116,7 +116,7 @@ db.update("Collection1", user1, "Users");
 db.upsert("Collection1", user1, "Users");
 
 // Delete
-db.delete("Collection1", user1,id, "Users");
+db.delete("Collection1", user1.id, "Users");
 
 ```
 
@@ -134,27 +134,25 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
 ### Complex queries
 
 ```java
-    
-    var cond = Condition.filter(
-      "id", "id010", // id equal to 'id010'
-      "lastName", "Banks", // last name equal to Banks
-      "firstName !=", "Andy", // not equal
-      "location",  List.of("New York", "Paris"), // location is 'New York' or 'Paris'. see cosmosdb IN 
-      "age >=", 20, // see cosmosdb compare operators
-      "middleName OR firstName STARTSWITH", "H", // see cosmosdb STARTSWITH
-      "desciption CONTAINS", "Project manager",// see cosmosdb CONTAINS
-      "skill ARRAY_CONTAINS", "Java", // see cosmosdb ARRAY_CONTAINS
-      "SUB_COND_OR", List.of( // add an or sub condition
-        Condition.filter("position", "leader"),  // subquery's fields/order/offset/limit will be ignored
-        Condition.filter("organization.id", "executive_committee"))
-    )
-    .fields("id", "lastName", "age", "organization.name") // select certain fields
-    .order("lastName", "ASC") //optional order
-    .offset(0) //optional offset
-    .limit(100); //optional limit
-    
-    var users = db.find("Collection1", cond).toList(User.class)
-}
+var cond = Condition.filter(
+  "id", "id010", // id equal to 'id010'
+  "lastName", "Banks", // last name equal to Banks
+  "firstName !=", "Andy", // not equal
+  "location",  List.of("New York", "Paris"), // location is 'New York' or 'Paris'. see cosmosdb IN 
+  "age >=", 20, // see cosmosdb compare operators
+  "middleName OR firstName STARTSWITH", "H", // see cosmosdb STARTSWITH
+  "desciption CONTAINS", "Project manager",// see cosmosdb CONTAINS
+  "skill ARRAY_CONTAINS", "Java", // see cosmosdb ARRAY_CONTAINS
+  "SUB_COND_OR", List.of( // add an or sub condition
+    Condition.filter("position", "leader"),  // subquery's fields/order/offset/limit will be ignored
+    Condition.filter("organization.id", "executive_committee"))
+)
+  .fields("id", "lastName", "age", "organization.name") // select certain fields
+  .sort("lastName", "ASC") //optional sort order
+  .offset(0) //optional offset
+  .limit(100); //optional limit
+
+var users = db.find("Collection1", cond).toList(User.class)
 
 
 ```
@@ -163,13 +161,12 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
 ### Raw SQL queries
 
 ```java
-    var queryText = "SELECT c.gender, c.grade\n" + 
-    "    FROM Families f\n" + 
-    "    JOIN c IN f.children WHERE f.address.state = @state ORDER BY f.id ASC";
+var queryText = "SELECT c.gender, c.grade\n" + 
+  "    FROM Families f\n" + 
+  "    JOIN c IN f.children WHERE f.address.state = @state ORDER BY f.id ASC";
 
-		var params = new SqlParameterCollection(new SqlParameter("@state", "NY"));
+var params = new SqlParameterCollection(new SqlParameter("@state", "NY"));
 
-		var cond = Condition.rawSql(queryText, params);
-		var children = db.find(coll, cond, partition);
-}
+var cond = Condition.rawSql(queryText, params);
+var children = db.find(coll, cond, partition);
 ```

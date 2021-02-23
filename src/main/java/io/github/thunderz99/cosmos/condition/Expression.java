@@ -1,8 +1,8 @@
 package io.github.thunderz99.cosmos.condition;
 
-import java.util.concurrent.atomic.AtomicInteger;
+import com.azure.cosmos.models.SqlQuerySpec;
 
-import com.microsoft.azure.documentdb.SqlQuerySpec;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public interface Expression {
 

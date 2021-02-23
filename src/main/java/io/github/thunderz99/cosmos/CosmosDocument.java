@@ -15,22 +15,21 @@ import io.github.thunderz99.cosmos.util.JsonUtil;
  */
 public class CosmosDocument {
 
-	JSONObject jsonObj;
+	Map<String, Object> mapObj;
 
-	public CosmosDocument(JSONObject jsonObj) {
-		this.jsonObj = jsonObj;
+	public CosmosDocument(Map<String, Object> mapObj) {
+		this.mapObj = mapObj;
 	}
 
 	public <T> T toObject(Class<T> classOfT) {
-		return JsonUtil.fromJson(jsonObj.toString(), classOfT);
+		return JsonUtil.fromMap(mapObj, classOfT);
 	}
 
 	public String toJson() {
-		return jsonObj.toString();
+		return JsonUtil.toJson(mapObj);
 	}
 
 	public Map<String, Object> toMap() {
-
-		return JsonUtil.toMap(jsonObj.toString());
+		return this.mapObj;
 	}
 }

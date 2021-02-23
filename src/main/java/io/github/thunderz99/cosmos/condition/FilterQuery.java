@@ -1,8 +1,9 @@
 package io.github.thunderz99.cosmos.condition;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.microsoft.azure.documentdb.SqlParameterCollection;
+import com.azure.cosmos.models.SqlParameter;
 
 import io.github.thunderz99.cosmos.dto.RecordData;
 
@@ -21,7 +22,7 @@ public class FilterQuery extends RecordData {
 	/**
 	 * params parts
 	 */
-	public SqlParameterCollection params;
+	public List<SqlParameter> params;
 
 	/**
 	 * condition index for global query. Always increment for a new filter cond.
@@ -45,7 +46,7 @@ public class FilterQuery extends RecordData {
 	public FilterQuery() {
 	}
 
-	public FilterQuery(StringBuilder queryText, SqlParameterCollection params, AtomicInteger conditionIndex,
+	public FilterQuery(StringBuilder queryText, List<SqlParameter> params, AtomicInteger conditionIndex,
 			AtomicInteger paramIndex) {
 		this.queryText = queryText;
 		this.params = params;

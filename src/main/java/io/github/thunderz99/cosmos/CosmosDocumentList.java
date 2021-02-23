@@ -1,10 +1,9 @@
 package io.github.thunderz99.cosmos;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-
-import org.json.JSONObject;
 
 import io.github.thunderz99.cosmos.util.JsonUtil;
 
@@ -18,34 +17,33 @@ import io.github.thunderz99.cosmos.util.JsonUtil;
  */
 public class CosmosDocumentList {
 
-	List<JSONObject> jsonObjs;
+	List<Map<String, Object>>  mapObjs = List.of();
 
-	public CosmosDocumentList(List<JSONObject> jsonObjs) {
-		this.jsonObjs = jsonObjs;
+
+	public CosmosDocumentList(List<Map<String, Object>> mapObjs) {
+		this.mapObjs = mapObjs;
 	}
 
 	public <T> List<T> toList(Class<T> classOfT) {
 
-		if (jsonObjs == null) {
+		if (mapObjs == null) {
 			return List.of();
 		}
 
-		return jsonObjs.stream().map(obj -> JsonUtil.fromJson(obj.toString(), classOfT)).collect(Collectors.toList());
+		return mapObjs.stream().map(obj -> JsonUtil.fromMap(obj, classOfT)).collect(Collectors.toList());
 	}
 
 	public List<Map<String, Object>> toMap() {
-		if (jsonObjs == null) {
-			return List.of();
-		}
-		return jsonObjs.stream().map(obj -> JsonUtil.toMap(obj.toString())).collect(Collectors.toList());
+		return mapObjs;
+
 	}
 
 	public int size() {
-		return jsonObjs.size();
+		return mapObjs.size();
 	}
 
 	public String toJson() {
-		return JsonUtil.toJson(jsonObjs);
+		return JsonUtil.toJson(mapObjs);
 	}
 
 	public String toString() {

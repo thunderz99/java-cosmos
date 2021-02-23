@@ -1,12 +1,12 @@
 package io.github.thunderz99.cosmos.condition;
 
+import com.azure.cosmos.models.SqlParameter;
+import com.azure.cosmos.models.SqlQuerySpec;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
-
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
 
 /**
  * Expressions like "firstName OR lastName STARTSWITH" : "H"
@@ -60,7 +60,7 @@ public class OrExpressions implements Expression {
 				.collect(Collectors.joining(" OR", " (", " )"));
 
 		var params = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForParam).getParameters())
-				.reduce(new SqlParameterCollection(), (sum, elm) -> {
+				.reduce(new ArrayList<>(), (sum, elm) -> {
 					sum.addAll(elm);
 					return sum;
 				});

@@ -6,14 +6,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import com.azure.cosmos.models.SqlParameter;
 import org.assertj.core.util.Lists;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import com.microsoft.azure.documentdb.DocumentClientException;
-import com.microsoft.azure.documentdb.SqlParameter;
-import com.microsoft.azure.documentdb.SqlParameterCollection;
 
 import io.github.cdimascio.dotenv.Dotenv;
 import io.github.thunderz99.cosmos.condition.Condition;
@@ -57,13 +54,13 @@ class CosmosDatabaseTest {
 	}
 
 	@AfterAll
-	public static void afterAll() throws DocumentClientException {
+	public static void afterAll() throws Exception {
 		// cosmos.deleteCollection(dbName, coll);
 		// cosmos.deleteDatabase(dbName);
 	}
 
 	@Test
-	void createAndReadShouldWork() throws DocumentClientException {
+	void createAndReadShouldWork() throws Exception {
 
 		var user = new User("unittest_create_01", "first01", "last01");
 		db.delete(coll, user.id, "Users");
@@ -84,7 +81,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void createShouldThrowWhenDataNull() throws DocumentClientException {
+	void createShouldThrowWhenDataNull() throws Exception {
 		User user = null;
 		assertThatThrownBy(() -> db.create(coll, user, "Users")).isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("create data UnitTest Users");
@@ -92,7 +89,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void updateShouldWork() throws DocumentClientException {
+	void updateShouldWork() throws Exception {
 
 		var user = new User("unittest_update_01", "first01", "last01");
 		db.delete(coll, user.id, "Users");
@@ -123,7 +120,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void upsertShouldWork() throws DocumentClientException {
+	void upsertShouldWork() throws Exception {
 		var user = new User("unittest_upsert_01", "first01", "last01");
 		db.delete(coll, user.id, "Users");
 
@@ -205,7 +202,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	public void Find_should_work_with_filter() throws DocumentClientException {
+	public void Find_should_work_with_filter() throws Exception {
 
 		var user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "2020-10-01", "Blanco");
 		var user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "2020-11-01", "Typescript", "Javascript", "React");
@@ -356,7 +353,7 @@ class CosmosDatabaseTest {
 		var queryText = "SELECT c.gender, c.grade\n" + "    FROM Families f\n"
 				+ "    JOIN c IN f.children WHERE f.address.state = @state ORDER BY f.id ASC";
 
-		var params = new SqlParameterCollection(new SqlParameter("@state", "NY"));
+		var params = Lists.newArrayList(new SqlParameter("@state", "NY"));
 
 		var cond = Condition.rawSql(queryText, params);
 
@@ -412,38 +409,14 @@ class CosmosDatabaseTest {
 			} finally {
 				var toDelete = db.find(coll, Condition.filter(), partition).toMap();
 				for(var map : toDelete){
-					var selfLink = map.get("_self").toString();
-					db.deleteBySelfLink(selfLink, partition);
+					var idDelete = map.get("id").toString();
+					db.delete(coll, idDelete, partition);
 				}
 			}
 		}
 
 	}
 
-	@Test
-	void delete_by_self_link_should_work() throws Exception {
-
-		var partition = "SelfLink";
-		var id = "delete_by_self_link_should_work";
-		try {
-			var data = Map.of("id", id, "name", "Lee");
-			var upserted = db.upsert(coll, data, partition).toMap();
-			assertThat(upserted).isNotNull();
-
-			var selfLink = upserted.get("_self").toString();
-			assertThat(selfLink).isNotNull();
-
-			db.deleteBySelfLink(selfLink, partition);
-
-			var read = db.readSuppressing404(coll, id, partition);
-
-			//not exist after deleteBySelfLink
-			assertThat(read).isNull();
-
-		} finally {
-			db.delete(coll, id, partition);
-		}
-	}
 
 	static void initFamiliesData() throws Exception {
 		var partition = "Families";

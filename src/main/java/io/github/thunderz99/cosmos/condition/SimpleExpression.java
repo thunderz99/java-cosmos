@@ -2,14 +2,13 @@ package io.github.thunderz99.cosmos.condition;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import com.microsoft.azure.documentdb.SqlParameter;
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
-
+import com.azure.cosmos.models.SqlParameter;
+import com.azure.cosmos.models.SqlQuerySpec;
 import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 
@@ -42,7 +41,7 @@ public class SimpleExpression implements Expression {
 	public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
 
 		var ret = new SqlQuerySpec();
-		var params = new SqlParameterCollection();
+		var params = new ArrayList<SqlParameter>();
 
 		// fullName.last -> @param001_fullName__last
 		var paramName = String.format("@param%03d_%s", paramIndex.get(), this.key.replace(".", "__"));
@@ -96,7 +95,7 @@ public class SimpleExpression implements Expression {
 	 * "( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )", and add
 	 * paramsValue into params
 	 */
-	static String buildArray(String key, String paramName, Collection<?> paramValue, SqlParameterCollection params) {
+	static String buildArray(String key, String paramName, Collection<?> paramValue, List<SqlParameter> params) {
 		var ret = new StringBuilder(String.format(" (%s IN (", Condition.getFormattedKey(key)));
 
 		int index = 0;
