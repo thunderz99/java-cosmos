@@ -14,19 +14,16 @@ import java.util.List;
  *
  */
 
-import java.util.Objects;
 import java.util.regex.Pattern;
 
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosClientBuilder;
 import com.azure.cosmos.ConsistencyLevel;
 import com.azure.cosmos.CosmosContainer;
-import com.azure.cosmos.implementation.Index;
 import com.azure.cosmos.models.CosmosContainerProperties;
-import com.azure.cosmos.models.IndexingPolicy;
 import com.azure.cosmos.models.ThroughputProperties;
-import com.azure.cosmos.implementation.DataType;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,7 +41,7 @@ import io.github.thunderz99.cosmos.util.Checker;
  * </pre>
  *
  */
-public class Cosmos {
+public class Cosmos implements AutoCloseable {
 
 	private static Logger log = LoggerFactory.getLogger(Cosmos.class);
 
@@ -52,11 +49,28 @@ public class Cosmos {
 
 	String account = "";
 
-	static Pattern p = Pattern.compile("AccountEndpoint=(?<endpoint>.+);AccountKey=(?<key>.+)");
+	static Pattern p = Pattern.compile("AccountEndpoint=(?<endpoint>.+);AccountKey=(?<key>.+);");
 
-	static Pattern accountPattern = Pattern.compile("https://(?<account>.+)\\.documents.azure.com.*");
+	static Pattern accountPattern = Pattern.compile("https://(?<account>[\\w\\-]+)\\..*");
 
 	public Cosmos(String connectionString) {
+
+		Pair<String, String> pair = parseConnectionString(connectionString);
+		var endpoint = pair.getLeft();
+		var key = pair.getRight();
+
+		this.account = parseAcount(endpoint);
+
+		this.client = new CosmosClientBuilder()
+				.endpoint(endpoint)
+				.key(key)
+				.preferredRegions(List.of("Japan East", "West US"))
+				.consistencyLevel(ConsistencyLevel.SESSION)
+				.contentResponseOnWriteEnabled(true)
+				.buildClient();
+	}
+
+	static Pair<String, String> parseConnectionString(String connectionString) {
 
 		var matcher = p.matcher(connectionString);
 		if (!matcher.find()) {
@@ -67,7 +81,6 @@ public class Cosmos {
 		String key = matcher.group("key");
 
 		Checker.check(StringUtils.isNotBlank(endpoint), "Make sure connectionString contains 'AccountEndpoint=' ");
-
 		Checker.check(StringUtils.isNotBlank(key), "Make sure connectionString contains 'AccountKey='");
 
 		if(log.isInfoEnabled()){
@@ -75,18 +88,20 @@ public class Cosmos {
 			log.info("key:{}...", key.substring(0, 3));
 		}
 
-		var matcherAccount = accountPattern.matcher(endpoint);
-		this.account = matcher.group("account");
+		return Pair.of(endpoint, key);
+	}
 
-		Checker.check(StringUtils.isNotBlank(account), "Make sure endpoint is correct");
 
-		this.client = new CosmosClientBuilder()
-				.endpoint(endpoint)
-				.key(key)
-				.preferredRegions(List.of("Japan East", "West US"))
-				.consistencyLevel(ConsistencyLevel.SESSION)
-				.contentResponseOnWriteEnabled(true)
-				.buildClient();
+	static String parseAcount(String endpoint) {
+		var matcher = accountPattern.matcher(endpoint);
+		if (!matcher.find()) {
+			throw new IllegalStateException(
+					"Make sure endpoint matches https://xxx.yyy ");
+		}
+		var account = matcher.group("account");
+		Checker.check(StringUtils.isNotBlank(account), "Make sure account is correct");
+
+		return account;
 	}
 
 
@@ -215,6 +230,7 @@ public class Cosmos {
 		return this.account;
 	}
 
+	@Override
 	public void close(){
 		if(this.client != null){
 			this.client.close();

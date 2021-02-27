@@ -55,8 +55,7 @@ class CosmosDatabaseTest {
 
 	@AfterAll
 	public static void afterAll() throws Exception {
-		// cosmos.deleteCollection(dbName, coll);
-		// cosmos.deleteDatabase(dbName);
+		cosmos.close();
 	}
 
 	@Test

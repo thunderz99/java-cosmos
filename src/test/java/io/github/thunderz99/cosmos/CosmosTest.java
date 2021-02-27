@@ -1,23 +1,23 @@
 package io.github.thunderz99.cosmos;
 
-import static org.assertj.core.api.Assertions.*;
-
 import org.junit.jupiter.api.Test;
 
-import com.microsoft.azure.documentdb.DocumentClientException;
-
 import io.github.cdimascio.dotenv.Dotenv;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class CosmosTest {
 
 	static Dotenv dotenv = Dotenv.load();
 
 	@Test
-	void testConnectionString() throws DocumentClientException {
-		var cosmos = new Cosmos("AccountEndpoint=https://example.azure.com:443/;AccountKey=abcd==;");
+	void parse_connection_string_should_work() {
+		var pair = Cosmos.parseConnectionString("AccountEndpoint=https://example-dev.documents.azure.com:443/;AccountKey=abcd==;");
+		assertThat(pair.getLeft()).isEqualTo("https://example-dev.documents.azure.com:443/");
+		assertThat(pair.getRight()).isEqualTo("abcd==");
 
-		assertThat(cosmos.client).isNotNull();
-
+		var account = Cosmos.parseAcount(pair.getLeft());
+		assertThat(account).isEqualTo("example-dev");
 	}
 
 }
