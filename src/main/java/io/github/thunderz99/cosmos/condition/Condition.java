@@ -227,12 +227,23 @@ public class Condition {
 				//raw condition. Used to generate always true/false cond. E.g. "1=1", "1=0"
 
 				var rawText = entry.getValue().toString();
-				if(StringUtils.isEmpty(rawText)){
+				if (StringUtils.isEmpty(rawText)) {
 					continue;
 				}
 
 				subFilterQueryToAdd = connectPart + " (" + rawText + ")";
-			
+			} else if (SubConditionType.SUB_COND_AND.name().equals((entry.getKey()))){
+				// sub query
+				var value = entry.getValue();
+				if (!(value instanceof List<?>)) {
+					continue;
+				}
+				@SuppressWarnings("unchecked")
+				var list = (List<Condition>) value;
+
+				subFilterQueryToAdd = generateFilterQuery4List(list, "AND", connectPart, params, conditionIndex, paramIndex);
+
+
 			} else if (SubConditionType.SUB_COND_OR.name().equals(entry.getKey())) {
 				// sub query
 				var value = entry.getValue();
@@ -242,23 +253,7 @@ public class Condition {
 				@SuppressWarnings("unchecked")
 				var list = (List<Condition>) value;
 
-				List<String> subTexts = new ArrayList<>();
-
-				for (var subCond : list) {
-					var subFilterQuery = subCond.generateFilterQuery(new StringBuilder(), params, conditionIndex,
-							paramIndex);
-
-					subTexts.add(removeConnectPart(subFilterQuery.queryText.toString()));
-
-					params = subFilterQuery.params;
-					conditionIndex = subFilterQuery.conditionIndex;
-					paramIndex = subFilterQuery.paramIndex;
-				}
-
-				subFilterQueryToAdd = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
-						.collect(Collectors.joining(" OR ", connectPart + " (", ")"));
-					// remove empty sub queries
-				subFilterQueryToAdd = StringUtils.removeStart(subFilterQueryToAdd, connectPart + " ()");
+				subFilterQueryToAdd = generateFilterQuery4List(list, "OR", connectPart, params, conditionIndex, paramIndex);
 					
 			} else {
 				var exp = parse(entry.getKey(), entry.getValue());
@@ -272,6 +267,26 @@ public class Condition {
 		}
 
 		return new FilterQuery(queryText, params, conditionIndex, paramIndex);
+	}
+
+	String generateFilterQuery4List(List<Condition> conds, String joiner, String connectPart, SqlParameterCollection params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+		List<String> subTexts = new ArrayList<>();
+
+		for (var subCond : conds) {
+			var subFilterQuery = subCond.generateFilterQuery(new StringBuilder(), params, conditionIndex,
+					paramIndex);
+
+			subTexts.add(removeConnectPart(subFilterQuery.queryText.toString()));
+
+			params = subFilterQuery.params;
+			conditionIndex = subFilterQuery.conditionIndex;
+			paramIndex = subFilterQuery.paramIndex;
+		}
+
+		var subFilterQuery = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
+				.collect(Collectors.joining(" " + joiner + " ", connectPart + " (", ")"));
+		// remove empty sub queries
+		return StringUtils.removeStart(subFilterQuery, connectPart + " ()");
 	}
 
 	private String removeConnectPart(String subQueryText) {
@@ -456,11 +471,11 @@ public class Condition {
 	 * sub query 's OR / RAW operator
 	 *
 	 * <p>
-	 * TODO SUB_COND_AND / SUB_COND_NOT operator
+	 * TODO SUB_COND_NOT operator
 	 * </p>
 	 */
 	public enum SubConditionType {
-		SUB_COND_OR, SUB_COND_RAW
+		SUB_COND_AND, SUB_COND_OR, SUB_COND_RAW
 	}
 
 	/**

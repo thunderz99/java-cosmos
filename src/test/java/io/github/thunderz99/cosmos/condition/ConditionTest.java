@@ -1,6 +1,7 @@
 package io.github.thunderz99.cosmos.condition;
 
 import static org.assertj.core.api.Assertions.*;
+import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
 
 import java.util.List;
 
@@ -156,10 +157,10 @@ class ConditionTest {
 	}
 
 	@Test
-	public void buildQuerySpec_should_work_for_sub_cond() {
+	public void buildQuerySpec_should_work_for_sub_cond_or() {
 
 		var q = Condition.filter("fullName.last", "Hanks", //
-				"SUB_COND_OR",
+				SubConditionType.SUB_COND_OR,
 				List.of(Condition.filter("position", "leader"), Condition.filter("organization", "executive")), //
 				"age", 30) //
 				.sort("_ts", "DESC") //
@@ -179,10 +180,10 @@ class ConditionTest {
 	}
 
 	@Test
-	public void buildQuerySpec_should_work_for_sub_cond_from_the_beginning() {
+	public void buildQuerySpec_should_work_for_sub_cond_or_from_the_beginning() {
 
 		var q = Condition.filter( //
-				"SUB_COND_OR",
+				SubConditionType.SUB_COND_OR,
 				List.of(Condition.filter("position", "leader"), Condition.filter("organization", "executive")) //
 		) //
 				.sort("_ts", "DESC") //
@@ -192,6 +193,28 @@ class ConditionTest {
 
 		assertThat(q.getQueryText().trim()).isEqualTo(
 				"SELECT * FROM c WHERE ((c[\"position\"] = @param000_position) OR (c[\"organization\"] = @param001_organization)) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+
+		var params = List.copyOf(q.getParameters());
+
+		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_position", "leader").toJson());
+		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_organization", "executive").toJson());
+	}
+
+
+	@Test
+	public void buildQuerySpec_should_work_for_sub_cond_and() {
+
+		var q = Condition.filter( //
+				SubConditionType.SUB_COND_AND,
+				List.of(Condition.filter("position", "leader"), Condition.filter("organization", "executive")) //
+		) //
+				.sort("_ts", "DESC") //
+				.offset(10) //
+				.limit(20) //
+				.toQuerySpec();
+
+		assertThat(q.getQueryText().trim()).isEqualTo(
+				"SELECT * FROM c WHERE ((c[\"position\"] = @param000_position) AND (c[\"organization\"] = @param001_organization)) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
 		var params = List.copyOf(q.getParameters());
 
@@ -214,7 +237,7 @@ class ConditionTest {
 	public void buildQuerySpec_should_work_for_empty_sub_query() {
 
 		{
-			var q = Condition.filter("SUB_COND_OR", //
+			var q = Condition.filter(SubConditionType.SUB_COND_OR, //
 					List.of()).toQuerySpec();
 
 			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c OFFSET 0 LIMIT 100");
@@ -222,7 +245,7 @@ class ConditionTest {
 		}
 
 		{
-			var q = Condition.filter("SUB_COND_OR", //
+			var q = Condition.filter(SubConditionType.SUB_COND_OR, //
 					List.of(Condition.filter("id", 1))).toQuerySpec();
 
 			assertThat(q.getQueryText().trim())
@@ -231,7 +254,7 @@ class ConditionTest {
 		}
 
 		{
-			var q = Condition.filter("id", 1, "SUB_COND_OR", //
+			var q = Condition.filter("id", 1, SubConditionType.SUB_COND_AND, //
 					List.of()).toQuerySpec();
 
 			assertThat(q.getQueryText().trim())
@@ -240,7 +263,7 @@ class ConditionTest {
 		}
 
 		{
-			var q = Condition.filter("SUB_COND_OR", //
+			var q = Condition.filter(SubConditionType.SUB_COND_AND, //
 					List.of(Condition.filter(), Condition.filter())).toQuerySpec();
 
 			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c OFFSET 0 LIMIT 100");
@@ -248,7 +271,7 @@ class ConditionTest {
 		}
 
 		{
-			var q = Condition.filter("id", 1, "SUB_COND_OR", //
+			var q = Condition.filter("id", 1, SubConditionType.SUB_COND_OR, //
 					List.of(Condition.filter())).toQuerySpec();
 
 			assertThat(q.getQueryText().trim())
@@ -257,7 +280,7 @@ class ConditionTest {
 		}
 
 		{
-			var q = Condition.filter("id", 1, "SUB_COND_OR", //
+			var q = Condition.filter("id", 1, SubConditionType.SUB_COND_OR, //
 					List.of(Condition.filter(), Condition.filter("name", "Tom"))).toQuerySpec();
 
 			assertThat(q.getQueryText().trim()).isEqualTo(
