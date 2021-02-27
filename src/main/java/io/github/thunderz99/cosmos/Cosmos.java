@@ -144,7 +144,7 @@ public class Cosmos {
 		var options = new RequestOptions();
 		options.setOfferThroughput(400);
 		var result = client.createDatabase(dbObj, options);
-		log.info("created database:{}, account:{}", db, getAccount(client));
+		log.info("created database:{}, account:{}", db, account);
 		return result.getResource();
 	}
 

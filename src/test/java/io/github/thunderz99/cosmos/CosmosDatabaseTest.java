@@ -1,6 +1,7 @@
 package io.github.thunderz99.cosmos;
 
 import static org.assertj.core.api.Assertions.*;
+import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -370,13 +371,13 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void sub_cond_query_should_work() throws Exception {
+	void sub_cond_query_should_work_4_OR() throws Exception {
 		// test json from cosmosdb official site
 		// https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
 
 		var partition = "Families";
 
-		var cond = Condition.filter("SUB_COND_OR", List.of( //
+		var cond = Condition.filter(SubConditionType.SUB_COND_OR, List.of( //
 				Condition.filter("address.state", "WA"), //
 				Condition.filter("id", "WakefieldFamily"))) //
 				.sort("id", "ASC") //
@@ -388,6 +389,27 @@ class CosmosDatabaseTest {
 
 		assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
 		assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
+
+	}
+
+	@Test
+	void sub_cond_query_should_work_4_AND() throws Exception {
+		// test json from cosmosdb official site
+		// https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
+
+		var partition = "Families";
+
+		var cond = Condition.filter(SubConditionType.SUB_COND_AND, List.of( //
+				Condition.filter("address.state", "WA"), //
+				Condition.filter("lastName", "Andersen"))) //
+				.sort("id", "ASC") //
+				;
+
+		var items = db.find(coll, cond, partition).toMap();
+
+		assertThat(items).hasSize(1);
+
+		assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
 
 	}
 
