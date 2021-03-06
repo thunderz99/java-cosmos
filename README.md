@@ -20,7 +20,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.2.0</version>
+  <version>0.2.2</version>
 </dependency>
 
 ```
@@ -143,7 +143,9 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
       "age >=", 20, // see cosmosdb compare operators
       "middleName OR firstName STARTSWITH", "H", // see cosmosdb STARTSWITH
       "desciption CONTAINS", "Project manager",// see cosmosdb CONTAINS
-      "skill ARRAY_CONTAINS", "Java", // see cosmosdb ARRAY_CONTAINS
+      "tagIds ARRAY_CONTAINS", "T001", // see cosmosdb ARRAY_CONTAINS
+      "tagIds ARRAY_CONTAINS_ANY", List.of("T001", "T002"), // see cosmosdb EXISTS
+      "tags ARRAY_CONTAINS_ALL name", List.of("Java", "React"), // see cosmosdb EXISTS
       "SUB_COND_OR", List.of( // add an or sub condition
         Condition.filter("position", "leader"),  // subquery's fields/order/offset/limit will be ignored
         Condition.filter("organization.id", "executive_committee"))

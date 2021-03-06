@@ -2,6 +2,7 @@ package io.github.thunderz99.cosmos.condition;
 
 import java.util.ArrayList;
 import java.util.Collection;
+
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -13,6 +14,13 @@ import com.microsoft.azure.documentdb.SqlQuerySpec;
 import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 
+/**
+ * A class representing simple expression
+ *
+ * {@code
+ * c.id = "001", c.age > 15, c.skills CONTAINS "java", and other simple filter
+ * }
+ */
 public class SimpleExpression implements Expression {
 
 	public static final Pattern functionPattern = Pattern.compile("\\w+");
@@ -73,6 +81,7 @@ public class SimpleExpression implements Expression {
 				//use c["key"] for cosmosdb reserved words
 				ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, paramName));
 			} else {
+
 				ret.setQueryText(String.format(" (%s(%s, %s))", this.operator, formattedKey, paramName));
 			}
 			params.add(new SqlParameter(paramName, paramValue));
@@ -114,4 +123,5 @@ public class SimpleExpression implements Expression {
 
 		return ret.toString();
 	}
+
 }

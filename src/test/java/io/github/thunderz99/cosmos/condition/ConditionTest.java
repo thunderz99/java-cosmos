@@ -341,4 +341,48 @@ class ConditionTest {
 
 	}
 
+	@Test
+	public void buildQuerySpec_should_work_for_ARRAY_CONTAINS_ANY() {
+
+		var q = Condition.filter("fullName.last", "Hanks", //
+				"tags ARRAY_CONTAINS_ANY", List.of("id001", "id002", "id005"), //
+				"age >", 20 //
+				)
+				.sort("_ts", "DESC") //
+				.offset(10) //
+				.limit(20) //
+				.toQuerySpec();
+
+		assertThat(q.getQueryText().trim()).isEqualTo(
+				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE ARRAY_CONTAINS(@param001_tags, x))) AND (c[\"age\"] > @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+
+		var params = List.copyOf(q.getParameters());
+
+		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
+		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_tags", List.of("id001", "id002", "id005")).toJson());
+		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_age", 20).toJson());
+	}
+
+	@Test
+	public void buildQuerySpec_should_work_for_ARRAY_CONTAINS_ALL() {
+
+		var q = Condition.filter("fullName.last", "Hanks", //
+				"tags ARRAY_CONTAINS_ALL", List.of("id001", "id002"), //
+				"age >", 20 //
+		)
+				.sort("_ts", "DESC") //
+				.offset(10) //
+				.limit(20) //
+				.toQuerySpec();
+
+		assertThat(q.getQueryText().trim()).isEqualTo(
+				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE x = @param001_tags__0) AND EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE x = @param001_tags__1)) AND (c[\"age\"] > @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+
+		var params = List.copyOf(q.getParameters());
+
+		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
+		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_tags__0", "id001").toJson());
+		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param001_tags__1", "id002").toJson());
+		assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param002_age", 20).toJson());
+	}
 }
