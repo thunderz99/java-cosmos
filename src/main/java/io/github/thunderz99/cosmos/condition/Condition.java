@@ -528,7 +528,7 @@ public class Condition {
 	/**
 	 * cond always true
 	 *
-	 * @return
+	 * @return trueCondition
 	 */
 	public static Condition trueCondition() {
 		return Condition.filter(SubConditionType.SUB_COND_RAW, COND_SQL_TRUE);
@@ -537,7 +537,7 @@ public class Condition {
 	/**
 	 * cond always false
 	 *
-	 * @return
+	 * @return falseCondition
 	 */
 	public static Condition falseCondition() {
 		return Condition.filter(SubConditionType.SUB_COND_RAW, COND_SQL_FALSE);
@@ -545,7 +545,8 @@ public class Condition {
 
 	/**
 	 * make a deep copy condition
-	 * @return
+	 *
+	 * @return copy of condition
 	 */
 	public Condition copy() {
 		var cond = new Condition();

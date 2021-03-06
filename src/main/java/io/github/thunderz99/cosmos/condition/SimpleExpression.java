@@ -17,7 +17,11 @@ import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 
 /**
- * A simple expression representing c.id = "001", c.age > 15, c.skills CONTAINS "java", and other simple filter
+ * A class representing simple expression
+ *
+ * {@code
+ * c.id = "001", c.age > 15, c.skills CONTAINS "java", and other simple filter
+ * }
  */
 public class SimpleExpression implements Expression {
 

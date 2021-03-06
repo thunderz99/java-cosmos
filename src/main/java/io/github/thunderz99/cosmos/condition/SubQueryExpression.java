@@ -17,7 +17,11 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * An expression representing ARRAY_CONTAINS_ANY, ARRAY_CONTAINS_ALL, and others which using EXISTS(SELECT VALUE x FROM x IN c.items)
+ * a class representing expression using subqueries and array operations
+ *
+ * {@code
+ * ARRAY_CONTAINS_ANY, ARRAY_CONTAINS_ALL, and others which using EXISTS(SELECT VALUE x FROM x IN c.items)
+ * }
  *
  * <p>
  *     see cosmosdb subquery for details
