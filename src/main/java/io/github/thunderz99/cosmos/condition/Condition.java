@@ -52,6 +52,28 @@ public class Condition {
 	 */
 	public SqlQuerySpec rawQuerySpec = null;
 
+	public static final String COND_SQL_TRUE = "1=1";
+	public static final String COND_SQL_FALSE = "1=0";
+
+	/**
+	 * OperatorType for WHERE clause
+	 *
+	 * {@code
+	 * BINARY_OPERATORの例：{@code =, !=, >, >=, <, <= }
+	 * BINARY_FUCTIONの例： STARTSWITH, ENDSWITH, CONTAINS, ARRAY_CONTAINS
+	 * }
+	 *
+	 */
+	public enum OperatorType {
+		BINARY_OPERATOR, BINARY_FUNCTION
+	}
+
+	public static final Pattern simpleExpressionPattern = Pattern
+			.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|=|!=|<|<=|>|>=)\\s*$");
+
+	public static final Pattern subQueryExpressionPattern = Pattern
+			.compile("(.+)\\s(ARRAY_CONTAINS_ANY|ARRAY_CONTAINS_ALL)\\s*(.*)$");
+
 	/**
 	 * add filters
 	 * @param filters search filters using key / value pair.
@@ -385,22 +407,6 @@ public class Condition {
 	}
 
 	/**
-	 * OperatorType for WHERE clause
-	 *
-	 * {@code
-	 * BINARY_OPERATORの例：{@code =, !=, >, >=, <, <= }
-	 * BINARY_FUCTIONの例： STARTSWITH, ENDSWITH, CONTAINS, ARRAY_CONTAINS
-	 * }
-	 *
-	 */
-	public enum OperatorType {
-		BINARY_OPERATOR, BINARY_FUNCTION
-	}
-
-	public static final Pattern expressionPattern = Pattern
-			.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|=|!=|<|<=|>|>=)\\s*$");
-
-	/**
 	 * parse key and value to generate a valid expression
 	 * @param key filter's key
 	 * @param value filter's value
@@ -408,20 +414,28 @@ public class Condition {
 	 */
 	public static Expression parse(String key, Object value) {
 
-		var m = expressionPattern.matcher(key);
+		//simple expression
+		var simpleMatcher = simpleExpressionPattern.matcher(key);
+		if(simpleMatcher.find()){
+			if (key.contains(" OR ")) {
+				return new OrExpressions(simpleMatcher.group(1), value, simpleMatcher.group(2));
+			} else {
+				return new SimpleExpression(simpleMatcher.group(1), value, simpleMatcher.group(2));
+			}
+		}
 
-		if (!m.find()) {
-			if (key.contains(" OR ")) {
-				return new OrExpressions(key, value);
-			} else {
-				return new SimpleExpression(key, value);
-			}
+		//subquery expression
+		var subqueryMatcher = subQueryExpressionPattern.matcher(key);
+
+		if(subqueryMatcher.find()){
+			return new SubQueryExpression(subqueryMatcher.group(1), subqueryMatcher.group(3), value, subqueryMatcher.group(2));
+		}
+
+		//default key / value expression
+		if (key.contains(" OR ")) {
+			return new OrExpressions(key, value);
 		} else {
-			if (key.contains(" OR ")) {
-				return new OrExpressions(m.group(1), value, m.group(2));
-			} else {
-				return new SimpleExpression(m.group(1), value, m.group(2));
-			}
+			return new SimpleExpression(key, value);
 		}
 	}
 
@@ -485,14 +499,66 @@ public class Condition {
 	 * @return formatted filter's key c["key1"]["key2"]
 	 */
 	static String getFormattedKey(String key) {
-		Checker.checkNotEmpty(key, "key");
+		return getFormattedKey(key, "c");
+	}
+
+	/**
+	 * Instead of c.key, return c["key"] or c["key1"]["key2"] for query. In order for cosmosdb reserved words
+	 *
+	 * @param key filter's key
+	 * @param
+	 * @return formatted filter's key c["key1"]["key2"]
+	 */
+	static String getFormattedKey(String key, String collectionAlias) {
+		Checker.checkNotBlank(collectionAlias, "collectionAlias");
+
+		if(StringUtils.isEmpty(key)){
+			return collectionAlias;
+		}
+
 		var parts = key.split("\\.");
 		var sb = new StringBuilder();
-		sb.append("c");
+		sb.append(collectionAlias);
 		for( var part : List.of(parts)){
 			sb.append("[\"" + part + "\"]");
 		}
 		return sb.toString();
 	}
 
+	/**
+	 * cond always true
+	 *
+	 * @return
+	 */
+	public static Condition trueCondition() {
+		return Condition.filter(SubConditionType.SUB_COND_RAW, COND_SQL_TRUE);
+	}
+
+	/**
+	 * cond always false
+	 *
+	 * @return
+	 */
+	public static Condition falseCondition() {
+		return Condition.filter(SubConditionType.SUB_COND_RAW, COND_SQL_FALSE);
+	}
+
+	/**
+	 * make a deep copy condition
+	 * @return
+	 */
+	public Condition copy() {
+		var cond = new Condition();
+
+		cond.filter = JsonUtil.toMap(JsonUtil.toJson(this.filter));
+		cond.limit = this.limit;
+		cond.offset = this.offset;
+		cond.sort = new ArrayList<>(this.sort);
+		cond.fields = new LinkedHashSet<>(this.fields);
+		if (this.rawQuerySpec != null) {
+			cond.rawQuerySpec = new SqlQuerySpec(this.rawQuerySpec.getQueryText(), this.rawQuerySpec.getParameters());
+		}
+
+		return cond;
+	}
 }

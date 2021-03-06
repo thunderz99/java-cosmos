@@ -209,7 +209,7 @@ class CosmosDatabaseTest {
 	public void Find_should_work_with_filter() throws DocumentClientException {
 
 		var user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "2020-10-01", "Blanco");
-		var user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "2020-11-01", "Typescript", "Javascript", "React");
+		var user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "2020-11-01", "Typescript", "Javascript", "React", "Java");
 		var user3 = new FullNameUser("id_find_filter3", "Tom", "Henry", 45, "2020-12-01", "Java", "Go", "Python");
 
 		try {
@@ -334,6 +334,46 @@ class CosmosDatabaseTest {
 
 				assertThat(users.size()).isEqualTo(1);
 				assertThat(users.get(0)).hasToString(user2.toString());
+
+				var count = db.count(coll, cond, "Users");
+
+				assertThat(count).isEqualTo(1);
+			}
+
+			// test ARRAY_CONTAINS_ANY
+			{
+				var cond = Condition.filter( //
+						"skills ARRAY_CONTAINS_ANY", List.of("Typescript", "Blanco"), //
+						"age <", 100) //
+						.sort("id", "ASC") //
+						.limit(10) //
+						.offset(0);
+
+				// test find
+				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+				assertThat(users.size()).isEqualTo(2);
+				assertThat(users.get(0).id).isEqualTo(user1.id);
+				assertThat(users.get(1).id).isEqualTo(user2.id);
+
+				var count = db.count(coll, cond, "Users");
+
+				assertThat(count).isEqualTo(2);
+			}
+			// test ARRAY_CONTAINS_ALL
+			{
+				var cond = Condition.filter( //
+						"skills ARRAY_CONTAINS_ALL", List.of("Typescript", "Java"), //
+						"age <", 100) //
+						.sort("id", "ASC") //
+						.limit(10) //
+						.offset(0);
+
+				// test find
+				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+				assertThat(users.size()).isEqualTo(1);
+				assertThat(users.get(0).id).isEqualTo(user2.id);
 
 				var count = db.count(coll, cond, "Users");
 
