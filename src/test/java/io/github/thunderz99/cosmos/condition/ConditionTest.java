@@ -342,6 +342,28 @@ class ConditionTest {
 	}
 
 	@Test
+	public void buildQuerySpec_should_work_for_LIKE() {
+
+		var q = Condition.filter("fullName.last", "Hanks", //
+				"fullName.first LIKE", "%om%", //
+				"age >", 20 //
+		)
+				.sort("_ts", "DESC") //
+				.offset(10) //
+				.limit(20) //
+				.toQuerySpec();
+
+		assertThat(q.getQueryText().trim()).isEqualTo(
+				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"fullName\"][\"first\"] LIKE @param001_fullName__first) AND (c[\"age\"] > @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+
+		var params = List.copyOf(q.getParameters());
+
+		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
+		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_fullName__first", "%om%").toJson());
+		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_age", 20).toJson());
+	}
+
+	@Test
 	public void buildQuerySpec_should_work_for_ARRAY_CONTAINS_ANY() {
 
 		var q = Condition.filter("fullName.last", "Hanks", //

@@ -58,13 +58,13 @@ class CosmosDatabaseTest {
 	}
 
 	@AfterAll
-	public static void afterAll() throws DocumentClientException {
+	public static void afterAll() throws Exception {
 		// cosmos.deleteCollection(dbName, coll);
 		// cosmos.deleteDatabase(dbName);
 	}
 
 	@Test
-	void createAndReadShouldWork() throws DocumentClientException {
+	void createAndReadShouldWork() throws Exception {
 
 		var user = new User("unittest_create_01", "first01", "last01");
 		db.delete(coll, user.id, "Users");
@@ -85,7 +85,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void createShouldThrowWhenDataNull() throws DocumentClientException {
+	void createShouldThrowWhenDataNull() throws Exception {
 		User user = null;
 		assertThatThrownBy(() -> db.create(coll, user, "Users")).isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("create data UnitTest Users");
@@ -93,7 +93,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void updateShouldWork() throws DocumentClientException {
+	void updateShouldWork() throws Exception {
 
 		var user = new User("unittest_update_01", "first01", "last01");
 		db.delete(coll, user.id, "Users");
@@ -124,7 +124,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void upsertShouldWork() throws DocumentClientException {
+	void upsertShouldWork() throws Exception {
 		var user = new User("unittest_upsert_01", "first01", "last01");
 		db.delete(coll, user.id, "Users");
 
@@ -206,7 +206,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	public void Find_should_work_with_filter() throws DocumentClientException {
+	public void Find_should_work_with_filter() throws Exception {
 
 		var user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "2020-10-01", "Blanco");
 		var user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "2020-11-01", "Typescript", "Javascript", "React", "Java");
@@ -338,6 +338,25 @@ class CosmosDatabaseTest {
 				var count = db.count(coll, cond, "Users");
 
 				assertThat(count).isEqualTo(1);
+			}
+			// test LIKE
+			{
+				var cond = Condition.filter( //
+						"fullName.last LIKE", "_ank_", //
+						"age <", 100) //
+						.sort("id", "ASC") //
+						.limit(10) //
+						.offset(0);
+
+				// test find
+				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+				assertThat(users.size()).isEqualTo(2);
+				assertThat(users.get(1).id).isEqualTo(user2.id);
+
+				var count = db.count(coll, cond, "Users");
+
+				assertThat(count).isEqualTo(2);
 			}
 
 			// test ARRAY_CONTAINS_ANY

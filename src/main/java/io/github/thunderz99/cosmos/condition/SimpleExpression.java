@@ -23,7 +23,7 @@ import io.github.thunderz99.cosmos.util.JsonUtil;
  */
 public class SimpleExpression implements Expression {
 
-	public static final Pattern functionPattern = Pattern.compile("\\w+");
+	public static final Pattern binaryOperatorPattern = Pattern.compile("LIKE|=|!=|<|<=|>|>=");
 
 	public String key;
 	public Object value;
@@ -42,8 +42,8 @@ public class SimpleExpression implements Expression {
 		this.key = key;
 		this.value = value;
 		this.operator = operator;
-		this.type = functionPattern.asPredicate().test(operator) ? OperatorType.BINARY_FUNCTION
-				: OperatorType.BINARY_OPERATOR;
+		this.type = binaryOperatorPattern.asPredicate().test(operator) ? OperatorType.BINARY_OPERATOR
+				: OperatorType.BINARY_FUNCTION;
 	}
 
 	@Override
