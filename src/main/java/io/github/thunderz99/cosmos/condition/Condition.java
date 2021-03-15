@@ -69,7 +69,7 @@ public class Condition {
 	}
 
 	public static final Pattern simpleExpressionPattern = Pattern
-			.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|=|!=|<|<=|>|>=)\\s*$");
+			.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|LIKE|=|!=|<|<=|>|>=)\\s*$");
 
 	public static final Pattern subQueryExpressionPattern = Pattern
 			.compile("(.+)\\s(ARRAY_CONTAINS_ANY|ARRAY_CONTAINS_ALL)\\s*(.*)$");

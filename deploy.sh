@@ -1,4 +1,4 @@
 #!/bin/bash
 
 # deploy the jar file to bintray repositories
-mvn deploy -s settings.xml
+mvn clean deploy -s settings.xml
