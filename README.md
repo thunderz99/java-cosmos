@@ -139,6 +139,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
       "id", "id010", // id equal to 'id010'
       "lastName", "Banks", // last name equal to Banks
       "firstName !=", "Andy", // not equal
+      "firstName LIKE", "%dy%", // see cosmosdb LIKE
       "location",  List.of("New York", "Paris"), // location is 'New York' or 'Paris'. see cosmosdb IN 
       "age >=", 20, // see cosmosdb compare operators
       "middleName OR firstName STARTSWITH", "H", // see cosmosdb STARTSWITH
