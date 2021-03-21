@@ -84,7 +84,8 @@ public class SimpleExpression implements Expression {
 
 				ret.setQueryText(String.format(" (%s(%s, %s))", this.operator, formattedKey, paramName));
 			}
-			params.add(new SqlParameter(paramName, paramValue));
+
+			params.add(Condition.createSqlParameter(paramName, paramValue));
 		}
 
 		ret.setParameters(params);
@@ -114,7 +115,7 @@ public class SimpleExpression implements Expression {
 		for (var v : paramValue) {
 			var paramNameIdx = String.format("%s__%d", paramName, index);
 			paramNameList.add(paramNameIdx);
-			params.add(new SqlParameter(paramNameIdx, v));
+			params.add(Condition.createSqlParameter(paramNameIdx, v));
 			index++;
 		}
 		ret.append(paramNameList.stream().collect(Collectors.joining(", ")));

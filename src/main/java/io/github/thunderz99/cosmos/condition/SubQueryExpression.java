@@ -99,7 +99,7 @@ public class SubQueryExpression implements Expression {
 		for (var v : paramValue) {
 			var paramNameIdx = String.format("%s__%d", paramName, index);
 			paramNameList.add(paramNameIdx);
-			params.add(new SqlParameter(paramNameIdx, v));
+			params.add(Condition.createSqlParameter(paramNameIdx, v));
 			index++;
 		}
 		ret.append(paramNameList.stream().collect(Collectors.joining(", ")));
@@ -131,7 +131,7 @@ public class SubQueryExpression implements Expression {
 		Checker.checkNotNull(filterKey, "filterKey");
 		Checker.checkNotBlank(paramName, "paramName");
 
-		params.add(new SqlParameter(paramName, paramValue));
+		params.add(Condition.createSqlParameter(paramName, paramValue));
 
 		if(paramValue instanceof Collection<?>){
 			//collection
@@ -175,7 +175,7 @@ public class SubQueryExpression implements Expression {
 
 			for(var value : paramCollection){
 				var subParamName = String.format("%s__%d", paramName, index);
-				params.add(new SqlParameter(subParamName, value));
+				params.add(Condition.createSqlParameter(subParamName, value));
 				subQueries.add(buildSimpleSubQuery(joinKey, filterKey, subParamName));
 				index++;
 			}
@@ -185,7 +185,7 @@ public class SubQueryExpression implements Expression {
 
 		} else {
 			//scalar
-			params.add(new SqlParameter(paramName, paramValue));
+			params.add(Condition.createSqlParameter(paramName, paramValue));
 			return String.format( " (%s)", buildSimpleSubQuery(joinKey, filterKey, paramName));
 		}
 	}

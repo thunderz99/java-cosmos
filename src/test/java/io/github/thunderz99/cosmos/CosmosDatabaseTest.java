@@ -204,6 +204,10 @@ class CosmosDatabaseTest {
 		}
 	}
 
+	public enum Skill {
+		Typescript, Javascript, Java, Python, Go
+	}
+
 	@Test
 	public void Find_should_work_with_filter() throws Exception {
 
@@ -396,6 +400,22 @@ class CosmosDatabaseTest {
 				var count = db.count(coll, cond, "Users");
 
 				assertThat(count).isEqualTo(1);
+			}
+
+			// test enum
+			{
+				var cond = Condition.filter( //
+						"skills ARRAY_CONTAINS", Skill.Python, //
+						"age <", 100) //
+						.sort("id", "ASC") //
+						.limit(10) //
+						.offset(0);
+
+				// test find
+				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+				assertThat(users.size()).isEqualTo(1);
+				assertThat(users.get(0).id).isEqualTo(user3.id);
 			}
 
 		} finally {
