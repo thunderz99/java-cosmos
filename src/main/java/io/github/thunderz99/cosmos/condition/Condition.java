@@ -567,8 +567,8 @@ public class Condition {
 	/**
 	 * fix enum exception in documentdb sdk
 	 *
-	 * @param key
-	 * @param value
+	 * @param key key of param
+	 * @param value value of param (enum will automatically convert to string by .name())
 	 * @return a SqlParameter instance created
 	 */
 	public static SqlParameter createSqlParameter(String key, Object value){
