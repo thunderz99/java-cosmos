@@ -23,7 +23,7 @@ import io.github.thunderz99.cosmos.util.JsonUtil;
  */
 public class SimpleExpression implements Expression {
 
-	public static final Pattern binaryOperatorPattern = Pattern.compile("LIKE|=|!=|<|<=|>|>=");
+	public static final Pattern binaryOperatorPattern = Pattern.compile("^\\s*(LIKE|IN|=|!=|<|<=|>|>=)\\s*$");
 
 	public String key;
 	public Object value;
@@ -67,9 +67,14 @@ public class SimpleExpression implements Expression {
 			if(coll.isEmpty()){
 				//if paramValue is empty, return a FALSE queryText.
 				ret.setQueryText(" (1=0)");
-			} else {
+			} else if("IN".equals(this.operator)){
+				// use IN
 				paramIndex.getAndIncrement();
 				ret.setQueryText(buildArray(this.key, paramName, (Collection<?>) paramValue, params));
+			} else {
+				// use ARRAY_CONTAINS by default to minimize the sql length
+				paramIndex.getAndIncrement();
+				ret.setQueryText(buildArrayContains(this.key, paramName, (Collection<?>) paramValue, params));
 			}
 
 		} else {
@@ -123,6 +128,19 @@ public class SimpleExpression implements Expression {
 		ret.append("))");
 
 		return ret.toString();
+	}
+
+	/**
+	 * A helper function to generate c.foo ARRAY_CONTAINS (...) queryText
+	 *
+	 * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
+	 * "(ARRAY_CONTAINS("@parentId", c["parentId"]))", and add
+	 * paramsValue into params
+	 */
+	static String buildArrayContains(String key, String paramName, Collection<?> paramValue, SqlParameterCollection params) {
+		var ret = String.format(" (ARRAY_CONTAINS(%s, %s))", paramName, Condition.getFormattedKey(key));
+		params.add(Condition.createSqlParameter(paramName, paramValue));
+		return ret;
 	}
 
 }
