@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import com.microsoft.azure.documentdb.SqlParameter;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.RegExUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -561,5 +562,21 @@ public class Condition {
 		}
 
 		return cond;
+	}
+
+	/**
+	 * fix enum exception
+	 *
+	 * @param key
+	 * @param value
+	 * @return
+	 */
+	public static SqlParameter createSqlParameter(String key, Object value){
+		if(value instanceof Enum<?>){
+			value = ((Enum<?>) value).name();
+		}
+
+		return new SqlParameter(key, value);
+
 	}
 }
