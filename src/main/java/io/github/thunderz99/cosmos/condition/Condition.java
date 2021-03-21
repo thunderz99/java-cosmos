@@ -565,11 +565,11 @@ public class Condition {
 	}
 
 	/**
-	 * fix enum exception
+	 * fix enum exception in documentdb sdk
 	 *
 	 * @param key
 	 * @param value
-	 * @return
+	 * @return a SqlParameter instance created
 	 */
 	public static SqlParameter createSqlParameter(String key, Object value){
 		if(value instanceof Enum<?>){
