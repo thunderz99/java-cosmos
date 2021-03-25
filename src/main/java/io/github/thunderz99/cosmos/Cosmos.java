@@ -89,7 +89,7 @@ public class Cosmos {
      */
     public CosmosDatabase getDatabase(String db) {
         Checker.checkNotEmpty(db, "db");
-		return new CosmosDatabase(client, db);
+		return new CosmosDatabase(client, db, this);
     }
 
 
@@ -108,7 +108,7 @@ public class Cosmos {
 			createCollectionIfNotExist(client, db, coll);
         }
 
-        return new CosmosDatabase(client, db);
+        return new CosmosDatabase(client, db, this);
     }
 
 	/**
@@ -127,7 +127,7 @@ public class Cosmos {
 	 * @throws DocumentClientException Cosmos client exception
 	 */
 	public void deleteCollection(String db, String coll) throws DocumentClientException {
-		deleteDatabase(client, db);
+		deleteCollection(client, db, coll);
 	}
 
 	static Database createDatabaseIfNotExist(DocumentClient client, String db) throws DocumentClientException {
