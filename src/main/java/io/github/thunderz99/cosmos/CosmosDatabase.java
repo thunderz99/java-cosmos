@@ -35,9 +35,12 @@ public class CosmosDatabase {
 
 	DocumentClient client;
 
-	CosmosDatabase(DocumentClient client, String db) {
+	Cosmos cosmosAccount;
+
+	CosmosDatabase(DocumentClient client, String db, Cosmos cosmosAccount) {
 		this.client = client;
 		this.db = db;
+		this.cosmosAccount = cosmosAccount;
 	}
 
 
@@ -534,6 +537,14 @@ public class CosmosDatabase {
 		}
 		this.account = Cosmos.getAccount(this.client);
 		return this.account;
+	}
+
+	/**
+	 * Get cosmos db account instance associated with this instance.
+	 * @return cosmosAccount
+	 */
+	public Cosmos getCosmosAccount() {
+		return this.cosmosAccount;
 	}
 
 }
