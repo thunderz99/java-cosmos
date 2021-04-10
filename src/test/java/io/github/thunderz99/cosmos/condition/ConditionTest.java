@@ -4,8 +4,9 @@ import static org.assertj.core.api.Assertions.*;
 import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
 
 import java.util.List;
+import java.util.Map;
 
-import io.github.thunderz99.cosmos.util.JsonUtil;
+import com.microsoft.azure.documentdb.SqlParameterCollection;
 import org.junit.jupiter.api.Test;
 
 import com.microsoft.azure.documentdb.SqlParameter;
@@ -293,6 +294,7 @@ class ConditionTest {
 	public void buildQuerySpec_should_work_for_raw_cond() {
 
 		{
+			// use SUB_COND_RAW
 			var q = Condition.filter("SUB_COND_RAW", //
 					"1=0").toQuerySpec();
 
@@ -301,6 +303,7 @@ class ConditionTest {
 		}
 
 		{
+			// use SUB_COND_RAW
 			var q = Condition.filter("open", true, //
 				"SUB_COND_RAW", //
 					"1=1").toQuerySpec();
@@ -309,6 +312,40 @@ class ConditionTest {
 			assertThat(q.getParameters()).hasSize(1);
 
 		}
+		{
+			// use SUB_COND_AND and Condition.rawSql
+			var q = Condition.filter("open", true, //
+					SubConditionType.SUB_COND_AND, //
+					List.of(Condition.rawSql("1=1"))).toQuerySpec();
+
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (c[\"open\"] = @param000_open) AND (1=1) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).hasSize(1);
+
+		}
+
+		{
+			// use SUB_COND_AND and Condition.rawSql
+
+			var params = new SqlParameterCollection(new SqlParameter("@raw_param_status", "%enroll%"));
+
+			var q = Condition.filter("open", true, //
+					SubConditionType.SUB_COND_AND, //
+					List.of(Condition.rawSql("c.status LIKE @raw_param_status", params))).toQuerySpec();
+
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (c[\"open\"] = @param000_open) AND (c.status LIKE @raw_param_status) OFFSET 0 LIMIT 100");
+			assertThat(q.getParameters()).hasSize(2);
+
+			var valueMap = Map.of("@raw_param_status", "%enroll%", "@param000_open", true);
+			q.getParameters().forEach( param -> {
+				String paramName = param.getName();
+				assertThat(paramName.equals("@param000_open") || paramName.equals("@raw_param_status"));
+
+				assertThat(param.getValue(Object.class)).isEqualTo(valueMap.get(paramName));
+			});
+
+
+		}
+
 
 	}
 

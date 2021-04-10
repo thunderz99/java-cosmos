@@ -20,7 +20,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.2.7</version>
+  <version>0.2.8</version>
 </dependency>
 
 ```
@@ -157,8 +157,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
     .offset(0) //optional offset
     .limit(100); //optional limit
     
-    var users = db.find("Collection1", cond).toList(User.class)
-}
+    var users = db.find("Collection1", cond).toList(User.class);
 
 
 ```
@@ -167,6 +166,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
 ### Raw SQL queries
 
 ```java
+    // use raw sql for a complete query
     var queryText = "SELECT c.gender, c.grade\n" + 
     "    FROM Families f\n" + 
     "    JOIN c IN f.children WHERE f.address.state = @state ORDER BY f.id ASC";
@@ -175,5 +175,20 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
 
 		var cond = Condition.rawSql(queryText, params);
 		var children = db.find(coll, cond, partition);
-}
+
+    // use raw sql as a where condition
+    var cond = Condition.filter(SubConditionType.AND, List.of(
+      Condition.filter("gender", "female"), 
+      Condition.rawSql("1=1"));
+    
+    // use raw sql as a where condition with params
+    var params =  new SqlParameterCollection(new SqlParameter("@state", "%NY%"));
+
+    var cond = Condition.filter(SubConditionType.AND, List.of(
+      Condition.filter("gender", "female"), 
+      Condition.rawSql("c.state LIKE @state"));      
+                                
+    db.find("Collection1", cond, "Partition1");
+                                
+    
 ```
