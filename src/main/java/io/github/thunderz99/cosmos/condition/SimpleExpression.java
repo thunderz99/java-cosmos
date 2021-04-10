@@ -3,6 +3,7 @@ package io.github.thunderz99.cosmos.condition;
 import java.util.ArrayList;
 import java.util.Collection;
 
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -13,6 +14,7 @@ import com.microsoft.azure.documentdb.SqlQuerySpec;
 
 import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * A class representing simple expression
@@ -28,7 +30,17 @@ public class SimpleExpression implements Expression {
 	public String key;
 	public Object value;
 	public OperatorType type = OperatorType.BINARY_OPERATOR;
-	public String operator = "=";
+
+	/**
+	 * Default is empty, which means the default operator based on filter's key and value
+	 *
+	 * <p>
+	 *     e.g. <br/>
+	 *     {@code {"status": ["A", "B"]} means status is either A or B } <br/>
+	 *     {@code {"status =": ["A", "B"]} means status equals ["A", "B"] }
+	 * </p>
+	 */
+	public String operator = "";
 
 	public SimpleExpression() {
 	}
@@ -58,26 +70,42 @@ public class SimpleExpression implements Expression {
 
 		if (paramValue instanceof Collection<?>) {
 			// e.g ( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )
-			if (!"=".equals(this.operator) && !"IN".equals(this.operator)) {
-				throw new IllegalArgumentException("IN collection expression not supported for " + this.operator);
-			}
 
 			var coll = (Collection<?>) paramValue;
 
-			if(coll.isEmpty()){
-				//if paramValue is empty, return a FALSE queryText.
-				ret.setQueryText(" (1=0)");
-			} else if("IN".equals(this.operator)){
+			if("IN".equals(this.operator)){
 				// use IN
+				if(coll.isEmpty()) {
+					//if paramValue is empty, return a FALSE queryText.
+					ret.setQueryText(" (1=0)");
+				} else {
+					paramIndex.getAndIncrement();
+					ret.setQueryText(buildArray(this.key, paramName, coll, params));
+				}
+			} else if(Set.of("=","!=").contains(this.operator)){
+				// use = or !=
 				paramIndex.getAndIncrement();
-				ret.setQueryText(buildArray(this.key, paramName, (Collection<?>) paramValue, params));
+				ret.setQueryText(String.format(" (%s %s %s)", Condition.getFormattedKey(this.key), this.operator, paramName));
+				params.add(Condition.createSqlParameter(paramName, paramValue));
 			} else {
-				// use ARRAY_CONTAINS by default to minimize the sql length
-				paramIndex.getAndIncrement();
-				ret.setQueryText(buildArrayContains(this.key, paramName, (Collection<?>) paramValue, params));
+				//the default operator for collection
+				//ARRAY_CONTAINS
+				if(coll.isEmpty()){
+					//if paramValue is empty, return a FALSE queryText.
+					ret.setQueryText(" (1=0)");
+				} else {
+					// use ARRAY_CONTAINS by default to minimize the sql length
+					paramIndex.getAndIncrement();
+					ret.setQueryText(buildArrayContains(this.key, paramName, coll, params));
+				}
 			}
 
 		} else {
+
+			if(StringUtils.isEmpty(this.operator)){
+				// set the default operator for scalar value
+				this.operator = "=";
+			}
 
 			paramIndex.getAndIncrement();
 			// other types
