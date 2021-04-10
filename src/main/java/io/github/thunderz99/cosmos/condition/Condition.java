@@ -240,6 +240,15 @@ public class Condition {
 	FilterQuery generateFilterQuery(StringBuilder queryText, SqlParameterCollection params,
 			AtomicInteger conditionIndex, AtomicInteger paramIndex) {
 
+		// process raw sql
+		if(this.rawQuerySpec != null){
+			conditionIndex.getAndIncrement();
+			params.addAll(this.rawQuerySpec.getParameters());
+			return new FilterQuery(new StringBuilder(this.rawQuerySpec.getQueryText()),
+					this.rawQuerySpec.getParameters(), conditionIndex, paramIndex);
+		}
+
+		// process filters
 		for (var entry : this.filter.entrySet()) {
 			// filter parts
 			var connectPart = getConnectPart(conditionIndex);
