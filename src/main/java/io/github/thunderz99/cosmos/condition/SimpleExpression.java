@@ -34,11 +34,12 @@ public class SimpleExpression implements Expression {
 	/**
 	 * Default is empty, which means the default operator based on filter's key and value
 	 *
-	 * <p>
-	 *     e.g. <br/>
-	 *     {@code {"status": ["A", "B"]} means status is either A or B } <br/>
-	 *     {@code {"status =": ["A", "B"]} means status equals ["A", "B"] }
-	 * </p>
+	 *     The difference between "=" and the default operator "":
+	 *     <div>e.g.</div>
+	 *     <ul>
+	 *     	 <li>{@code {"status": ["A", "B"]} means status is either A or B } </li>
+	 *       <li>{@code {"status =": ["A", "B"]} means status equals ["A", "B"] } </li>
+	 *     </ul>
 	 */
 	public String operator = "";
 
