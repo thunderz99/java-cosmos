@@ -52,4 +52,10 @@ public class CosmosTest {
 
 	}
 
+	@Test
+	void cosmos_account_should_be_get() throws DocumentClientException {
+		var cosmos = new Cosmos(dotenv.get("COSMOSDB_CONNECTION_STRING"));
+		assertThat(cosmos.getAccount()).isEqualTo("rapid-cosmos-japaneast");
+	}
+
 }

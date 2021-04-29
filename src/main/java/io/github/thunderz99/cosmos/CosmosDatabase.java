@@ -547,4 +547,12 @@ public class CosmosDatabase {
 		return this.cosmosAccount;
 	}
 
+	/**
+	 * Get cosmos database name associated with this instance.
+	 * @return database name
+	 */
+	public String getDatabaseName() {
+		return this.db;
+	}
+
 }

@@ -545,6 +545,11 @@ class CosmosDatabaseTest {
 		}
 	}
 
+	@Test
+	void get_database_name_should_work() throws Exception {
+		assertThat(db.getDatabaseName()).isEqualTo(dbName);
+	}
+
 	static void initFamiliesData() throws Exception {
 		var partition = "Families";
 
