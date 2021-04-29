@@ -290,7 +290,7 @@ public class Cosmos {
 		return "_partition";
 	}
 
-	String getAccount() throws DocumentClientException {
+	public String getAccount() throws DocumentClientException {
 		if(StringUtils.isNotEmpty(this.account)){
 			return this.account;
 		}
