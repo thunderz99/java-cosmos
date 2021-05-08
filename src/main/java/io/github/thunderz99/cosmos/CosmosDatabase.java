@@ -3,6 +3,7 @@ package io.github.thunderz99.cosmos;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.util.RetryUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.json.JSONObject;
@@ -466,6 +467,53 @@ public class CosmosDatabase {
 
 		return new CosmosDocumentList(jsonObjs);
 
+	}
+
+
+	/**
+	 * do an aggregate query by Aggregate and Condition
+	 *
+	 * {@code
+	 *
+	 *  var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
+	 *  var result = db.aggregate("Collection1", aggregate, "Users").toMap();
+	 *
+	 * }
+	 *
+	 * @param coll collection name
+	 * @param aggregate Aggregate function and groupBys
+	 * @param partition partition name
+	 * @throws Exception Cosmos client exception
+	 * @return CosmosDocumentList
+	 */
+	public CosmosDocumentList aggregate(String coll, Aggregate aggregate, String partition) throws Exception {
+		return aggregate(coll, aggregate, Condition.filter(), partition);
+	}
+
+	/**
+	 * do an aggregate query by Aggregate and Condition
+	 *
+	 * {@code
+	 *
+	 *  var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
+	 *  var cond = Condition.filter(
+	 *    "age>=", "20",
+	 *  );
+	 *
+	 *  var result = db.aggregate("Collection1", aggregate, cond, "Users").toMap();
+	 *
+	 * }
+	 *
+	 * @param coll collection name
+	 * @param aggregate Aggregate function and groupBys
+	 * @param cond condition to find
+	 * @param partition partition name
+	 * @throws Exception Cosmos client exception
+	 * @return CosmosDocumentList
+	 */
+	public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
+		cond.aggregate = aggregate;
+		return find(coll, cond, partition);
 	}
 
 	/**

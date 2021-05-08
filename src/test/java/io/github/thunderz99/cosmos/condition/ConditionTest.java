@@ -443,4 +443,16 @@ class ConditionTest {
 		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param001_tags__1", "id002").toJson());
 		assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param002_age", 20).toJson());
 	}
+
+	@Test
+	public void generateAggregateSelect_should_work() {
+		{
+			var aggregate = Aggregate.function("COUNT(1)");
+			assertThat(Condition.generateAggregateSelect(aggregate)).isEqualTo("COUNT(1)");
+		}
+		{
+			var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location.state");
+			assertThat(Condition.generateAggregateSelect(aggregate)).isEqualTo("COUNT(1) AS facetCount, c[\"status\"], c[\"location\"][\"state\"]");
+		}
+	}
 }
