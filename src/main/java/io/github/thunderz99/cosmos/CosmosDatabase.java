@@ -455,7 +455,7 @@ public class CosmosDatabase {
 		var options = new FeedOptions();
 		options.setPartitionKey(new PartitionKey(partition));
 
-		var querySpec = cond.toQuerySpec();
+		var querySpec = cond.toQuerySpec(cond.aggregate);
 
 		var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec, options).getQueryIterable().toList());
 

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import io.github.thunderz99.cosmos.condition.Aggregate;
 import org.assertj.core.util.Lists;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -416,6 +417,65 @@ class CosmosDatabaseTest {
 
 				assertThat(users.size()).isEqualTo(1);
 				assertThat(users.get(0).id).isEqualTo(user3.id);
+			}
+
+			// test aggregate(simple)
+			{
+				var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
+
+				// test find
+				var result = db.aggregate(coll, aggregate,"Users").toMap();
+				assertThat(result).hasSize(2);
+
+				var expect = Map.of("Hanks", 2, "Henry", 1);
+
+				var last1 = result.get(0).getOrDefault("last", "").toString();
+				assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(expect.get(last1));
+
+				var last2 = result.get(1).getOrDefault("last", "").toString();
+				assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(expect.get(last2));
+
+			}
+
+			// test aggregate(max)
+			{
+				var aggregate = Aggregate.function("MAX(c.age) AS maxAge, COUNT(1) AS facetCount").groupBy("fullName.last");
+
+				// test find
+				var result = db.aggregate(coll, aggregate,"Users").toMap();
+				assertThat(result).hasSize(2);
+
+				var expectAge = Map.of("Hanks", 30, "Henry", 45);
+				var expectCount = Map.of("Hanks", 2, "Henry", 1);
+
+				var last1 = result.get(0).getOrDefault("last", "").toString();
+				assertThat(Integer.parseInt(result.get(0).getOrDefault("maxAge", "-1").toString())).isEqualTo(expectAge.get(last1));
+				assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(expectCount.get(last1));
+
+				var last2 = result.get(1).getOrDefault("last", "").toString();
+				assertThat(Integer.parseInt(result.get(1).getOrDefault("maxAge", "-1").toString())).isEqualTo(expectAge.get(last2));
+				assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(expectCount.get(last2));
+
+			}
+
+			// test aggregate(with order by)
+			{
+				var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
+
+				var cond = Condition.filter("age <", 100).sort("last", "DESC");
+
+				// test find
+				var result = db.aggregate(coll, aggregate, cond, "Users").toMap();
+				assertThat(result).hasSize(2);
+
+				var last1 = result.get(0).getOrDefault("last", "").toString();
+				assertThat(last1).isEqualTo("Henry");
+				assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+
+				var last2 = result.get(1).getOrDefault("last", "").toString();
+				assertThat(last2).isEqualTo("Hanks");
+				assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(2);
+
 			}
 
 		} finally {

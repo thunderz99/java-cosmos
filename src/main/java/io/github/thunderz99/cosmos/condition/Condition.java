@@ -178,11 +178,11 @@ public class Condition {
 	 * @return query spec which can be used in official DocumentClient
 	 */
 	public SqlQuerySpec toQuerySpecForCount() {
-		var aggregate = Aggregate.function("COUNT(1)");
-		return toQuerySpec(aggregate);
+		var agg = Aggregate.function("COUNT(1)");
+		return toQuerySpec(agg);
 	}
 
-	SqlQuerySpec toQuerySpec(Aggregate aggregate) {
+	public SqlQuerySpec toQuerySpec(Aggregate aggregate) {
 
 		// When rawSql is set, other filter / limit / offset / sort will be ignored.
 		if (rawQuerySpec != null) {
@@ -203,7 +203,7 @@ public class Condition {
 
 		// group by
 		if (aggregate != null && !CollectionUtils.isEmpty(aggregate.groupBy)) {
-			var groupBy = aggregate.groupBy.stream().map(g -> getFormattedKey(g)).collect(Collectors.joining(","));
+			var groupBy = aggregate.groupBy.stream().map(g -> getFormattedKey(g)).collect(Collectors.joining(", "));
 			queryText.append(" GROUP BY ").append(groupBy);
 		}
 

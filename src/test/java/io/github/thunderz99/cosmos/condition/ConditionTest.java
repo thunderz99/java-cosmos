@@ -455,4 +455,67 @@ class ConditionTest {
 			assertThat(Condition.generateAggregateSelect(aggregate)).isEqualTo("COUNT(1) AS facetCount, c[\"status\"], c[\"location\"][\"state\"]");
 		}
 	}
+
+	@Test
+	public void buildQuerySpec_should_work_for_aggregate() {
+
+		{
+			//pure aggregate
+			var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
+			var q = Condition.filter() //
+					.toQuerySpec(aggregate);
+
+			assertThat(q.getQueryText().trim()).isEqualTo(
+					"SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
+
+			var params = List.copyOf(q.getParameters());
+			assertThat(params).isEmpty();
+
+		}
+
+		{
+			// with filter
+			var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
+			var q = Condition.filter("age >=", 20) //
+					.toQuerySpec(aggregate);
+
+			assertThat(q.getQueryText().trim()).isEqualTo(
+					"SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
+
+			var params = List.copyOf(q.getParameters());
+			assertThat(params).hasSize(1);
+			assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_age", 20).toJson());
+
+		}
+
+		{
+			// with offset / limit
+			var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
+			var q = Condition.filter("age >=", 20).offset(5).limit(10) //
+					.toQuerySpec(aggregate);
+
+			assertThat(q.getQueryText().trim()).isEqualTo(
+					"SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 5 LIMIT 10");
+
+			var params = List.copyOf(q.getParameters());
+			assertThat(params).hasSize(1);
+			assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_age", 20).toJson());
+
+		}
+
+		{
+			// with order by
+			var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
+			var q = Condition.filter("age >=", 20).sort("status", "ASC") //
+					.toQuerySpec(aggregate);
+
+			assertThat(q.getQueryText().trim()).isEqualTo(
+					"SELECT * FROM (SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"]) agg ORDER BY agg[\"status\"] ASC OFFSET 0 LIMIT 100");
+
+			var params = List.copyOf(q.getParameters());
+			assertThat(params).hasSize(1);
+			assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_age", 20).toJson());
+
+		}
+	}
 }
