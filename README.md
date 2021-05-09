@@ -158,8 +158,22 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
     .limit(100); //optional limit
     
     var users = db.find("Collection1", cond).toList(User.class);
+```
 
 
+### Aggregates
+
+```java
+    
+    // support aggregate function: COUNT, AVG, SUM, MAX, MIN
+    // see https://docs.microsoft.com/en-us/azure/cosmos-db/sql-query-aggregate-functions
+    var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
+    
+    var result = db.aggregate("Collection1", aggregate, Condition.filter("age >=", 20));
+
+    // will generate a sql like this:
+    /* SELECT COUNT(1) as facetCount, c.location, c.gender WHERE age >= 20 GROUP BY c.location, c.gender
+    */
 ```
 
 

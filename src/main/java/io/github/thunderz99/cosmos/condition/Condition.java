@@ -1,14 +1,6 @@
 package io.github.thunderz99.cosmos.condition;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -47,6 +39,11 @@ public class Condition {
 
 	public int offset = 0;
 	public int limit = 100;
+
+	/**
+	 * aggregate settings(function, groupBy)
+	 */
+	public Aggregate aggregate = null;
 
 	/**
 	 * a raw query spec which can use raw sql
@@ -173,7 +170,7 @@ public class Condition {
 	 * @return query spec which can be used in official DocumentClient
 	 */
 	public SqlQuerySpec toQuerySpec() {
-		return toQuerySpec(false);
+		return toQuerySpec(null);
 	}
 
 	/**
@@ -181,17 +178,18 @@ public class Condition {
 	 * @return query spec which can be used in official DocumentClient
 	 */
 	public SqlQuerySpec toQuerySpecForCount() {
-		return toQuerySpec(true);
+		var agg = Aggregate.function("COUNT(1)");
+		return toQuerySpec(agg);
 	}
 
-	SqlQuerySpec toQuerySpec(boolean count) {
+	public SqlQuerySpec toQuerySpec(Aggregate aggregate) {
 
 		// When rawSql is set, other filter / limit / offset / sort will be ignored.
 		if (rawQuerySpec != null) {
 			return rawQuerySpec;
 		}
 
-		var select = count ? "COUNT(1)" : generateSelect();
+		var select = aggregate != null ? generateAggregateSelect(aggregate) : generateSelect();
 
 		var initialText = new StringBuilder(String.format("SELECT %s FROM c", select));
 		var initialParams = new SqlParameterCollection();
@@ -203,8 +201,14 @@ public class Condition {
 		var queryText = filterQuery.queryText;
 		var params = filterQuery.params;
 
-		// sort
-		if (!count && !CollectionUtils.isEmpty(sort) && sort.size() > 1) {
+		// group by
+		if (aggregate != null && !CollectionUtils.isEmpty(aggregate.groupBy)) {
+			var groupBy = aggregate.groupBy.stream().map(g -> getFormattedKey(g)).collect(Collectors.joining(", "));
+			queryText.append(" GROUP BY ").append(groupBy);
+		}
+
+			// sort
+		if (!CollectionUtils.isEmpty(sort) && sort.size() > 1) {
 
 			var sortMap = new LinkedHashMap<String, String>();
 
@@ -214,14 +218,36 @@ public class Condition {
 				}
 			}
 
-			queryText.append(sortMap.entrySet().stream()
-					.map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
-					.collect(Collectors.joining(",", " ORDER BY", "")));
+			var sorts = "";
 
+			if(aggregate == null){
+				sorts = sortMap.entrySet().stream()
+				.map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
+				.collect(Collectors.joining(",", " ORDER BY", ""));
+
+			} else if(!CollectionUtils.isEmpty(aggregate.groupBy)){
+				//when GROUP BY, the ORDER BY must be added as an outer query
+				/** e.g
+				 *  SELECT * FROM (SELECT COUNT(1) AS facetCount, c.status, c.createdBy FROM c
+				 *  WHERE c._partition = "Accounts" AND c.name LIKE "%Tom%" GROUP BY c.status, c.createdBy) agg ORDER BY agg.status
+				 */
+				queryText.insert(0, "SELECT * FROM (");
+				//use "agg" as outer select clause's collection alias
+				queryText.append(") agg");
+
+				sorts = sortMap.entrySet().stream()
+						.map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey(), "agg"), entry.getValue().toUpperCase()))
+						.collect(Collectors.joining(",", " ORDER BY", ""));
+			} else {
+				//we have aggregate but without groupBy, so just ignore sort
+			}
+
+			queryText.append(sorts);
 		}
 
 		// offset and limit
-		if (!count) {
+		if(aggregate == null || !CollectionUtils.isEmpty(aggregate.groupBy)) {
+			//if not aggregate or not having group by, we do not need offset and  limit. Because the items will be only 1.
 			queryText.append(String.format(" OFFSET %d LIMIT %d", offset, limit));
 		}
 
@@ -340,12 +366,34 @@ public class Condition {
 	 * @return select sql
 	 */
 	String generateSelect() {
-
 		if (CollectionUtils.isEmpty(this.fields)) {
 			return "*";
 		}
 		return this.fields.stream().map(f -> generateOneFieldSelect(f)).filter(Objects::nonNull)
 				.collect(Collectors.joining(", ", "VALUE {", "}"));
+	}
+
+	/**
+	 * generate select parts for aggregate
+	 * @param aggregate
+	 * @return
+	 */
+	static String generateAggregateSelect(Aggregate aggregate) {
+
+		if (aggregate == null || StringUtils.isEmpty(aggregate.function)) {
+			throw new IllegalArgumentException("aggregate and function cannot be empty");
+		}
+
+		var ret = new StringBuilder();
+
+		ret.append(aggregate.function);
+
+		if(CollectionUtils.isEmpty(aggregate.groupBy)){
+			return ret.toString();
+		}
+
+		return ret.append(aggregate.groupBy.stream().map(f -> getFormattedKey(f)).filter(Objects::nonNull)
+				.collect(Collectors.joining(", ", ", ", ""))).toString();
 	}
 
 	/**
