@@ -1,23 +1,21 @@
 package io.github.thunderz99.cosmos;
 
-import java.util.Map;
-import java.util.stream.Collectors;
-
+import com.microsoft.azure.documentdb.DocumentClient;
+import com.microsoft.azure.documentdb.FeedOptions;
+import com.microsoft.azure.documentdb.PartitionKey;
+import com.microsoft.azure.documentdb.RequestOptions;
 import io.github.thunderz99.cosmos.condition.Aggregate;
+import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.util.Checker;
+import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.RetryUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.microsoft.azure.documentdb.DocumentClient;
-import com.microsoft.azure.documentdb.FeedOptions;
-import com.microsoft.azure.documentdb.PartitionKey;
-import com.microsoft.azure.documentdb.RequestOptions;
-
-import io.github.thunderz99.cosmos.condition.Condition;
-import io.github.thunderz99.cosmos.util.Checker;
-import io.github.thunderz99.cosmos.util.JsonUtil;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Class representing a database instance.
@@ -437,7 +435,7 @@ public class CosmosDatabase {
 	 *  .offset(0) //optional offset
 	 *  .limit(100); //optional limit
 	 *
-	 *  var users = db.find("Collection1", cond).toList(User.class);
+	 *  var users = db.find("Collection1", cond, "Users").toList(User.class);
 	 *
 	 * }
 	 *
@@ -452,21 +450,51 @@ public class CosmosDatabase {
 
 		var collectionLink = Cosmos.getCollectionLink(db, coll);
 
-		var options = new FeedOptions();
-		options.setPartitionKey(new PartitionKey(partition));
+		var feedOptions = new FeedOptions();
+		if (cond.crossPartition) {
+			feedOptions.setEnableCrossPartitionQuery(true);
+		} else {
+			feedOptions.setPartitionKey(new PartitionKey(partition));
+		}
 
 		var querySpec = cond.toQuerySpec(cond.aggregate);
 
-		var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec, options).getQueryIterable().toList());
+		var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec, feedOptions).getQueryIterable().toList());
 
-		if(log.isInfoEnabled()){
-			log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, partition, getAccount());
+		if (log.isInfoEnabled()) {
+			log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
 		}
 
 		var jsonObjs = docs.stream().map(it -> it.toObject(JSONObject.class)).collect(Collectors.toList());
 
 		return new CosmosDocumentList(jsonObjs);
 
+	}
+
+	/**
+	 * find data by condition (partition is default to the same name as the coll or ignored when crossPartition is true)
+	 * <p>
+	 * {@code
+	 * var cond = Condition.filter(
+	 * "id>=", "id010", // id greater or equal to 'id010'
+	 * "lastName", "Banks" // last name equal to Banks
+	 * )
+	 * .order("lastName", "ASC") //optional order
+	 * .offset(0) //optional offset
+	 * .limit(100); //optional limit
+	 * <p>
+	 * var users = db.find("Collection1", cond).toList(User.class);
+	 * <p>
+	 * }
+	 *
+	 * @param coll collection name
+	 * @param cond condition to find
+	 * @return CosmosDocumentList
+	 * @throws Exception Cosmos client exception
+	 */
+
+	public CosmosDocumentList find(String coll, Condition cond) throws Exception {
+		return find(coll, cond, coll);
 	}
 
 
@@ -514,6 +542,31 @@ public class CosmosDatabase {
 	public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
 		cond.aggregate = aggregate;
 		return find(coll, cond, partition);
+	}
+
+	/**
+	 * do an aggregate query by Aggregate and Condition (partition default to the same as coll or ignored when crossPartition is true)
+	 * <p>
+	 * {@code
+	 * <p>
+	 * var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
+	 * var cond = Condition.filter(
+	 * "age>=", "20",
+	 * );
+	 * <p>
+	 * var result = db.aggregate("Collection1", aggregate, cond).toMap();
+	 * <p>
+	 * }
+	 *
+	 * @param coll      collection name
+	 * @param aggregate Aggregate function and groupBys
+	 * @param cond      condition to find
+	 * @return CosmosDocumentList
+	 * @throws Exception Cosmos client exception
+	 */
+	public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond) throws Exception {
+		cond.aggregate = aggregate;
+		return find(coll, cond);
 	}
 
 	/**

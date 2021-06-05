@@ -1,22 +1,20 @@
 package io.github.thunderz99.cosmos.condition;
 
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
 import com.microsoft.azure.documentdb.SqlParameter;
+import com.microsoft.azure.documentdb.SqlParameterCollection;
+import com.microsoft.azure.documentdb.SqlQuerySpec;
+import io.github.thunderz99.cosmos.util.Checker;
+import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.RegExUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
-
-import io.github.thunderz99.cosmos.util.Checker;
-import io.github.thunderz99.cosmos.util.JsonUtil;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Condition for find. (e.g. filter / sort / offset / limit)
@@ -44,6 +42,11 @@ public class Condition {
 	 * aggregate settings(function, groupBy)
 	 */
 	public Aggregate aggregate = null;
+
+	/**
+	 * whether this query is cross-partition or not (default to false)
+	 */
+	public boolean crossPartition = false;
 
 	/**
 	 * a raw query spec which can use raw sql
@@ -157,6 +160,7 @@ public class Condition {
 
 	/**
 	 * set the limit
+	 *
 	 * @param limit limit
 	 * @return condition
 	 */
@@ -166,7 +170,19 @@ public class Condition {
 	}
 
 	/**
+	 * set whether is cross-partition query
+	 *
+	 * @param crossPartition
+	 * @return
+	 */
+	public Condition crossPartition(boolean crossPartition) {
+		this.crossPartition = crossPartition;
+		return this;
+	}
+
+	/**
 	 * Generate a query spec from condition.
+	 *
 	 * @return query spec which can be used in official DocumentClient
 	 */
 	public SqlQuerySpec toQuerySpec() {
@@ -207,7 +223,18 @@ public class Condition {
 			queryText.append(" GROUP BY ").append(groupBy);
 		}
 
-			// sort
+		// special logic for aggregate with cross-partition=true and sort is empty
+		// We have to add a default sort to overcome a bug. 
+		// see https://social.msdn.microsoft.com/Forums/en-US/535c7e4a-f5cb-4aa3-90f5-39a2c8024191/group-by-fails-for-crosspartition-queries?forum=azurecosmosdb
+
+		if (this.crossPartition && CollectionUtils.isEmpty(sort) && aggregate != null && CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+			// use the groupBy's first field to sort
+			sort = new ArrayList<String>();
+			sort.add(aggregate.groupBy.stream().collect(Collectors.toList()).get(0));
+			sort.add("ASC");
+		}
+
+		// sort
 		if (!CollectionUtils.isEmpty(sort) && sort.size() > 1) {
 
 			var sortMap = new LinkedHashMap<String, String>();
@@ -380,20 +407,25 @@ public class Condition {
 	 */
 	static String generateAggregateSelect(Aggregate aggregate) {
 
-		if (aggregate == null || StringUtils.isEmpty(aggregate.function)) {
+		if (aggregate == null) {
 			throw new IllegalArgumentException("aggregate and function cannot be empty");
 		}
 
-		var ret = new StringBuilder();
+		var select = new ArrayList<String>();
 
-		ret.append(aggregate.function);
-
-		if(CollectionUtils.isEmpty(aggregate.groupBy)){
-			return ret.toString();
+		if (StringUtils.isNotEmpty(aggregate.function)) {
+			select.add(aggregate.function);
 		}
 
-		return ret.append(aggregate.groupBy.stream().map(f -> getFormattedKey(f)).filter(Objects::nonNull)
-				.collect(Collectors.joining(", ", ", ", ""))).toString();
+		if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+			select.addAll(aggregate.groupBy.stream().map(f -> getFormattedKey(f)).filter(Objects::nonNull).collect(Collectors.toList()));
+		}
+
+		if (select.isEmpty()) {
+			throw new IllegalArgumentException("aggregate and function cannot both be empty");
+		}
+
+		return select.stream().collect(Collectors.joining(", "));
 	}
 
 	/**
@@ -614,6 +646,7 @@ public class Condition {
 		cond.offset = this.offset;
 		cond.sort = new ArrayList<>(this.sort);
 		cond.fields = new LinkedHashSet<>(this.fields);
+		cond.crossPartition = this.crossPartition;
 		if (this.rawQuerySpec != null) {
 			cond.rawQuerySpec = new SqlQuerySpec(this.rawQuerySpec.getQueryText(), this.rawQuerySpec.getParameters());
 		}
