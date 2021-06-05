@@ -1,10 +1,8 @@
 package io.github.thunderz99.cosmos.condition;
 
-import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.*;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Simple data class for aggregate. (e.g. query function, group by)
@@ -34,11 +32,7 @@ public class Aggregate {
 	 * @return Aggregate
 	 */
 	public static Aggregate function(String function) {
-
-		if(StringUtils.isEmpty(function)){
-			throw new IllegalArgumentException("function cannot be empty");
-		}
-
+		
 		Aggregate ret = new Aggregate();
 		ret.function = function;
 

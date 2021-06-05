@@ -1,26 +1,25 @@
 package io.github.thunderz99.cosmos;
 
-import static org.assertj.core.api.Assertions.*;
-import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
+import com.microsoft.azure.documentdb.SqlParameter;
+import com.microsoft.azure.documentdb.SqlParameterCollection;
+import io.github.cdimascio.dotenv.Dotenv;
+import io.github.thunderz99.cosmos.condition.Aggregate;
+import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.util.JsonUtil;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
-import io.github.thunderz99.cosmos.condition.Aggregate;
-import org.assertj.core.util.Lists;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-
-import com.microsoft.azure.documentdb.SqlParameter;
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-
-import io.github.cdimascio.dotenv.Dotenv;
-import io.github.thunderz99.cosmos.condition.Condition;
-import io.github.thunderz99.cosmos.util.JsonUtil;
-import org.slf4j.LoggerFactory;
-import org.slf4j.Logger;
+import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CosmosDatabaseTest {
 
@@ -215,12 +214,16 @@ class CosmosDatabaseTest {
 		var user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "2020-10-01", "Blanco");
 		var user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "2020-11-01", "Typescript", "Javascript", "React", "Java");
 		var user3 = new FullNameUser("id_find_filter3", "Tom", "Henry", 45, "2020-12-01", "Java", "Go", "Python");
+		var user4 = new FullNameUser("id_find_filter4", "Andy", "Henry", 45, "2020-12-01", "Javascript", "Java");
 
 		try {
 			// prepare
 			db.upsert(coll, user1, "Users");
 			db.upsert(coll, user2, "Users");
 			db.upsert(coll, user3, "Users");
+
+			// different partition
+			db.upsert(coll, user4, "Users2");
 
 			// test basic find
 			{
@@ -478,10 +481,36 @@ class CosmosDatabaseTest {
 
 			}
 
+			// test query cross-partition
+			{
+				// simple query
+				var cond = Condition.filter("id LIKE", "id_find_filter%").sort("id", "ASC").crossPartition(true);
+				var result = db.find(coll, cond).toList(FullNameUser.class);
+				assertThat(result).hasSizeGreaterThanOrEqualTo(4);
+				assertThat(result.get(0).id).isEqualTo("id_find_filter1");
+				assertThat(result.get(3).id).isEqualTo("id_find_filter4");
+			}
+
+			// aggregate with cross-partition
+			{
+				var aggregate = Aggregate.function("COUNT(1) as facetCount").groupBy("_partition");
+				var cond = Condition.filter("_partition", Set.of("Users", "Users2")).crossPartition(true);
+				var result = db.aggregate(coll, aggregate, cond).toMap();
+				assertThat(result).hasSize(2);
+				assertThat(result.get(0).get("_partition")).isEqualTo("Users");
+				assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(3);
+				assertThat(result.get(1).get("_partition")).isEqualTo("Users2");
+				assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+
+				System.out.println(result);
+
+			}
+
 		} finally {
 			db.delete(coll, user1.id, "Users");
 			db.delete(coll, user2.id, "Users");
 			db.delete(coll, user3.id, "Users");
+			db.delete(coll, user4.id, "Users2");
 		}
 	}
 
@@ -553,9 +582,9 @@ class CosmosDatabaseTest {
 
 	@Test
 	void check_invalid_id_should_work() throws Exception {
-		var ids = Lists.newArrayList("\ttabbefore", "tabafter\t", "tab\nbetween", "\ncrbefore", "crafter\r", "cr\n\rbetween");
-		for(var id: ids){
-			assertThatThrownBy( () -> CosmosDatabase.checkValidId(id)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("id cannot contain");
+		var ids = List.of("\ttabbefore", "tabafter\t", "tab\nbetween", "\ncrbefore", "crafter\r", "cr\n\rbetween");
+		for (var id : ids) {
+			assertThatThrownBy(() -> CosmosDatabase.checkValidId(id)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("id cannot contain");
 		}
 
 	}
@@ -563,15 +592,15 @@ class CosmosDatabaseTest {
 	void invalid_id_should_be_checked() throws Exception {
 
 		var partition = "InvalidIdTest";
-		var ids = Lists.newArrayList("\ttabbefore", "cr\rbetween");
-		for(var id: ids) {
+		var ids = List.of("\ttabbefore", "cr\rbetween");
+		for (var id : ids) {
 			try {
 				var data = Map.of("id", id, "name", "Lee");
-				assertThatThrownBy( () -> db.create(coll, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
-				assertThatThrownBy( () -> db.upsert(coll, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
+				assertThatThrownBy(() -> db.create(coll, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
+				assertThatThrownBy(() -> db.upsert(coll, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
 			} finally {
 				var toDelete = db.find(coll, Condition.filter(), partition).toMap();
-				for(var map : toDelete){
+				for (var map : toDelete) {
 					var selfLink = map.get("_self").toString();
 					db.deleteBySelfLink(selfLink, partition);
 				}

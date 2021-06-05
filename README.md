@@ -20,7 +20,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.2.10</version>
+  <version>0.2.11</version>
 </dependency>
 
 ```
@@ -177,6 +177,28 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
 ```
 
 
+
+### Cross-partition queries
+
+```java
+   
+    // simple query
+		var cond = Condition.filter("id", "M001").crossPartition(true);
+    // when crossPartition is set to true, the partition filter will be ignored.
+		var children = db.find(coll, cond);
+
+
+    // aggregate query with cross-partition
+    // This is current a limitation that you cannot write aggregate functions when using cross-partition. This will be resolved in later version.
+    var aggregate = Aggregate.function("COUNT(1) as facetCount").groupBy("_partition");
+    var cond = Condition.filter().crossPartition(true);
+    var result = db.aggregate("Collection1", aggregate, cond);
+
+    
+```
+
+
+
 ### Raw SQL queries
 
 ```java
@@ -206,3 +228,4 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
                                 
     
 ```
+
