@@ -1,6 +1,5 @@
 package io.github.thunderz99.cosmos.condition;
 
-import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
 import com.microsoft.azure.documentdb.SqlQuerySpec;
 import io.github.thunderz99.cosmos.util.Checker;
@@ -58,15 +57,15 @@ public class SubQueryExpression implements Expression {
 		var params = new SqlParameterCollection();
 
 		// joinKey.filterKey -> fullName.last -> @param001_fullName__last
-		var key = new ArrayList<>(List.of(this.joinKey, this.filterKey)).stream().filter(StringUtils::isNotEmpty).collect(Collectors.joining("."));
-
+		var key = List.of(this.joinKey, this.filterKey).stream().filter(StringUtils::isNotEmpty).collect(Collectors.joining("."));
 		var paramName = String.format("@param%03d_%s", paramIndex.get(), key.replace(".", "__"));
+		
 		var paramValue = this.value;
 
 		paramIndex.getAndIncrement();
 
 		var queryText = "";
-		if(ARRAY_CONTAINS_ALL.equals(this.operator)){
+		if (ARRAY_CONTAINS_ALL.equals(this.operator)) {
 			queryText = buildArrayContainsAll(this.joinKey, this.filterKey, paramName, paramValue, params);
 		} else {
 			queryText = buildArrayContainsAny(this.joinKey, this.filterKey, paramName, paramValue, params);

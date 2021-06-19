@@ -303,44 +303,29 @@ public class Condition {
 
 		// process filters
 		for (var entry : this.filter.entrySet()) {
+
+			if (StringUtils.isEmpty(entry.getKey())) {
+				// ignore when key is empty
+				continue;
+			}
+
 			// filter parts
 			var connectPart = getConnectPart(conditionIndex);
 
 			var subFilterQueryToAdd = "";
 
-			if (SubConditionType.SUB_COND_RAW.name().equals(entry.getKey())) {
-				//raw condition. Used to generate always true/false cond. E.g. "1=1", "1=0"
+			if (entry.getKey().startsWith(SubConditionType.SUB_COND_AND.name())) {
+				// sub query AND
+				var subQueries = extractSubQueries(entry.getValue());
+				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", connectPart, params, conditionIndex, paramIndex);
 
-				var rawText = entry.getValue().toString();
-				if (StringUtils.isEmpty(rawText)) {
-					continue;
-				}
+			} else if (entry.getKey().startsWith(SubConditionType.SUB_COND_OR.name())) {
+				// sub query OR
+				var subQueries = extractSubQueries(entry.getValue());
+				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", connectPart, params, conditionIndex, paramIndex);
 
-				subFilterQueryToAdd = connectPart + " (" + rawText + ")";
-			} else if (SubConditionType.SUB_COND_AND.name().equals((entry.getKey()))){
-				// sub query
-				var value = entry.getValue();
-				if (!(value instanceof List<?>)) {
-					continue;
-				}
-				@SuppressWarnings("unchecked")
-				var list = (List<Condition>) value;
-
-				subFilterQueryToAdd = generateFilterQuery4List(list, "AND", connectPart, params, conditionIndex, paramIndex);
-
-
-			} else if (SubConditionType.SUB_COND_OR.name().equals(entry.getKey())) {
-				// sub query
-				var value = entry.getValue();
-				if (!(value instanceof List<?>)) {
-					continue;
-				}
-				@SuppressWarnings("unchecked")
-				var list = (List<Condition>) value;
-
-				subFilterQueryToAdd = generateFilterQuery4List(list, "OR", connectPart, params, conditionIndex, paramIndex);
-					
 			} else {
+				// normal expression
 				var exp = parse(entry.getKey(), entry.getValue());
 				var expQuerySpec = exp.toQuerySpec(paramIndex);
 				subFilterQueryToAdd = connectPart + expQuerySpec.getQueryText();
@@ -352,6 +337,26 @@ public class Condition {
 		}
 
 		return new FilterQuery(queryText, params, conditionIndex, paramIndex);
+	}
+
+	/**
+	 * extract subQueries for SUB_COND_AND / SUB_COND_OR 's filter value
+	 *
+	 * @param value
+	 */
+	static List<Condition> extractSubQueries(Object value) {
+		if (value == null) {
+			return List.of();
+		}
+
+		if (value instanceof Condition) {
+			return List.of((Condition) value);
+		} else if (value instanceof List<?>) {
+			return (List<Condition>) value;
+		}
+
+		return List.of();
+
 	}
 
 	String generateFilterQuery4List(List<Condition> conds, String joiner, String connectPart, SqlParameterCollection params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
@@ -579,7 +584,7 @@ public class Condition {
 	 * </p>
 	 */
 	public enum SubConditionType {
-		SUB_COND_AND, SUB_COND_OR, SUB_COND_RAW
+		SUB_COND_AND, SUB_COND_OR
 	}
 
 	/**
@@ -621,7 +626,7 @@ public class Condition {
 	 * @return trueCondition
 	 */
 	public static Condition trueCondition() {
-		return Condition.filter(SubConditionType.SUB_COND_RAW, COND_SQL_TRUE);
+		return Condition.rawSql(COND_SQL_TRUE);
 	}
 
 	/**
@@ -630,7 +635,7 @@ public class Condition {
 	 * @return falseCondition
 	 */
 	public static Condition falseCondition() {
-		return Condition.filter(SubConditionType.SUB_COND_RAW, COND_SQL_FALSE);
+		return Condition.rawSql(COND_SQL_FALSE);
 	}
 
 	/**
@@ -657,16 +662,36 @@ public class Condition {
 	/**
 	 * fix enum exception in documentdb sdk
 	 *
-	 * @param key key of param
+	 * @param key   key of param
 	 * @param value value of param (enum will automatically convert to string by .name())
 	 * @return a SqlParameter instance created
 	 */
-	public static SqlParameter createSqlParameter(String key, Object value){
-		if(value instanceof Enum<?>){
+	public static SqlParameter createSqlParameter(String key, Object value) {
+		if (value instanceof Enum<?>) {
 			value = ((Enum<?>) value).name();
 		}
 
 		return new SqlParameter(key, value);
 
+	}
+
+	/**
+	 * judge whether the condition is a trueCondition
+	 *
+	 * @param cond condition to judge
+	 * @return true/false
+	 */
+	public static boolean isTrueCondition(Condition cond) {
+		return cond.rawQuerySpec != null && COND_SQL_TRUE.equals(cond.rawQuerySpec.getQueryText());
+	}
+
+	/**
+	 * judge whether the condition is a falseCondition
+	 *
+	 * @param cond condition to judge
+	 * @return true/false
+	 */
+	public static boolean isFalseCondition(Condition cond) {
+		return cond.rawQuerySpec != null && COND_SQL_FALSE.equals(cond.rawQuerySpec.getQueryText());
 	}
 }

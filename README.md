@@ -20,7 +20,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.2.11</version>
+  <version>0.2.12</version>
 </dependency>
 
 ```
@@ -148,9 +148,14 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
       "tagIds ARRAY_CONTAINS", "T001", // see cosmosdb ARRAY_CONTAINS
       "tagIds ARRAY_CONTAINS_ANY", List.of("T001", "T002"), // see cosmosdb EXISTS
       "tags ARRAY_CONTAINS_ALL name", List.of("Java", "React"), // see cosmosdb EXISTS
-      "SUB_COND_OR", List.of( // add an or sub condition
+      "SUB_COND_OR", List.of( // add an OR sub condition
         Condition.filter("position", "leader"),  // subquery's fields/order/offset/limit will be ignored
-        Condition.filter("organization.id", "executive_committee"))
+        Condition.filter("organization.id", "executive_committee")
+      ),
+      "SUB_COND_OR 2", List.of( // add another OR sub condition (name it SUB_COND_OR xxx in order to avoid the same key to a previous SUB_COND_OR )
+        Condition.filter("position", "leader"),  // subquery's fields/order/offset/limit will be ignored
+        Condition.filter("organization.id", "executive_committee")
+      ),
     )
     .fields("id", "lastName", "age", "organization.name") // select certain fields
     .order("lastName", "ASC") //optional order
@@ -158,6 +163,8 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
     .limit(100); //optional limit
     
     var users = db.find("Collection1", cond).toList(User.class);
+
+
 ```
 
 
@@ -181,11 +188,11 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
 ### Cross-partition queries
 
 ```java
-   
+
     // simple query
-		var cond = Condition.filter("id", "M001").crossPartition(true);
+    var cond = Condition.filter("id", "M001").crossPartition(true);
     // when crossPartition is set to true, the partition filter will be ignored.
-		var children = db.find(coll, cond);
+    var children = db.find(coll, cond);
 
 
     // aggregate query with cross-partition
@@ -194,7 +201,6 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
     var cond = Condition.filter().crossPartition(true);
     var result = db.aggregate("Collection1", aggregate, cond);
 
-    
 ```
 
 
@@ -220,9 +226,18 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
     // use raw sql as a where condition with params
     var params =  new SqlParameterCollection(new SqlParameter("@state", "%NY%"));
 
-    var cond = Condition.filter(SubConditionType.AND, List.of(
-      Condition.filter("gender", "female"), 
-      Condition.rawSql("c.state LIKE @state"));      
+    var cond = Condition.filter(
+      "SUB_COND_AND", 
+      List.of(
+        Condition.filter("gender", "female"), 
+        Condition.rawSql("c.state LIKE @state", params)
+      ),
+      "SUB_COND_AND another", // name it SUB_COND_OR xxx in order to avoid the same key to a previous SUB_COND_AND
+      List.of(
+        Condition.filter("age > ", "22"), 
+        Condition.rawSql("c.address != \"\" ")
+      )
+     );      
                                 
     db.find("Collection1", cond, "Partition1");
                                 
