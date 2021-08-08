@@ -63,7 +63,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void createAndReadShouldWork() throws Exception {
+	void create_and_read_should_work() throws Exception {
 
 		var user = new User("unittest_create_01", "first01", "last01");
 		db.delete(coll, user.id, "Users");
@@ -84,7 +84,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void createShouldThrowWhenDataNull() throws Exception {
+	void create_should_throw_when_data_is_null() throws Exception {
 		User user = null;
 		assertThatThrownBy(() -> db.create(coll, user, "Users")).isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("create data UnitTest Users");
@@ -92,7 +92,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void updateShouldWork() throws Exception {
+	void update_should_work() throws Exception {
 
 		var user = new User("unittest_update_01", "first01", "last01");
 		db.delete(coll, user.id, "Users");
@@ -123,7 +123,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	void upsertShouldWork() throws Exception {
+	void upsert_should_work() throws Exception {
 		var user = new User("unittest_upsert_01", "first01", "last01");
 		db.delete(coll, user.id, "Users");
 
@@ -209,7 +209,7 @@ class CosmosDatabaseTest {
 	}
 
 	@Test
-	public void Find_should_work_with_filter() throws Exception {
+	public void find_should_work_with_filter() throws Exception {
 
 		var user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "2020-10-01", "Blanco");
 		var user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "2020-11-01", "Typescript", "Javascript", "React", "Java");
@@ -637,6 +637,30 @@ class CosmosDatabaseTest {
 	@Test
 	void get_database_name_should_work() throws Exception {
 		assertThat(db.getDatabaseName()).isEqualTo(dbName);
+	}
+
+	@Test
+	void dynamic_field_with_hyphen_should_work() throws Exception {
+		var partition = "SheetConents";
+
+		var id = "D001";
+		var formId = "829cc727-2d49-4d60-8f91-b30f50560af7"; //uuid
+		var formContent = Map.of("name", "Tom", "sex", "Male");
+		var data = Map.of("id", id, formId, formContent);
+
+		try {
+			db.upsert(coll, data, partition);
+			var cond = Condition.filter("id", id, String.format("%s.name", formId), "Tom");
+			var items = db.find(coll, cond, partition).toMap();
+
+			assertThat(items).hasSize(1);
+			var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+			assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male");
+
+		} finally {
+			db.delete(coll, id, partition);
+		}
+
 	}
 
 	static void initFamiliesData() throws Exception {
