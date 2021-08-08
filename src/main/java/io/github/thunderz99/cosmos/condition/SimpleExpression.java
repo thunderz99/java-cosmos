@@ -107,7 +107,7 @@ public class SimpleExpression implements Expression {
 
 		} else {
 
-			if(StringUtils.isEmpty(this.operator)){
+			if (StringUtils.isEmpty(this.operator)) {
 				// set the default operator for scalar value
 				this.operator = "=";
 			}
@@ -115,11 +115,12 @@ public class SimpleExpression implements Expression {
 			paramIndex.getAndIncrement();
 			// other types
 			var formattedKey = Condition.getFormattedKey(this.key);
-			if (this.type == OperatorType.BINARY_OPERATOR) {
+			if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >, LIKE
 				//use c["key"] for cosmosdb reserved words
 				ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, paramName));
-			} else {
-
+			} else if ("IS_DEFINED".equals(this.operator)) { // special func IS_DEFINED
+				ret.setQueryText(String.format(" (%s(%s) = %s)", this.operator, formattedKey, paramName));
+			} else { // other binary funcs. e.g. STARTSWITH, CONTAINS, ARRAY_CONTAINS
 				ret.setQueryText(String.format(" (%s(%s, %s))", this.operator, formattedKey, paramName));
 			}
 

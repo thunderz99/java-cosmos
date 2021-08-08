@@ -145,6 +145,8 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
       "age >=", 20, // see cosmosdb compare operators
       "middleName OR firstName STARTSWITH", "H", // see cosmosdb STARTSWITH
       "desciption CONTAINS", "Project manager",// see cosmosdb CONTAINS
+      "certificates IS_DEFINED", true, // see cosmosdb IS_DEFINED
+      "families.villa IS_DEFINED", false, // see cosmosdb IS_DEFINED
       "tagIds ARRAY_CONTAINS", "T001", // see cosmosdb ARRAY_CONTAINS
       "tagIds ARRAY_CONTAINS_ANY", List.of("T001", "T002"), // see cosmosdb EXISTS
       "tags ARRAY_CONTAINS_ALL name", List.of("Java", "React"), // see cosmosdb EXISTS
