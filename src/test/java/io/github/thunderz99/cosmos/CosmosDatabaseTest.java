@@ -654,12 +654,12 @@ class CosmosDatabaseTest {
 			var items = db.find(coll, cond, partition).toMap();
 
 			assertThat(items).hasSize(1);
-			assertThat(JsonUtil.toJson(items.get(0).get(formId))).isEqualTo(JsonUtil.toJson(formContent));
+			var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+			assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male");
 
 		} finally {
 			db.delete(coll, id, partition);
 		}
-
 
 	}
 
