@@ -1,24 +1,24 @@
 package io.github.thunderz99.cosmos.condition;
 
+import com.microsoft.azure.documentdb.SqlParameterCollection;
+import com.microsoft.azure.documentdb.SqlQuerySpec;
+import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
+import io.github.thunderz99.cosmos.util.Checker;
+import io.github.thunderz99.cosmos.util.JsonUtil;
+import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.commons.lang3.StringUtils;
+
 import java.util.ArrayList;
 import java.util.Collection;
-
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
-import com.microsoft.azure.documentdb.SqlParameter;
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
-
-import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
-import io.github.thunderz99.cosmos.util.JsonUtil;
-import org.apache.commons.lang3.StringUtils;
+import java.util.stream.Stream;
 
 /**
  * A class representing simple expression
- *
+ * <p>
  * {@code
  * c.id = "001", c.age > 15, c.skills CONTAINS "java", and other simple filter
  * }
@@ -26,6 +26,7 @@ import org.apache.commons.lang3.StringUtils;
 public class SimpleExpression implements Expression {
 
 	public static final Pattern binaryOperatorPattern = Pattern.compile("^\\s*(LIKE|IN|=|!=|<|<=|>|>=)\\s*$");
+	public static final Pattern alphaNumericPattern = Pattern.compile("^[\\w\\d]+$");
 
 	public String key;
 	public Object value;
@@ -66,7 +67,10 @@ public class SimpleExpression implements Expression {
 		var params = new SqlParameterCollection();
 
 		// fullName.last -> @param001_fullName__last
-		var paramName = String.format("@param%03d_%s", paramIndex.get(), this.key.replace(".", "__"));
+		// or
+		// "829cc727-2d49-4d60-8f91-b30f50560af7.name" -> @param001_wg31gsa.name
+		var paramName = getParamNameFromKey(this.key, paramIndex.get());
+
 		var paramValue = this.value;
 
 		if (paramValue instanceof Collection<?>) {
@@ -74,16 +78,16 @@ public class SimpleExpression implements Expression {
 
 			var coll = (Collection<?>) paramValue;
 
-			if("IN".equals(this.operator)){
+			if ("IN".equals(this.operator)) {
 				// use IN
-				if(coll.isEmpty()) {
+				if (coll.isEmpty()) {
 					//if paramValue is empty, return a FALSE queryText.
 					ret.setQueryText(" (1=0)");
 				} else {
 					paramIndex.getAndIncrement();
 					ret.setQueryText(buildArray(this.key, paramName, coll, params));
 				}
-			} else if(Set.of("=","!=").contains(this.operator)){
+			} else if (Set.of("=", "!=").contains(this.operator)) {
 				// use = or !=
 				paramIndex.getAndIncrement();
 				ret.setQueryText(String.format(" (%s %s %s)", Condition.getFormattedKey(this.key), this.operator, paramName));
@@ -91,7 +95,7 @@ public class SimpleExpression implements Expression {
 			} else {
 				//the default operator for collection
 				//ARRAY_CONTAINS
-				if(coll.isEmpty()){
+				if (coll.isEmpty()) {
 					//if paramValue is empty, return a FALSE queryText.
 					ret.setQueryText(" (1=0)");
 				} else {
@@ -126,6 +130,35 @@ public class SimpleExpression implements Expression {
 
 		return ret;
 
+	}
+
+	/**
+	 * generate a valid param name from a key.
+	 * <p>
+	 * {@code
+	 * // e.g
+	 * // fullName.last -> @param001_fullName__last
+	 * // or
+	 * // if the key contains a non alphanumeric part, it will be replaced by a random str.
+	 * // "829cc727-2d49-4d60-8f91-b30f50560af7.name" -> @param001_wg31gsa.name
+	 * // "family.テスト.age" -> @param001_family.ab135dx.age
+	 * }
+	 *
+	 * @param key
+	 * @param index
+	 */
+	static String getParamNameFromKey(String key, int index) {
+		Checker.checkNotBlank(key, "key");
+
+		var sanitizedKey = Stream.of(key.split("\\.")).map(part -> {
+			if (alphaNumericPattern.asMatchPredicate().test(part)) {
+				return part;
+			} else {
+				return RandomStringUtils.randomAlphanumeric(7);
+			}
+		}).collect(Collectors.joining("__"));
+
+		return String.format("@param%03d_%s", index, sanitizedKey);
 	}
 
 	@Override
