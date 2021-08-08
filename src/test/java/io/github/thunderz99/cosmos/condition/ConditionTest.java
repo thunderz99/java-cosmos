@@ -596,4 +596,21 @@ class ConditionTest {
 		}
 
 	}
+
+	@Test
+	public void buildQuerySpec_should_work_for_is_defined() {
+
+		var q = Condition.filter("id", "Hanks", //
+				"age IS_DEFINED", true) //
+				.limit(20)
+				.toQuerySpec();
+
+		assertThat(q.getQueryText().trim()).isEqualTo(
+				"SELECT * FROM c WHERE (c[\"id\"] = @param000_id) AND (IS_DEFINED(c[\"age\"]) = @param001_age) OFFSET 0 LIMIT 20");
+
+		var params = List.copyOf(q.getParameters());
+
+		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_id", "Hanks").toJson());
+		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_age", true).toJson());
+	}
 }

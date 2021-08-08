@@ -650,12 +650,32 @@ class CosmosDatabaseTest {
 
 		try {
 			db.upsert(coll, data, partition);
-			var cond = Condition.filter("id", id, String.format("%s.name", formId), "Tom");
-			var items = db.find(coll, cond, partition).toMap();
 
-			assertThat(items).hasSize(1);
-			var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
-			assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male");
+			{
+				// dynamic fields
+				var cond = Condition.filter("id", id, String.format("%s.name", formId), "Tom");
+				var items = db.find(coll, cond, partition).toMap();
+
+				assertThat(items).hasSize(1);
+				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+				assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male");
+			}
+
+			{
+				// IS_DEFINED = true
+				var cond = Condition.filter("id", id, String.format("%s IS_DEFINED", formId), true);
+				var items = db.find(coll, cond, partition).toMap();
+				assertThat(items).hasSize(1);
+				assertThat(items.get(0).get("id")).isEqualTo(id);
+			}
+
+			{
+				// IS_DEFINED = false
+				var cond = Condition.filter("id", id, "test IS_DEFINED", false);
+				var items = db.find(coll, cond, partition).toMap();
+				assertThat(items).hasSize(1);
+				assertThat(items.get(0).get("id")).isEqualTo(id);
+			}
 
 		} finally {
 			db.delete(coll, id, partition);
