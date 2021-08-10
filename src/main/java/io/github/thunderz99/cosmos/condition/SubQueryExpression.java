@@ -58,8 +58,8 @@ public class SubQueryExpression implements Expression {
 
 		// joinKey.filterKey -> fullName.last -> @param001_fullName__last
 		var key = List.of(this.joinKey, this.filterKey).stream().filter(StringUtils::isNotEmpty).collect(Collectors.joining("."));
-		var paramName = String.format("@param%03d_%s", paramIndex.get(), key.replace(".", "__"));
-		
+		var paramName = SimpleExpression.getParamNameFromKey(key, paramIndex.get());
+
 		var paramValue = this.value;
 
 		paramIndex.getAndIncrement();
