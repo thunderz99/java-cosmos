@@ -718,6 +718,51 @@ class CosmosDatabaseTest {
 
 	}
 
+	@Test
+	void dynamic_field_should_work_for_ARRAY_CONTAINS_ALL() throws Exception {
+		var partition = "SheetConents2";
+
+		var id = "dynamic_field_should_work_for_ARRAY_CONTAINS_ALL"; // form with content
+		var formId = "421f118a-543e-49e9-88c1-dba77b7f990f"; //uuid
+		var formContent = Map.of("name", "Jerry", "value", Set.of("Java", "Typescript", "Python"));
+		var data = Map.of("id", id, formId, formContent);
+
+
+		try {
+			db.upsert(coll, data, partition);
+
+			{
+				// dynamic fields with ARRAY_CONTAINS_ALL
+				var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ALL", formId), Set.of("Java", "Python"));
+				var items = db.find(coll, cond, partition).toMap();
+
+				assertThat(items).hasSize(1);
+				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+				assertThat(map).containsEntry("name", "Jerry");
+			}
+			{
+				// dynamic fields with ARRAY_CONTAINS_ALL, not hit
+				var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ALL", formId), Set.of("Java", "CSharp"));
+				var items = db.find(coll, cond, partition).toMap();
+
+				assertThat(items).hasSize(0);
+			}
+			{
+				// dynamic fields with ARRAY_CONTAINS_ANY
+				var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ANY", formId), Set.of("Java", "CSharp"));
+				var items = db.find(coll, cond, partition).toMap();
+
+				assertThat(items).hasSize(1);
+				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+				assertThat(map).containsEntry("name", "Jerry");
+			}
+			
+		} finally {
+			db.delete(coll, id, partition);
+		}
+
+	}
+
 	static void initFamiliesData() throws Exception {
 		var partition = "Families";
 
