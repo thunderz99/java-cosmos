@@ -4,7 +4,7 @@
     <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
     <packaging>jar</packaging>
-    <version>0.2.15</version>
+    <version>0.2.17</version>
     <name>${project.groupId}:${project.artifactId}$</name>
     <description>A lightweight Azure CosmosDB client for Java</description>
     <url>https://github.com/thunderz99/java-cosmos</url>
@@ -87,6 +87,12 @@
             <groupId>io.github.cdimascio</groupId>
             <artifactId>java-dotenv</artifactId>
             <version>5.2.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>29.0-jre</version>
         </dependency>
 
         <dependency>
