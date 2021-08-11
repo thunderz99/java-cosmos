@@ -4,8 +4,10 @@ import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -594,6 +596,48 @@ class ConditionTest {
 			assertThat(subQueries.get(0).filter).containsEntry("e", "f");
 			assertThat(Condition.isTrueCondition(subQueries.get(1))).isTrue();
 		}
+
+	}
+
+	@Test
+	public void copy_should_support_nested_conditions() {
+
+		var cond = Condition.filter("id", "ID001", SubConditionType.SUB_COND_OR.name(), List.of(
+				Condition.filter("name", "Tom"),
+				Condition.filter("age >", "20")
+		));
+
+		var copy = cond.copy();
+		assertThat(copy.filter.get("id")).isEqualTo("ID001");
+		var subCondObjs = copy.filter.get(SubConditionType.SUB_COND_OR.name());
+		assertThat(subCondObjs instanceof List<?>).isTrue();
+
+		if (subCondObjs instanceof List<?>) {
+			var list = (List<?>) subCondObjs;
+			for (var subCondObj : list) {
+				assertThat(subCondObj instanceof Condition).isTrue();
+			}
+		}
+	}
+
+	@Test
+	public void copy_should_work() {
+
+		var skillSet = Set.of("java", "python");
+		var cond = Condition.filter("id", "ID001", "aaa-bbb.value IS_DEFINED", true, "int", 10, "skills ARRAY_CONTAINS_ANY", skillSet)
+				.offset(40).limit(20).sort("id", "DESC").crossPartition(true).fields("id", "_ts");
+		var copy = cond.copy();
+
+		assertThat(copy.filter.get("id")).isEqualTo("ID001");
+		assertThat(copy.filter.get("int")).isEqualTo(10);
+		assertThat(copy.filter.get("skills ARRAY_CONTAINS_ANY")).isEqualTo(new ArrayList<>(skillSet));
+		assertThat(copy.filter.get("aaa-bbb.value IS_DEFINED")).isEqualTo(true);
+
+		assertThat(copy.offset).isEqualTo(cond.offset);
+		assertThat(copy.limit).isEqualTo(cond.limit);
+		assertThat(copy.fields).isEqualTo(cond.fields);
+		assertThat(copy.sort).isEqualTo(cond.sort);
+		assertThat(copy.crossPartition).isEqualTo(cond.crossPartition);
 
 	}
 

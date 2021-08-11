@@ -1,5 +1,8 @@
 package io.github.thunderz99.cosmos.condition;
 
+import com.fasterxml.jackson.annotation.JsonGetter;
+import com.fasterxml.jackson.annotation.JsonSetter;
+import com.google.common.primitives.Primitives;
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
 import com.microsoft.azure.documentdb.SqlQuerySpec;
@@ -37,11 +40,6 @@ public class Condition {
 
 	public int offset = 0;
 	public int limit = 100;
-
-	/**
-	 * aggregate settings(function, groupBy)
-	 */
-	public Aggregate aggregate = null;
 
 	/**
 	 * whether this query is cross-partition or not (default to false)
@@ -644,19 +642,68 @@ public class Condition {
 	 * @return copy of condition
 	 */
 	public Condition copy() {
-		var cond = new Condition();
 
-		cond.filter = JsonUtil.toMap(JsonUtil.toJson(this.filter));
-		cond.limit = this.limit;
+		var cond = new Condition();
+		cond.filter = copyFilter(this.filter);
+
 		cond.offset = this.offset;
-		cond.sort = new ArrayList<>(this.sort);
+		cond.limit = this.limit;
+		cond.sort = this.sort;
 		cond.fields = new LinkedHashSet<>(this.fields);
 		cond.crossPartition = this.crossPartition;
-		if (this.rawQuerySpec != null) {
-			cond.rawQuerySpec = new SqlQuerySpec(this.rawQuerySpec.getQueryText(), this.rawQuerySpec.getParameters());
-		}
+
+		// copy rawQuerySpec using json serialize and deserialize
+		cond.setRawQuerySpecJson(this.getRawQuerySpecJson());
 
 		return cond;
+	}
+
+	Map<String, Object> copyFilter(Map<String, Object> filter) {
+
+		if (filter == null || filter.isEmpty()) {
+			return filter;
+		}
+
+		var ret = new LinkedHashMap<String, Object>();
+		for (var entry : filter.entrySet()) {
+			var key = entry.getKey();
+			var value = entry.getValue();
+			ret.put(key, copyValue(value));
+		}
+
+		return ret;
+	}
+
+	/**
+	 * deep copy the value according to value's class
+	 *
+	 * @param value
+	 * @return copied value
+	 */
+	Object copyValue(Object value) {
+
+		if (value == null) {
+			return value;
+		}
+
+		// if value is a condition, copy the nested condition
+		if (value instanceof Condition) {
+			return ((Condition) value).copy();
+		}
+
+		// if value is a collection
+		if (value instanceof Collection<?>) {
+			var coll = (Collection<?>) value;
+			return coll.stream().map(item -> copyValue(item)).collect(Collectors.toList());
+		}
+
+		// primitive type
+		if (value instanceof String || Primitives.isWrapperType(value.getClass()) || value.getClass().isPrimitive()) {
+			return value;
+		}
+
+		return JsonUtil.toMap(value);
+
 	}
 
 	/**
@@ -694,4 +741,67 @@ public class Condition {
 	public static boolean isFalseCondition(Condition cond) {
 		return cond.rawQuerySpec != null && COND_SQL_FALSE.equals(cond.rawQuerySpec.getQueryText());
 	}
+
+
+	/**
+	 * A JsonGetter in order to serialize rawQuerySpecToJson to json string
+	 *
+	 * @return
+	 */
+	@JsonGetter("rawQuerySpec")
+	public String getRawQuerySpecJson() {
+		if (rawQuerySpec == null) {
+			return null;
+		}
+		return JsonUtil.toJson(new SqlQuerySpec4Json(rawQuerySpec));
+	}
+
+	/**
+	 * A JsonSetter in order to deserialize rawQuerySpecToJson from json string
+	 */
+	@JsonSetter("rawQuerySpec")
+	public void setRawQuerySpecJson(String jsonString) {
+		if (StringUtils.isEmpty(jsonString)) {
+			this.rawQuerySpec = null;
+		} else {
+			var rawQuerySpec4Json = JsonUtil.fromJson(jsonString, SqlQuerySpec4Json.class);
+			this.rawQuerySpec = rawQuerySpec4Json.toSqlQuerySpec();
+		}
+	}
+
+	/**
+	 * A helper class for SqlQuerySpec to serialize to/from json
+	 */
+	public static class SqlQuerySpec4Json {
+
+		public String queryText;
+
+		public List<SqlParameter> params = new ArrayList<>();
+
+		public SqlQuerySpec4Json() {
+		}
+
+		/**
+		 * create from SqlQuerySpec class
+		 *
+		 * @param querySpec querySpec
+		 */
+		SqlQuerySpec4Json(SqlQuerySpec querySpec) {
+			this.queryText = querySpec.getQueryText();
+			this.params = querySpec.getParameters().stream().collect(Collectors.toList());
+		}
+
+		/**
+		 * convert to SqlQuerySpec class
+		 *
+		 * @return querySpec
+		 */
+		SqlQuerySpec toSqlQuerySpec() {
+			var querySpec = new SqlQuerySpec();
+			querySpec.setQueryText(this.queryText);
+			querySpec.setParameters(new SqlParameterCollection(this.params));
+			return querySpec;
+		}
+	}
+
 }

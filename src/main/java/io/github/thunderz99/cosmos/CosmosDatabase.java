@@ -447,6 +447,22 @@ public class CosmosDatabase {
 	 */
 
 	public CosmosDocumentList find(String coll, Condition cond, String partition) throws Exception {
+		// do a find without aggregate
+		return find(coll, null, cond, partition);
+
+	}
+
+	/**
+	 * A helper method to do find/aggregate by condition
+	 *
+	 * @param coll      collection name
+	 * @param aggregate aggregate settings. null if no aggration needed.
+	 * @param cond      condition to find
+	 * @param partition partition name
+	 * @return CosmosDocumentList
+	 * @throws Exception Cosmos client exception
+	 */
+	CosmosDocumentList find(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
 
 		var collectionLink = Cosmos.getCollectionLink(db, coll);
 
@@ -457,7 +473,7 @@ public class CosmosDatabase {
 			feedOptions.setPartitionKey(new PartitionKey(partition));
 		}
 
-		var querySpec = cond.toQuerySpec(cond.aggregate);
+		var querySpec = cond.toQuerySpec(aggregate);
 
 		var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec, feedOptions).getQueryIterable().toList());
 
@@ -540,8 +556,7 @@ public class CosmosDatabase {
 	 * @return CosmosDocumentList
 	 */
 	public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
-		cond.aggregate = aggregate;
-		return find(coll, cond, partition);
+		return find(coll, aggregate, cond, partition);
 	}
 
 	/**
@@ -565,8 +580,7 @@ public class CosmosDatabase {
 	 * @throws Exception Cosmos client exception
 	 */
 	public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond) throws Exception {
-		cond.aggregate = aggregate;
-		return find(coll, cond);
+		return find(coll, aggregate, cond, coll);
 	}
 
 	/**

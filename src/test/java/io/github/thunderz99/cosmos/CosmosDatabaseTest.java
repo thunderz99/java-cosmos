@@ -756,7 +756,17 @@ class CosmosDatabaseTest {
 				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
 				assertThat(map).containsEntry("name", "Jerry");
 			}
-			
+
+			{
+				// dynamic fields with ARRAY_CONTAINS
+				var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS", formId), "Java");
+				var items = db.find(coll, cond, partition).toMap();
+
+				assertThat(items).hasSize(1);
+				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+				assertThat(map).containsEntry("name", "Jerry");
+			}
+
 		} finally {
 			db.delete(coll, id, partition);
 		}
