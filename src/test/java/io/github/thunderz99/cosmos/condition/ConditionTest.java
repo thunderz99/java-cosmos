@@ -623,21 +623,56 @@ class ConditionTest {
 	@Test
 	public void copy_should_work() {
 
-		var skillSet = Set.of("java", "python");
-		var cond = Condition.filter("id", "ID001", "aaa-bbb.value IS_DEFINED", true, "int", 10, "skills ARRAY_CONTAINS_ANY", skillSet)
-				.offset(40).limit(20).sort("id", "DESC").crossPartition(true).fields("id", "_ts");
-		var copy = cond.copy();
+		{
+			// normal case
+			var skillSet = Set.of("java", "python");
+			var original = Condition.filter("id", "ID001", "aaa-bbb.value IS_DEFINED", true, "int", 10, "skills ARRAY_CONTAINS_ANY", skillSet)
+					.offset(40).limit(20).sort("id", "DESC").crossPartition(true).fields("id", "_ts");
+			var copy = original.copy();
 
-		assertThat(copy.filter.get("id")).isEqualTo("ID001");
-		assertThat(copy.filter.get("int")).isEqualTo(10);
-		assertThat(copy.filter.get("skills ARRAY_CONTAINS_ANY")).isEqualTo(new ArrayList<>(skillSet));
-		assertThat(copy.filter.get("aaa-bbb.value IS_DEFINED")).isEqualTo(true);
+			assertThat(copy.filter.get("id")).isEqualTo("ID001");
+			assertThat(copy.filter.get("int")).isEqualTo(10);
+			assertThat(copy.filter.get("skills ARRAY_CONTAINS_ANY")).isEqualTo(new ArrayList<>(skillSet));
+			assertThat(copy.filter.get("aaa-bbb.value IS_DEFINED")).isEqualTo(true);
 
-		assertThat(copy.offset).isEqualTo(cond.offset);
-		assertThat(copy.limit).isEqualTo(cond.limit);
-		assertThat(copy.fields).isEqualTo(cond.fields);
-		assertThat(copy.sort).isEqualTo(cond.sort);
-		assertThat(copy.crossPartition).isEqualTo(cond.crossPartition);
+			assertThat(copy.offset).isEqualTo(original.offset);
+			assertThat(copy.limit).isEqualTo(original.limit);
+			assertThat(copy.fields).isEqualTo(original.fields);
+			assertThat(copy.sort).isEqualTo(original.sort);
+			assertThat(copy.crossPartition).isEqualTo(original.crossPartition);
+
+			// deep copy, so change the copy wont affect the original
+			copy.filter.put("copy", true);
+			assertThat(original.filter).doesNotContainEntry("copy", true);
+
+			copy.fields.clear();
+			assertThat(original.fields).hasSize(2);
+			assertThat(original.fields).contains("id", "_ts");
+
+			copy.sort.set(0, "updatedAt");
+			assertThat(original.sort.get(0)).isEqualTo("id");
+
+
+		}
+		{
+			// for empty filter
+			var original = Condition.filter();
+			var copy = original.copy();
+
+			// deep copy test
+			copy.filter.put("id", "ID002");
+			assertThat(original.filter).hasSize(0).doesNotContainEntry("id", "ID002");
+
+			copy.fields.add("id");
+			copy.fields.add("createdAt");
+			assertThat(original.fields).isEmpty();
+
+			copy.sort.add("_ts");
+			copy.sort.add("DESC");
+
+			assertThat(original.sort).isEmpty();
+
+		}
 
 	}
 
