@@ -648,7 +648,7 @@ public class Condition {
 
 		cond.offset = this.offset;
 		cond.limit = this.limit;
-		cond.sort = this.sort;
+		cond.sort = new ArrayList<>(this.sort);
 		cond.fields = new LinkedHashSet<>(this.fields);
 		cond.crossPartition = this.crossPartition;
 
@@ -660,10 +660,10 @@ public class Condition {
 
 	Map<String, Object> copyFilter(Map<String, Object> filter) {
 
-		if (filter == null || filter.isEmpty()) {
+		if (filter == null) {
 			return filter;
 		}
-
+		
 		var ret = new LinkedHashMap<String, Object>();
 		for (var entry : filter.entrySet()) {
 			var key = entry.getKey();
