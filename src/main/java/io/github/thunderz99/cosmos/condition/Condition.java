@@ -47,6 +47,17 @@ public class Condition {
 	public boolean crossPartition = false;
 
 	/**
+	 * whether this query is a negative query. (default to false)
+	 * <p>
+	 * this field represents the NOT operator in cosmos db
+	 * </p>
+	 * <p>
+	 * attention. this field will have no effect when this condition is a complete rawSql
+	 * </p>
+	 */
+	public boolean negative = false;
+
+	/**
 	 * a raw query spec which can use raw sql
 	 */
 	public SqlQuerySpec rawQuerySpec = null;
@@ -171,10 +182,24 @@ public class Condition {
 	 * set whether is cross-partition query
 	 *
 	 * @param crossPartition
-	 * @return
+	 * @return condition
 	 */
 	public Condition crossPartition(boolean crossPartition) {
 		this.crossPartition = crossPartition;
+		return this;
+	}
+
+	/**
+	 * set the query to a NOT query
+	 *
+	 * <p>
+	 * this is a toggle function. if you do twice not(), the result is the same as no not().
+	 * </p>
+	 *
+	 * @return condition
+	 */
+	public Condition not() {
+		this.negative = !this.negative;
 		return this;
 	}
 
@@ -205,7 +230,7 @@ public class Condition {
 
 		var select = aggregate != null ? generateAggregateSelect(aggregate) : generateSelect();
 
-		var initialText = new StringBuilder(String.format("SELECT %s FROM c", select));
+		var initialText = String.format("SELECT %s FROM c", select);
 		var initialParams = new SqlParameterCollection();
 		var initialConditionIndex = new AtomicInteger(0);
 		var initialParamIndex = new AtomicInteger(0);
@@ -285,21 +310,28 @@ public class Condition {
 	/**
 	 * filter parts
 	 *
-	 * @param queryText queryText
-	 * @param params params
+	 * @param selectPart queryText
+	 * @param params     params
 	 */
-	FilterQuery generateFilterQuery(StringBuilder queryText, SqlParameterCollection params,
-			AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+	FilterQuery generateFilterQuery(String selectPart, SqlParameterCollection params,
+									AtomicInteger conditionIndex, AtomicInteger paramIndex) {
 
 		// process raw sql
-		if(this.rawQuerySpec != null){
+		if (this.rawQuerySpec != null) {
 			conditionIndex.getAndIncrement();
 			params.addAll(this.rawQuerySpec.getParameters());
-			return new FilterQuery(new StringBuilder(this.rawQuerySpec.getQueryText()),
+			String rawQueryText = processNegativeQuery(this.rawQuerySpec.getQueryText(), this.negative);
+			return new FilterQuery(rawQueryText,
 					this.rawQuerySpec.getParameters(), conditionIndex, paramIndex);
 		}
 
 		// process filters
+
+		var queryTexts = new ArrayList<String>();
+
+		// filter parts
+		var connectPart = getConnectPart(conditionIndex);
+
 		for (var entry : this.filter.entrySet()) {
 
 			if (StringUtils.isEmpty(entry.getKey())) {
@@ -307,34 +339,56 @@ public class Condition {
 				continue;
 			}
 
-			// filter parts
-			var connectPart = getConnectPart(conditionIndex);
-
 			var subFilterQueryToAdd = "";
 
 			if (entry.getKey().startsWith(SubConditionType.SUB_COND_AND.name())) {
 				// sub query AND
 				var subQueries = extractSubQueries(entry.getValue());
-				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", connectPart, params, conditionIndex, paramIndex);
+				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", params, conditionIndex, paramIndex);
 
 			} else if (entry.getKey().startsWith(SubConditionType.SUB_COND_OR.name())) {
 				// sub query OR
 				var subQueries = extractSubQueries(entry.getValue());
-				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", connectPart, params, conditionIndex, paramIndex);
+				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", params, conditionIndex, paramIndex);
 
 			} else {
 				// normal expression
 				var exp = parse(entry.getKey(), entry.getValue());
 				var expQuerySpec = exp.toQuerySpec(paramIndex);
-				subFilterQueryToAdd = connectPart + expQuerySpec.getQueryText();
+				subFilterQueryToAdd = expQuerySpec.getQueryText();
 				params.addAll(expQuerySpec.getParameters());
 			}
 
-			queryText.append(subFilterQueryToAdd);
-			conditionIndex.getAndIncrement();
+			if (StringUtils.isNotEmpty(subFilterQueryToAdd)) {
+				queryTexts.add(subFilterQueryToAdd);
+				conditionIndex.getAndIncrement();
+			}
+		}
+		var queryText = String.join(" AND", queryTexts);
+
+		queryText = processNegativeQuery(queryText, this.negative);
+
+		//add WHERE part
+		if (StringUtils.isNotEmpty(queryText)) {
+			queryText = connectPart + queryText;
 		}
 
+		//add SELECT part
+		queryText = selectPart + queryText;
+
 		return new FilterQuery(queryText, params, conditionIndex, paramIndex);
+	}
+
+	/**
+	 * add negative NOT operator for queryText, if not empty
+	 *
+	 * @param queryText
+	 * @param negative
+	 * @return
+	 */
+	static String processNegativeQuery(String queryText, boolean negative) {
+		return negative && StringUtils.isNotEmpty(queryText) ?
+				" NOT(" + queryText + ")" : queryText;
 	}
 
 	/**
@@ -357,11 +411,19 @@ public class Condition {
 
 	}
 
-	String generateFilterQuery4List(List<Condition> conds, String joiner, String connectPart, SqlParameterCollection params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+	/**
+	 * @param conds          conditions
+	 * @param joiner         "AND", "OR"
+	 * @param params         sql params
+	 * @param conditionIndex increment index for conditions (for uniqueness of param names)
+	 * @param paramIndex     increment index for params (for uniqueness of param names)
+	 * @return query text
+	 */
+	String generateFilterQuery4List(List<Condition> conds, String joiner, SqlParameterCollection params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
 		List<String> subTexts = new ArrayList<>();
 
 		for (var subCond : conds) {
-			var subFilterQuery = subCond.generateFilterQuery(new StringBuilder(), params, conditionIndex,
+			var subFilterQuery = subCond.generateFilterQuery("", params, conditionIndex,
 					paramIndex);
 
 			subTexts.add(removeConnectPart(subFilterQuery.queryText.toString()));
@@ -372,9 +434,9 @@ public class Condition {
 		}
 
 		var subFilterQuery = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
-				.collect(Collectors.joining(" " + joiner + " ", connectPart + " (", ")"));
+				.collect(Collectors.joining(" " + joiner + " ", " (", ")"));
 		// remove empty sub queries
-		return StringUtils.removeStart(subFilterQuery, connectPart + " ()");
+		return StringUtils.removeStart(subFilterQuery, " ()");
 	}
 
 	private String removeConnectPart(String subQueryText) {
@@ -651,6 +713,7 @@ public class Condition {
 		cond.sort = new ArrayList<>(this.sort);
 		cond.fields = new LinkedHashSet<>(this.fields);
 		cond.crossPartition = this.crossPartition;
+		cond.negative = this.negative;
 
 		// copy rawQuerySpec using json serialize and deserialize
 		cond.setRawQuerySpecJson(this.getRawQuerySpecJson());

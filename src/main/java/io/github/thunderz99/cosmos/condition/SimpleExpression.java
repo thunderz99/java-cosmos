@@ -74,6 +74,7 @@ public class SimpleExpression implements Expression {
 		var paramValue = this.value;
 
 		if (paramValue instanceof Collection<?>) {
+			// collection param value
 			// e.g ( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )
 
 			var coll = (Collection<?>) paramValue;
@@ -106,6 +107,7 @@ public class SimpleExpression implements Expression {
 			}
 
 		} else {
+			// single param value
 
 			if (StringUtils.isEmpty(this.operator)) {
 				// set the default operator for scalar value
