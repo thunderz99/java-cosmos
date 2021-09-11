@@ -1,13 +1,22 @@
 # java-cosmos: A lightweight Azure CosmosDB client for Java
 
-
 java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb formerly). Which is an opinionated library aimed at ease of use for CRUD and find (aka. query).
 
+[![Java CI with Maven](https://github.com/thunderz99/java-cosmos/actions/workflows/maven.yml/badge.svg)](https://github.com/thunderz99/java-cosmos/actions/workflows/maven.yml)
+
+
+
 ## Background
+
 * Microsoft's official Java CosmosDB client is verbose to use
 
+
+
 ## Disclaimer
+
 * This is an alpha version, and features are focused to CRUD and find at present.
+
+
 
 ## Quickstart
 
@@ -24,6 +33,8 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 </dependency>
 
 ```
+
+
 
 ### Start programming 
 
@@ -63,6 +74,7 @@ class User{
 }
 
 ```
+
 
 
 ## More examples
@@ -158,6 +170,10 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
         Condition.filter("position", "leader"),  // subquery's fields/order/offset/limit will be ignored
         Condition.filter("organization.id", "executive_committee")
       ),
+      "SUB_COND_AND", List.of(
+        Condition.filter("tagIds ARRAY_CONTAINS_ALL", List.of("T001", "T002")).not() // A negative condition. see cosmosdb NOT
+        Condition.filter("city", "Tokyo")
+      )
     )
     .fields("id", "lastName", "age", "organization.name") // select certain fields
     .sort("lastName", "ASC") //optional sort
@@ -168,6 +184,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
 
 
 ```
+
 
 
 ### Aggregates

@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -692,4 +693,42 @@ class ConditionTest {
 		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_id", "Hanks").toJson());
 		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_age", true).toJson());
 	}
+
+	@Test
+	public void negative_should_have_no_effect_for_a_whole_rawSql() {
+
+		var q = Condition.rawSql("SELECT * FROM c WHERE \"tokyo\" IN c.cities OFFSET 0 LIMIT 20") //
+				.not() // negative will have no effect for a whole rawSql
+				.toQuerySpec();
+
+		assertThat(q.getQueryText().trim()).isEqualTo(
+				"SELECT * FROM c WHERE \"tokyo\" IN c.cities OFFSET 0 LIMIT 20");
+
+	}
+
+	@Test
+	public void negative_should_have_effect_for_a_condition_rawSql() {
+
+		var filterQuery = Condition.rawSql("\"tokyo\" IN c.cities") //
+				.not() // negative will have no effect for a whole rawSql
+				.generateFilterQuery("", new SqlParameterCollection(), new AtomicInteger(), new AtomicInteger());
+
+		assertThat(filterQuery.queryText.toString()).isEqualTo(
+				" NOT(\"tokyo\" IN c.cities)");
+
+	}
+
+	@Test
+	public void processNegativeQuery_should_work() {
+		assertThat(Condition.processNegativeQuery(null, true)).isNull();
+		assertThat(Condition.processNegativeQuery(null, false)).isNull();
+		assertThat(Condition.processNegativeQuery("", true)).isEmpty();
+		assertThat(Condition.processNegativeQuery("", false)).isEmpty();
+
+		assertThat(Condition.processNegativeQuery("c.age >= 1", false)).isEqualTo("c.age >= 1");
+		assertThat(Condition.processNegativeQuery("c.age >= 1", true)).isEqualTo(" NOT(c.age >= 1)");
+
+	}
+
+
 }

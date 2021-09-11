@@ -1,10 +1,9 @@
 package io.github.thunderz99.cosmos.condition;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
 import com.microsoft.azure.documentdb.SqlParameterCollection;
-
 import io.github.thunderz99.cosmos.dto.RecordData;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Simple bean class represents the query text and parameters for Filter
@@ -45,9 +44,9 @@ public class FilterQuery extends RecordData {
 	public FilterQuery() {
 	}
 
-	public FilterQuery(StringBuilder queryText, SqlParameterCollection params, AtomicInteger conditionIndex,
-			AtomicInteger paramIndex) {
-		this.queryText = queryText;
+	public FilterQuery(String queryText, SqlParameterCollection params, AtomicInteger conditionIndex,
+					   AtomicInteger paramIndex) {
+		this.queryText = new StringBuilder(queryText);
 		this.params = params;
 		this.conditionIndex = conditionIndex;
 		this.paramIndex = paramIndex;

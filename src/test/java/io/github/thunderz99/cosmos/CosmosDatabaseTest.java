@@ -405,6 +405,28 @@ class CosmosDatabaseTest {
 				assertThat(count).isEqualTo(1);
 			}
 
+			// test ARRAY_CONTAINS_ALL negative
+			{
+				var cond = Condition.filter( //
+						"skills ARRAY_CONTAINS_ALL", List.of("Typescript", "Java"), //
+						"age <", 100) //
+						.sort("id", "ASC") //
+						.not() //
+						.limit(10) //
+						.offset(0);
+
+				// test find
+				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+				assertThat(users.size()).isEqualTo(2);
+				assertThat(users.get(0).id).isEqualTo(user1.id);
+				assertThat(users.get(1).id).isEqualTo(user3.id);
+
+				var count = db.count(coll, cond, "Users");
+
+				assertThat(count).isEqualTo(2);
+			}
+
 			// test enum
 			{
 				var cond = Condition.filter( //
