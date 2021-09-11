@@ -1,19 +1,15 @@
 package io.github.thunderz99.cosmos;
 
-import static org.assertj.core.api.Assertions.*;
-
-import org.junit.jupiter.api.Test;
-
 import com.microsoft.azure.documentdb.DocumentClientException;
-
-import io.github.cdimascio.dotenv.Dotenv;
+import io.github.thunderz99.cosmos.util.EnvUtil;
+import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 public class CosmosTest {
-
-	static Dotenv dotenv = Dotenv.load();
-
+	
 	static String dbName = "CosmosDB";
 	static String coll = "UnitTest";
 
@@ -27,7 +23,7 @@ public class CosmosTest {
 
 	@Test
 	void testCreateAndDeleteCollection() throws Exception {
-		var cosmos = new Cosmos(dotenv.get("COSMOSDB_CONNECTION_STRING"));
+		var cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
 		String coll2 = "UnitTest2";
 		var id1 = "001";
 		var id2 = "002";
@@ -54,7 +50,7 @@ public class CosmosTest {
 
 	@Test
 	void cosmos_account_should_be_get() throws DocumentClientException {
-		var cosmos = new Cosmos(dotenv.get("COSMOSDB_CONNECTION_STRING"));
+		var cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
 		assertThat(cosmos.getAccount()).isEqualTo("rapid-cosmos-japaneast");
 	}
 
