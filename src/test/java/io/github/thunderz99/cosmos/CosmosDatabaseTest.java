@@ -2,9 +2,9 @@ package io.github.thunderz99.cosmos;
 
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
-import io.github.cdimascio.dotenv.Dotenv;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -23,7 +23,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CosmosDatabaseTest {
 
-	static Dotenv dotenv = Dotenv.load();
 	static Cosmos cosmos;
 	static CosmosDatabase db;
 
@@ -49,7 +48,7 @@ class CosmosDatabaseTest {
 
 	@BeforeAll
 	public static void beforeAll() throws Exception {
-		cosmos = new Cosmos(dotenv.get("COSMOSDB_CONNECTION_STRING"));
+		cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
 		db = cosmos.createIfNotExist(dbName, coll);
 
 		initFamiliesData();

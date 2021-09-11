@@ -40,7 +40,7 @@ public static void main(String[] args) {
       "lastName", "Banks", // last name equal to Banks
       "firstName !=", "Andy", // not equal
     )
-    .order("lastName", "ASC") //optional order
+    .sort("lastName", "ASC") //optional order
     .offset(0) //optional offset
     .limit(100); //optional limit
     
@@ -160,7 +160,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
       ),
     )
     .fields("id", "lastName", "age", "organization.name") // select certain fields
-    .order("lastName", "ASC") //optional order
+    .sort("lastName", "ASC") //optional sort
     .offset(0) //optional offset
     .limit(100); //optional limit
     
