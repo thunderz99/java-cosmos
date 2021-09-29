@@ -666,8 +666,8 @@ class CosmosDatabaseTest {
 
 		var id = "D001"; // form with content
 		var formId = "829cc727-2d49-4d60-8f91-b30f50560af7"; //uuid
-		var formContent = Map.of("name", "Tom", "sex", "Male");
-		var data = Map.of("id", id, formId, formContent);
+		var formContent = Map.of("name", "Tom", "sex", "Male", "address", "NY");
+		var data = Map.of("id", id, formId, formContent, "sheet-2", Map.of("skills", Set.of("Java", "Python")));
 
 		var id2 = "D002"; // form is empty
 		var formContent2 = Map.of("name", "", "sex", "", "empty", true);
@@ -689,7 +689,7 @@ class CosmosDatabaseTest {
 
 				assertThat(items).hasSize(1);
 				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
-				assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male");
+				assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male").containsEntry("address", "NY");
 			}
 
 			{
@@ -730,6 +730,23 @@ class CosmosDatabaseTest {
 				assertThat(items).hasSize(1);
 				assertThat(items.get(0).get("id")).isEqualTo(id);
 			}
+
+			{
+				// nested fields
+				var cond = Condition.filter("id", id, String.format("%s.name", formId), "Tom").fields("id", String.format("%s.name", formId), String.format("%s.sex", formId), "sheet-2.skills");
+				var items = db.find(coll, cond, partition).toMap();
+
+				assertThat(items).hasSize(1);
+				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+				assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male").doesNotContainEntry("address", "NY");
+
+				var map2 = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get("sheet-2")));
+				assertThat(map2).containsKey("skills");
+				assertThat(map2.values().toString()).contains("Java", "Python");
+
+
+			}
+
 
 		} finally {
 			db.delete(coll, id, partition);
