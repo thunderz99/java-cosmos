@@ -2,6 +2,7 @@ package io.github.thunderz99.cosmos.condition;
 
 import com.fasterxml.jackson.annotation.JsonGetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
+import com.google.common.collect.Maps;
 import com.google.common.primitives.Primitives;
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
@@ -9,7 +10,6 @@ import com.microsoft.azure.documentdb.SqlQuerySpec;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.RegExUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -461,12 +461,99 @@ public class Condition {
 		if (CollectionUtils.isEmpty(this.fields)) {
 			return "*";
 		}
-		return this.fields.stream().map(f -> generateOneFieldSelect(f)).filter(Objects::nonNull)
-				.collect(Collectors.joining(", ", "VALUE {", "}"));
+		return generateSelectByFields(this.fields);
+	}
+
+	/**
+	 * Generate a select sql for input fields. Supports nested fields
+	 *
+	 * <p>
+	 * {@code
+	 * //e.g.
+	 * //input: ["id", "contents.sheet-1.name", "contents.sheet-1.age", "contents.sheet-2.address"]
+	 * //output: VALUE {"id":c.id, "contents":{"sheet-1": {"name": c["contents"]["sheet-1"]["name"],c["contents"]["sheet-1"]["age"] },"sheet-2":{"address": c["contents"]["sheet-2"]["address"]}}}
+	 * }
+	 *
+	 * </p>
+	 *
+	 * @param fields
+	 * @return
+	 */
+	static String generateSelectByFields(Set<String> fields) {
+
+		Map<String, Object> fieldMap = Maps.newLinkedHashMap();
+
+		for (var field : fields) {
+
+			if (StringUtils.containsAny(field, "{", "}", ",", "\"", "'")) {
+				throw new IllegalArgumentException("field cannot contain '{', '}', ',', '\"', \"'\", field: " + field);
+			}
+			// skip empty fields
+			if (StringUtils.isEmpty(field)) {
+				continue;
+			}
+			var parts = new ArrayDeque<String>();
+			if (!field.contains(".")) {
+				parts.add(field);
+			} else {
+				parts.addAll(List.of(field.split("\\.")));
+			}
+
+			fieldMap = addFieldToMap(fieldMap, parts, "c." + field);
+		}
+
+		var ret = JsonUtil.toJsonNoIndent(fieldMap);
+
+		for (var field : fields) {
+			ret = ret.replace("\"c." + field + "\"", getFormattedKey(field));
+		}
+
+		return "VALUE " + ret;
+	}
+
+	/**
+	 * process and add a single field to the fieldMap
+	 *
+	 * @param fieldMap  global map object containing field struction map
+	 * @param parts     parts consist of a field e.g: ["contents", "sheet-1", "name"]);
+	 * @param fullField fieldName starts with collection. e.g: c.contents.sheet-1.name
+	 */
+	static Map<String, Object> addFieldToMap(Map<String, Object> fieldMap, ArrayDeque<String> parts, String fullField) {
+
+		if (CollectionUtils.isEmpty(parts) || StringUtils.isEmpty(fullField)) {
+			return fieldMap;
+		}
+
+		if (parts.size() == 1) {
+			fieldMap.put(parts.pop(), fullField);
+			return fieldMap;
+		}
+
+		var part = parts.pop();
+
+		// process the part which has size >= 2
+		var value = fieldMap.get(part);
+		Map<String, Object> subMap = null;
+		if (value == null) {
+			subMap = new LinkedHashMap<String, Object>();
+			fieldMap.put(part, subMap);
+		} else if (value instanceof String) {
+			// do nothing is already a String type, which means an end to the part.
+			return fieldMap;
+		} else if (value instanceof Map<?, ?>) {
+			subMap = (Map<String, Object>) value;
+		}
+
+		// recursively process remaining parts
+		subMap = addFieldToMap(subMap, parts, fullField);
+		fieldMap.put(part, subMap);
+
+		return fieldMap;
 	}
 
 	/**
 	 * generate select parts for aggregate
+	 *
 	 * @param aggregate
 	 * @return
 	 */
@@ -493,68 +580,6 @@ public class Condition {
 		return select.stream().collect(Collectors.joining(", "));
 	}
 
-	/**
-	 * generate a select for field.
-	 *
-	 * {@code
-	 * e.g.
-	 * "name" -> "name": "c.name"
-	 * "organization.leader.name" -> "organization": { "leader": {"name": c.organization.leader.name}}
-	 * }
-	 *
-	 * @see <a href="https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-working-with-json">sql-query-working-with-json</a>
-	 *
-	 * @param field field name
-	 * @return one field select sql
-	 */
-	static String generateOneFieldSelect(String field) {
-
-		// empty field will be skipped
-		if (StringUtils.isEmpty(field)) {
-			return null;
-		}
-
-		if (StringUtils.containsAny(field, "{", "}", ",", "\"", "'")) {
-			throw new IllegalArgumentException("field cannot contain '{', '}', ',', '\"', \"'\", field: " + field);
-		}
-
-		var fullField = "c." + field;
-
-		// if not containing ".", return a simple json part
-		if (!field.contains(".")) {
-			return String.format("\"%s\":%s", field, fullField);
-		}
-
-		var parts = new ArrayDeque<>(List.of(field.split("\\.")));
-
-		var map = createMap(parts, field);
-
-		// "organization.leader.name" -> c.organization.leader.name
-		var ret = JsonUtil.toJsonNoIndent(map).replace("\"" + field + "\"", fullField);
-
-		ret = RegExUtils.removeFirst(ret, "\\{");
-		ret = StringUtils.removeEnd(ret, "}");
-
-		return ret;
-
-	}
-
-	/**
-	 * Recursively create json object for select
-	 *
-	 * @param parts parts splitted by "."
-	 * @param fullField full field name: e.g. c.name.first
-	 * @return a map for select. "organization.leader.name" -> c.organization.leader.name
-	 */
-	static Map<String, Object> createMap(Deque<String> parts, String fullField) {
-		var map = new LinkedHashMap<String, Object>();
-		if (parts.size() <= 1) {
-			map.put(parts.pop(), fullField);
-			return map;
-		}
-		map.put(parts.pop(), createMap(parts, fullField));
-		return map;
-	}
 
 	@Override
 	public String toString() {

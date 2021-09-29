@@ -132,7 +132,7 @@ class ConditionTest {
 				.toQuerySpec();
 
 		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT VALUE {\"id\":c.id, \"fullName\":{\"first\":c.fullName.first}, \"age\":c.age} FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"id\"] IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c[\"age\"] = @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+				"SELECT VALUE {\"id\":c[\"id\"],\"fullName\":{\"first\":c[\"fullName\"][\"first\"]},\"age\":c[\"age\"]} FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"id\"] IN (@param001_id__0, @param001_id__1, @param001_id__2)) AND (c[\"age\"] = @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
 		var params = List.copyOf(q.getParameters());
 
@@ -144,15 +144,34 @@ class ConditionTest {
 	}
 
 	@Test
+	public void buildQuerySpec_should_generate_SQL_for_nested_fields() {
+
+		var q = Condition.filter("fullName.last", "Hanks") //
+				.fields("contents.aa-bb-cc", "contents.xx-yy-zz", "age") //
+				.sort("_ts", "DESC") //
+				.offset(10) //
+				.limit(20) //
+				.toQuerySpec();
+
+		assertThat(q.getQueryText().trim()).isEqualTo(
+				"SELECT VALUE {\"contents\":{\"aa-bb-cc\":c[\"contents\"][\"aa-bb-cc\"],\"xx-yy-zz\":c[\"contents\"][\"xx-yy-zz\"]},\"age\":c[\"age\"]} FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+
+		var params = List.copyOf(q.getParameters());
+
+		assertThat(params).hasSize(1);
+		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
+	}
+
+	@Test
 	public void generate_field_should_work() {
-		assertThat(Condition.generateOneFieldSelect("org.leader.name"))
-				.isEqualTo("\"org\":{\"leader\":{\"name\":c.org.leader.name}}");
+		assertThat(Condition.generateSelectByFields(Set.of("organization.primary-leader.name")))
+				.isEqualTo("VALUE {\"organization\":{\"primary-leader\":{\"name\":c[\"organization\"][\"primary-leader\"][\"name\"]}}}");
 	}
 
 	@Test
 	public void generate_field_should_throw_when_invalid_field() {
 		for (var ch : List.of("{", "}", ",", "\"", "'")) {
-			assertThatThrownBy(() -> Condition.generateOneFieldSelect(ch)).isInstanceOf(IllegalArgumentException.class)
+			assertThatThrownBy(() -> Condition.generateSelectByFields(Set.of(ch))).isInstanceOf(IllegalArgumentException.class)
 					.hasMessageContaining("field cannot").hasMessageContaining(ch);
 
 		}
