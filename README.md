@@ -29,7 +29,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.2.20</version>
+  <version>0.2.21</version>
 </dependency>
 
 ```
