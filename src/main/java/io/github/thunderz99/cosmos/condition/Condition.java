@@ -857,39 +857,4 @@ public class Condition {
 		}
 	}
 
-	/**
-	 * A helper class for SqlQuerySpec to serialize to/from json
-	 */
-	public static class SqlQuerySpec4Json {
-
-		public String queryText;
-
-		public List<SqlParameter> params = new ArrayList<>();
-
-		public SqlQuerySpec4Json() {
-		}
-
-		/**
-		 * create from SqlQuerySpec class
-		 *
-		 * @param querySpec querySpec
-		 */
-		SqlQuerySpec4Json(SqlQuerySpec querySpec) {
-			this.queryText = querySpec.getQueryText();
-			this.params = querySpec.getParameters().stream().collect(Collectors.toList());
-		}
-
-		/**
-		 * convert to SqlQuerySpec class
-		 *
-		 * @return querySpec
-		 */
-		SqlQuerySpec toSqlQuerySpec() {
-			var querySpec = new SqlQuerySpec();
-			querySpec.setQueryText(this.queryText);
-			querySpec.setParameters(new SqlParameterCollection(this.params));
-			return querySpec;
-		}
-	}
-
 }

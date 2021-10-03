@@ -697,6 +697,41 @@ class ConditionTest {
 	}
 
 	@Test
+	public void copy_should_work_for_rawsql() {
+		{
+			//simple cond
+			var original = Condition.trueCondition();
+			var copy = original.copy();
+			assertThat(copy).isNotNull();
+			assertThat(copy.rawQuerySpec.getQueryText()).isEqualTo("1=1");
+		}
+		{
+			//complex cond with sql parameters
+
+			var param1 = new SqlParameter("@param01", "Tom");
+			var param2 = new SqlParameter("@param02", 20);
+
+
+			var original = Condition.rawSql("SELECT * from c WHERE c.name = @param01 AND c.age > @param02", new SqlParameterCollection(param1, param2));
+
+			var copy = original.copy();
+			assertThat(copy).isNotNull();
+			assertThat(copy.rawQuerySpec.getQueryText()).isEqualTo("SELECT * from c WHERE c.name = @param01 AND c.age > @param02");
+
+			var params = new ArrayList<>(copy.rawQuerySpec.getParameters());
+			assertThat(params).hasSize(2);
+			for (var param : params) {
+				assertThat(param.getName()).startsWith("@param0");
+				if (param.getName().endsWith("01")) {
+					assertThat(param.getValue(String.class)).isEqualTo("Tom");
+				} else {
+					assertThat(param.getValue(Integer.class)).isEqualTo(20);
+				}
+			}
+		}
+	}
+
+	@Test
 	public void buildQuerySpec_should_work_for_is_defined() {
 
 		var q = Condition.filter("id", "Hanks", //
