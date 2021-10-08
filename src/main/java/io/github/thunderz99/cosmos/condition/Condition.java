@@ -322,7 +322,7 @@ public class Condition {
 			params.addAll(this.rawQuerySpec.getParameters());
 			String rawQueryText = processNegativeQuery(this.rawQuerySpec.getQueryText(), this.negative);
 			return new FilterQuery(rawQueryText,
-					this.rawQuerySpec.getParameters(), conditionIndex, paramIndex);
+					params, conditionIndex, paramIndex);
 		}
 
 		// process filters

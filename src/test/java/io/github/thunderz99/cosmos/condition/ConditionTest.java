@@ -784,5 +784,26 @@ class ConditionTest {
 
 	}
 
+	@Test
+	public void true_condition_in_subquery_should_work() {
+
+		var cond1 = Condition.trueCondition();
+		var cond2 = Condition.filter("id", "001");
+
+		var cond = Condition.filter(SubConditionType.SUB_COND_AND, List.of(cond1, cond2));
+
+		var q = cond.toQuerySpec();
+
+		assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE (1=1 AND (c[\"id\"] = @param000_id)) OFFSET 0 LIMIT 100");
+
+		var params = List.copyOf(q.getParameters());
+
+		assertThat(params).hasSize(1);
+
+		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_id", "001").toJson());
+
+
+	}
+
 
 }
