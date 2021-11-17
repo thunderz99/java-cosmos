@@ -29,7 +29,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.2.22</version>
+  <version>0.2.23</version>
 </dependency>
 
 ```
@@ -105,6 +105,10 @@ db.upsert("Collection1", new User("id011", "Tom", "Banks"), "Users");
 var cosmos = new Cosmos(System.getenv("YOUR_CONNECTION_STRING"));
 var db = cosmos.createIfNotExist("Database1", "Collection1");
 db.upsert("Collection1", new User("id011", "Tom", "Banks"))
+  
+// create a collection with uniqueIndexPolicy
+var uniqueKeyPolicy = Cosmos.getUniqueKeyPolicy(Set.of("/_uniqueKey1", "/_uniqueKey2"));
+var db = cosmos.createIfNotExist("Database1", "Collection2", uniqueKeyPolicy);
 
 ```
 
