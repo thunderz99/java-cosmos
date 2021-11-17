@@ -1,40 +1,17 @@
 package io.github.thunderz99.cosmos;
 
-import java.util.List;
-
-/**
- * class that represent a cosmos account
- *
- * Usage:
- * var cosmos = new Cosmos("AccountEndpoint=https://xxx.documents.azure.com:443/;AccountKey=xxx==;");
- * var db = cosmos.getDatabase("Database1");
- *
- * //Then use db to do CRUD / query
- * db.upsert("Users", user);
- *
- */
-
-import java.util.Objects;
-import java.util.regex.Pattern;
-
+import com.microsoft.azure.documentdb.*;
+import io.github.thunderz99.cosmos.util.Checker;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.microsoft.azure.documentdb.ConnectionPolicy;
-import com.microsoft.azure.documentdb.ConsistencyLevel;
-import com.microsoft.azure.documentdb.DataType;
-import com.microsoft.azure.documentdb.Database;
-import com.microsoft.azure.documentdb.DocumentClient;
-import com.microsoft.azure.documentdb.DocumentClientException;
-import com.microsoft.azure.documentdb.DocumentCollection;
-import com.microsoft.azure.documentdb.Index;
-import com.microsoft.azure.documentdb.IndexingMode;
-import com.microsoft.azure.documentdb.IndexingPolicy;
-import com.microsoft.azure.documentdb.PartitionKeyDefinition;
-import com.microsoft.azure.documentdb.RequestOptions;
-
-import io.github.thunderz99.cosmos.util.Checker;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /***
  * class that represent a cosmos account
@@ -82,20 +59,45 @@ public class Cosmos {
 
 
 	/**
-     * Get a CosmosDatabase object by name
+	 * Get a CosmosDatabase object by name
 	 *
 	 * @param db database name
 	 * @return CosmosDatabase instance
-     */
-    public CosmosDatabase getDatabase(String db) {
-        Checker.checkNotEmpty(db, "db");
+	 */
+	public CosmosDatabase getDatabase(String db) {
+		Checker.checkNotEmpty(db, "db");
 		return new CosmosDatabase(client, db, this);
-    }
+	}
 
 
 	/**
-	 * Create the db and coll if not exist. Coll creation will be skipped is empty.
-	 * @param db database name
+	 * Create the db and coll if not exist. Coll creation will be skipped if empty. uniqueKeyPolicy can be specified.
+	 *
+	 * @param db              database name
+	 * @param coll            collection name
+	 * @param uniqueKeyPolicy unique key policy for the collection
+	 * @return CosmosDatabase instance
+	 * @throws DocumentClientException Cosmos client exception Cosmos client exception
+	 */
+	public CosmosDatabase createIfNotExist(String db, String coll, UniqueKeyPolicy uniqueKeyPolicy) throws DocumentClientException {
+
+		if (StringUtils.isBlank(coll)) {
+			createDatabaseIfNotExist(client, db);
+		} else {
+			createCollectionIfNotExist(client, db, coll, uniqueKeyPolicy);
+		}
+
+		return new CosmosDatabase(client, db, this);
+	}
+
+	/**
+	 * Create the db and coll if not exist. Coll creation will be skipped if empty.
+	 *
+	 * <p>
+	 * No uniqueKeyPolicy will be used.
+	 * </p>
+	 *
+	 * @param db   database name
 	 * @param coll collection name
 	 * @return CosmosDatabase instance
 	 * @throws DocumentClientException Cosmos client exception Cosmos client exception
@@ -202,19 +204,28 @@ public class Cosmos {
 	}
 
 	static DocumentCollection createCollectionIfNotExist(DocumentClient client, String db, String coll) throws DocumentClientException {
+		return createCollectionIfNotExist(client, db, coll, getDefaultUniqueKeyPolicy());
+	}
+
+	static DocumentCollection createCollectionIfNotExist(DocumentClient client, String db, String coll, UniqueKeyPolicy uniqueKeyPolicy) throws DocumentClientException {
 
 		createDatabaseIfNotExist(client, db);
 
-        var collection = readCollection(client, db, coll);
+		var collection = readCollection(client, db, coll);
 
-        if(collection != null) {
-        	return collection;
-        }
+		if (collection != null) {
+			return collection;
+		}
 
 		var collectionInfo = new DocumentCollection();
 		collectionInfo.setId(coll);
 
 		collectionInfo.setIndexingPolicy(getDefaultIndexingPolicy());
+
+		if (uniqueKeyPolicy != null) {
+			collectionInfo.setUniqueKeyPolicy(uniqueKeyPolicy);
+		}
+
 		collectionInfo.setDefaultTimeToLive(-1);
 
 		var partitionKeyDef = new PartitionKeyDefinition();
@@ -229,6 +240,18 @@ public class Cosmos {
 
 		return createdColl.getResource();
 
+	}
+
+	/**
+	 * Read the document collection obj by dbName and collName.
+	 *
+	 * @param db   dbName
+	 * @param coll collName
+	 * @return documentCollection obj
+	 * @throws DocumentClientException
+	 */
+	public DocumentCollection readCollection(String db, String coll) throws DocumentClientException {
+		return readCollection(client, db, coll);
 	}
 
 	static DocumentCollection readCollection(DocumentClient client, String db, String coll)
@@ -249,6 +272,8 @@ public class Cosmos {
 
 	/**
 	 * return the default indexingPolicy
+	 *
+	 * @return default indexingPolicy
 	 */
 	static IndexingPolicy getDefaultIndexingPolicy() {
 		var rangeIndexOverride = new Index[3];
@@ -260,6 +285,51 @@ public class Cosmos {
 		log.info("set indexing policy to default: {} ", indexingPolicy);
 		return indexingPolicy;
 	}
+
+	/**
+	 * return the default unique key policy
+	 *
+	 * @return default unique key policy
+	 */
+	public static UniqueKeyPolicy getDefaultUniqueKeyPolicy() {
+		var uniqueKeyPolicy = new UniqueKeyPolicy();
+		return uniqueKeyPolicy;
+	}
+
+	/**
+	 * return the unique key policy by key
+	 *
+	 * <p>
+	 * key starts with "/".  e.g.  "/users/title"
+	 * </p>
+	 *
+	 * @return unique key policy
+	 */
+	public static UniqueKeyPolicy getUniqueKeyPolicy(Set<String> keys) {
+		var uniqueKeyPolicy = new UniqueKeyPolicy();
+
+		if (CollectionUtils.isEmpty(keys)) {
+			return uniqueKeyPolicy;
+		}
+
+		uniqueKeyPolicy.setUniqueKeys(keys.stream().map(key -> toUniqueKey(key)).collect(Collectors.toList()));
+
+		return uniqueKeyPolicy;
+	}
+
+	/**
+	 * generate a uniqueKey obj from a string
+	 *
+	 * @param key
+	 * @return
+	 */
+	static UniqueKey toUniqueKey(String key) {
+		Checker.checkNotBlank(key, "uniqueKey");
+		var ret = new UniqueKey();
+		ret.setPaths(List.of(key));
+		return ret;
+	}
+
 
 	static String getDatabaseLink(String db) {
 		return String.format("/dbs/%s", db);
