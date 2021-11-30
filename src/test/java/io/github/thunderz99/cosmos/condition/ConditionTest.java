@@ -1,14 +1,14 @@
 package io.github.thunderz99.cosmos.condition;
 
-import com.microsoft.azure.documentdb.SqlParameter;
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import org.junit.jupiter.api.Test;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import com.microsoft.azure.documentdb.SqlParameter;
+import com.microsoft.azure.documentdb.SqlParameterCollection;
+import org.junit.jupiter.api.Test;
 
 import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -796,14 +796,21 @@ class ConditionTest {
 
 		assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE (1=1 AND (c[\"id\"] = @param000_id)) OFFSET 0 LIMIT 100");
 
-		var params = List.copyOf(q.getParameters());
+        var params = List.copyOf(q.getParameters());
 
-		assertThat(params).hasSize(1);
+        assertThat(params).hasSize(1);
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_id", "001").toJson());
+        assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_id", "001").toJson());
 
 
-	}
+    }
 
+    @Test
+    void typeCheckFunctionPattern_should_work() {
+        assertThat(Condition.typeCheckFunctionPattern.asMatchPredicate().test("IS_NUMBER")).isTrue();
+        assertThat(Condition.typeCheckFunctionPattern.asMatchPredicate().test("IS_DEFINED")).isTrue();
+        assertThat(Condition.typeCheckFunctionPattern.asMatchPredicate().test("IS_PRIMITIVE")).isTrue();
+        assertThat(Condition.typeCheckFunctionPattern.asMatchPredicate().test("IS_NOTEXIST")).isFalse();
+    }
 
 }
