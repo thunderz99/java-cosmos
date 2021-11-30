@@ -1,5 +1,10 @@
 package io.github.thunderz99.cosmos.condition;
 
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
 import com.fasterxml.jackson.annotation.JsonGetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.google.common.collect.Maps;
@@ -13,11 +18,6 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * Condition for find. (e.g. filter / sort / offset / limit)
@@ -46,66 +46,72 @@ public class Condition {
 	 */
 	public boolean crossPartition = false;
 
-	/**
-	 * whether this query is a negative query. (default to false)
-	 * <p>
-	 * this field represents the NOT operator in cosmos db
-	 * </p>
-	 * <p>
-	 * attention. this field will have no effect when this condition is a complete rawSql
-	 * </p>
-	 */
-	public boolean negative = false;
+    /**
+     * whether this query is a negative query. (default to false)
+     * <p>
+     * this field represents the NOT operator in cosmos db
+     * </p>
+     * <p>
+     * attention. this field will have no effect when this condition is a complete rawSql
+     * </p>
+     */
+    public boolean negative = false;
 
-	/**
-	 * a raw query spec which can use raw sql
-	 */
-	public SqlQuerySpec rawQuerySpec = null;
+    /**
+     * a raw query spec which can use raw sql
+     */
+    public SqlQuerySpec rawQuerySpec = null;
 
-	public static final String COND_SQL_TRUE = "1=1";
-	public static final String COND_SQL_FALSE = "1=0";
+    public static final String COND_SQL_TRUE = "1=1";
+    public static final String COND_SQL_FALSE = "1=0";
 
-	/**
-	 * OperatorType for WHERE clause
-	 *
-	 * {@code
-	 * BINARY_OPERATORの例：{@code =, !=, >, >=, <, <= }
-	 * BINARY_FUCTIONの例： STARTSWITH, ENDSWITH, CONTAINS, ARRAY_CONTAINS
-	 * }
-	 *
-	 */
-	public enum OperatorType {
-		BINARY_OPERATOR, BINARY_FUNCTION
-	}
+    /**
+     * OperatorType for WHERE clause
+     * <p>
+     * {@code
+     * BINARY_OPERATORの例：{@code =, !=, >, >=, <, <= }
+     * BINARY_FUCTIONの例： STARTSWITH, ENDSWITH, CONTAINS, ARRAY_CONTAINS
+     * }
+     */
+    public enum OperatorType {
+        BINARY_OPERATOR, BINARY_FUNCTION
+    }
 
-	public static final Pattern simpleExpressionPattern = Pattern
-			.compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|LIKE|IN|IS_DEFINED|=|!=|<|<=|>|>=)\\s*$");
+    public static final String TYPE_CHECK_FUNCTIONS = "IS_ARRAY|IS_BOOL|IS_DEFINED|IS_NULL|IS_NUMBER|IS_OBJECT|IS_PRIMITIVE|IS_STRING";
 
-	public static final Pattern subQueryExpressionPattern = Pattern
-			.compile("(.+)\\s(ARRAY_CONTAINS_ANY|ARRAY_CONTAINS_ALL)\\s*(.*)$");
 
-	/**
-	 * add filters
-	 * @param filters search filters using key / value pair.
-	 * @return condition
-	 */
-	public static Condition filter(Object... filters) {
+    public static final Pattern simpleExpressionPattern = Pattern
+            .compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|LIKE|IN|" + TYPE_CHECK_FUNCTIONS + "|=|!=|<|<=|>|>=)\\s*$");
 
-		Condition cond = new Condition();
-		if (filters == null || filters.length == 0) {
-			return cond;
-		}
+    public static final Pattern typeCheckFunctionPattern = Pattern
+            .compile(TYPE_CHECK_FUNCTIONS);
 
-		Checker.check(filters.length % 2 == 0, "filters must be key/value pairs like: \"lastName\", \"Banks\"");
+    public static final Pattern subQueryExpressionPattern = Pattern
+            .compile("(.+)\\s(ARRAY_CONTAINS_ANY|ARRAY_CONTAINS_ALL)\\s*(.*)$");
 
-		for (int i = 0; i < filters.length; i++) {
-			if (i % 2 == 0) {
-				cond.filter.put(filters[i].toString(), filters[i + 1]);
-			}
-		}
+    /**
+     * add filters
+     *
+     * @param filters search filters using key / value pair.
+     * @return condition
+     */
+    public static Condition filter(Object... filters) {
 
-		return cond;
-	}
+        Condition cond = new Condition();
+        if (filters == null || filters.length == 0) {
+            return cond;
+        }
+
+        Checker.check(filters.length % 2 == 0, "filters must be key/value pairs like: \"lastName\", \"Banks\"");
+
+        for (int i = 0; i < filters.length; i++) {
+            if (i % 2 == 0) {
+                cond.filter.put(filters[i].toString(), filters[i + 1]);
+            }
+        }
+
+        return cond;
+    }
 
 	/**
 	 * set Orders in the following way. Overwrite previous orders.

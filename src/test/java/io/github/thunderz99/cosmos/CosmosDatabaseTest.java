@@ -1,5 +1,10 @@
 package io.github.thunderz99.cosmos;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
 import io.github.thunderz99.cosmos.condition.Aggregate;
@@ -11,11 +16,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -662,22 +662,23 @@ class CosmosDatabaseTest {
 
 	@Test
 	void dynamic_field_with_hyphen_should_work() throws Exception {
-		var partition = "SheetConents";
+        var partition = "SheetConents";
 
-		var id = "D001"; // form with content
-		var formId = "829cc727-2d49-4d60-8f91-b30f50560af7"; //uuid
-		var formContent = Map.of("name", "Tom", "sex", "Male", "address", "NY");
-		var data = Map.of("id", id, formId, formContent, "sheet-2", Map.of("skills", Set.of("Java", "Python")));
+        var id = "D001"; // form with content
+        var age = 20;
+        var formId = "829cc727-2d49-4d60-8f91-b30f50560af7"; //uuid
+        var formContent = Map.of("name", "Tom", "sex", "Male", "address", "NY");
+        var data = Map.of("id", id, "age", age, formId, formContent, "sheet-2", Map.of("skills", Set.of("Java", "Python")));
 
-		var id2 = "D002"; // form is empty
-		var formContent2 = Map.of("name", "", "sex", "", "empty", true);
-		var data2 = Map.of("id", id2, formId, formContent2);
+        var id2 = "D002"; // form is empty
+        var formContent2 = Map.of("name", "", "sex", "", "empty", true);
+        var data2 = Map.of("id", id2, formId, formContent2);
 
-		var id3 = "D003"; // form is undefined
-		var data3 = Map.of("id", id3);
+        var id3 = "D003"; // form is undefined
+        var data3 = Map.of("id", id3);
 
 
-		try {
+        try {
 			db.upsert(coll, data, partition);
 			db.upsert(coll, data2, partition);
 			db.upsert(coll, data3, partition);
@@ -690,43 +691,68 @@ class CosmosDatabaseTest {
 				assertThat(items).hasSize(1);
 				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
 				assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male").containsEntry("address", "NY");
-			}
+            }
 
-			{
-				// IS_DEFINED = true
-				var cond = Condition.filter("id", id, String.format("%s IS_DEFINED", formId), true);
-				var items = db.find(coll, cond, partition).toMap();
-				assertThat(items).hasSize(1);
-				assertThat(items.get(0).get("id")).isEqualTo(id);
-			}
+            {
+                // IS_DEFINED = true
+                var cond = Condition.filter("id", id, String.format("%s IS_DEFINED", formId), true);
+                var items = db.find(coll, cond, partition).toMap();
+                assertThat(items).hasSize(1);
+                assertThat(items.get(0).get("id")).isEqualTo(id);
+            }
 
-			{
-				// IS_DEFINED = false
-				var cond = Condition.filter("id", id, "test IS_DEFINED", false);
-				var items = db.find(coll, cond, partition).toMap();
-				assertThat(items).hasSize(1);
-				assertThat(items.get(0).get("id")).isEqualTo(id);
-			}
+            {
+                // IS_DEFINED = false
+                var cond = Condition.filter("id", id, "test IS_DEFINED", false);
+                var items = db.find(coll, cond, partition).toMap();
+                assertThat(items).hasSize(1);
+                assertThat(items.get(0).get("id")).isEqualTo(id);
+            }
 
-			{
-				// IS_DEFINED = false in OR condition. result: 2 item
-				var cond = Condition.filter("id LIKE", "D00%", SubConditionType.SUB_COND_OR, List.of(
-						Condition.filter(String.format("%s IS_DEFINED", formId), false),
-						Condition.filter(String.format("%s.empty", formId), true)
-				)).sort("id", "ASC");
-				var items = db.find(coll, cond, partition).toMap();
-				assertThat(items).hasSize(2);
-				assertThat(items.get(0).get("id")).isEqualTo(id2);
-				assertThat(items.get(1).get("id")).isEqualTo(id3);
-			}
+            {
+                // IS_NUMBER = true
+                var cond = Condition.filter("id", id, "age IS_NUMBER", true);
+                var items = db.find(coll, cond, partition).toMap();
+                assertThat(items).hasSize(1);
+                assertThat(items.get(0).get("id")).isEqualTo(id);
+            }
+            {
+                // IS_NUMBER = false
+                var cond = Condition.filter("id", id, String.format("%s IS_NUMBER", formId), false);
+                var items = db.find(coll, cond, partition).toMap();
+                assertThat(items).hasSize(1);
+                assertThat(items.get(0).get("id")).isEqualTo(id);
+            }
 
-			{
-				// IS_DEFINED = false in OR condition. result: 1 item
-				var cond = Condition.filter("id LIKE", "D00%", SubConditionType.SUB_COND_AND, List.of(
-						Condition.filter(String.format("%s.name IS_DEFINED", formId), true),
-						Condition.filter(String.format("%s.empty IS_DEFINED", formId), false)
-				)).sort("id", "ASC");
-				var items = db.find(coll, cond, partition).toMap();
+            {
+                // use rawSql to implement IS_NUMBER
+                var cond1 = Condition.filter("id", id);
+                var cond2 = Condition.rawSql("IS_NUMBER(c.test) = false");
+                var cond = Condition.filter(SubConditionType.SUB_COND_AND, List.of(cond1, cond2));
+                var items = db.find(coll, cond, partition).toMap();
+                assertThat(items).hasSize(1);
+                assertThat(items.get(0).get("id")).isEqualTo(id);
+            }
+
+            {
+                // IS_DEFINED = false in OR condition. result: 2 item
+                var cond = Condition.filter("id LIKE", "D00%", SubConditionType.SUB_COND_OR, List.of(
+                        Condition.filter(String.format("%s IS_DEFINED", formId), false),
+                        Condition.filter(String.format("%s.empty", formId), true)
+                )).sort("id", "ASC");
+                var items = db.find(coll, cond, partition).toMap();
+                assertThat(items).hasSize(2);
+                assertThat(items.get(0).get("id")).isEqualTo(id2);
+                assertThat(items.get(1).get("id")).isEqualTo(id3);
+            }
+
+            {
+                // IS_DEFINED = false in OR condition. result: 1 item
+                var cond = Condition.filter("id LIKE", "D00%", SubConditionType.SUB_COND_AND, List.of(
+                        Condition.filter(String.format("%s.name IS_DEFINED", formId), true),
+                        Condition.filter(String.format("%s.empty IS_DEFINED", formId), false)
+                )).sort("id", "ASC");
+                var items = db.find(coll, cond, partition).toMap();
 				assertThat(items).hasSize(1);
 				assertThat(items.get(0).get("id")).isEqualTo(id);
 			}

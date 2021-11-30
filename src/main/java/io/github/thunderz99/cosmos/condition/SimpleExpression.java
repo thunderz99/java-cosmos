@@ -1,13 +1,5 @@
 package io.github.thunderz99.cosmos.condition;
 
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
-import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
-import io.github.thunderz99.cosmos.util.Checker;
-import io.github.thunderz99.cosmos.util.JsonUtil;
-import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.commons.lang3.StringUtils;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Set;
@@ -15,6 +7,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import com.microsoft.azure.documentdb.SqlParameterCollection;
+import com.microsoft.azure.documentdb.SqlQuerySpec;
+import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
+import io.github.thunderz99.cosmos.util.Checker;
+import io.github.thunderz99.cosmos.util.JsonUtil;
+import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * A class representing simple expression
@@ -117,14 +117,14 @@ public class SimpleExpression implements Expression {
 			paramIndex.getAndIncrement();
 			// other types
 			var formattedKey = Condition.getFormattedKey(this.key);
-			if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >, LIKE
-				//use c["key"] for cosmosdb reserved words
-				ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, paramName));
-			} else if ("IS_DEFINED".equals(this.operator)) { // special func IS_DEFINED
-				ret.setQueryText(String.format(" (%s(%s) = %s)", this.operator, formattedKey, paramName));
-			} else { // other binary funcs. e.g. STARTSWITH, CONTAINS, ARRAY_CONTAINS
-				ret.setQueryText(String.format(" (%s(%s, %s))", this.operator, formattedKey, paramName));
-			}
+            if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >, LIKE
+                //use c["key"] for cosmosdb reserved words
+                ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, paramName));
+            } else if (Condition.typeCheckFunctionPattern.asMatchPredicate().test(this.operator)) { // type check funcs: IS_DEFINED|IS_NUMBER|IS_PRIMITIVE, etc
+                ret.setQueryText(String.format(" (%s(%s) = %s)", this.operator, formattedKey, paramName));
+            } else { // other binary funcs. e.g. STARTSWITH, CONTAINS, ARRAY_CONTAINS
+                ret.setQueryText(String.format(" (%s(%s, %s))", this.operator, formattedKey, paramName));
+            }
 
 			params.add(Condition.createSqlParameter(paramName, paramValue));
 		}

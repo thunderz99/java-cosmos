@@ -29,7 +29,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.2.23</version>
+  <version>0.2.24</version>
 </dependency>
 
 ```
@@ -163,6 +163,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
       "desciption CONTAINS", "Project manager",// see cosmosdb CONTAINS
       "certificates IS_DEFINED", true, // see cosmosdb IS_DEFINED
       "families.villa IS_DEFINED", false, // see cosmosdb IS_DEFINED
+      "age IS_NUMBER", true, // see cosmosdb type check functions
       "tagIds ARRAY_CONTAINS", "T001", // see cosmosdb ARRAY_CONTAINS
       "tagIds ARRAY_CONTAINS_ANY", List.of("T001", "T002"), // see cosmosdb EXISTS
       "tags ARRAY_CONTAINS_ALL name", List.of("Java", "React"), // see cosmosdb EXISTS
