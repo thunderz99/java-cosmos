@@ -132,12 +132,12 @@ public class CosmosDatabase {
 
         var container = client.getDatabase(db).getContainer(con);
 
-        var sampleMap = new LinkedHashMap<String, Object>();
-        var item = RetryUtil.executeWithRetry(() -> container.readItem(id, new PartitionKey(partition), new CosmosItemRequestOptions(), sampleMap.getClass()));
+        var item = RetryUtil.executeWithRetry(() -> container.readItem(id, new PartitionKey(partition), new CosmosItemRequestOptions(), LinkedHashMap.class));
 
         log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-        return new CosmosDocument(item.getItem());
+        Map<String, Object> map = item.getItem();
+        return new CosmosDocument(map);
     }
 
     /**
@@ -218,7 +218,8 @@ public class CosmosDatabase {
 
         log.info("updated Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-        return new CosmosDocument(item.getItem());
+        Map<String, Object> ret = item.getItem();
+        return new CosmosDocument(ret);
     }
 
 
@@ -270,7 +271,8 @@ public class CosmosDatabase {
 
         log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-        return new CosmosDocument(item.getItem());
+        Map<String, Object> ret = item.getItem();
+        return new CosmosDocument(ret);
 
     }
 
@@ -317,7 +319,8 @@ public class CosmosDatabase {
 
         log.info("upsert Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
 
-        return new CosmosDocument(item.getItem());
+        Map<String, Object> ret = item.getItem();
+        return new CosmosDocument(ret);
     }
 
     /**
@@ -370,7 +373,8 @@ public class CosmosDatabase {
 
         log.info("upsertPartial Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
 
-        return new CosmosDocument(item.getItem());
+        Map<String, Object> ret = item.getItem();
+        return new CosmosDocument(ret);
     }
 
     /**
@@ -475,9 +479,7 @@ public class CosmosDatabase {
         var container = client.getDatabase(db).getContainer(con);
 
         var sampleMap = (Map<String, Object>) new LinkedHashMap<String, Object>();
-
         var docs = RetryUtil.executeWithRetry(() -> container.queryItems(querySpec, options, sampleMap.getClass()).stream().collect(Collectors.toList()));
-
 
         if (log.isInfoEnabled()) {
             log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
@@ -612,8 +614,7 @@ public class CosmosDatabase {
 
         var container = client.getDatabase(db).getContainer(con);
 
-        var sampleMap = (Map<String, Object>) new LinkedHashMap<String, Object>();
-        var docs = container.queryItems(querySpec, options, sampleMap.getClass()).stream().collect(Collectors.toList());
+        var docs = container.queryItems(querySpec, options, Map.class).stream().collect(Collectors.toList());
 
         if (log.isInfoEnabled()) {
             log.info("count Document:{}, cond:{}, partition:{}, account:{}", con, cond, partition, getAccount());

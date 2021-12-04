@@ -3,7 +3,6 @@ package io.github.thunderz99.cosmos;
 import java.util.Map;
 import java.util.Set;
 
-import io.github.cdimascio.dotenv.Dotenv;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import org.junit.jupiter.api.Test;
 
@@ -14,9 +13,7 @@ public class CosmosTest {
 
     static String dbName = "CosmosDB";
     static String coll = "UnitTest";
-
-    static Dotenv dotenv = Dotenv.load();
-
+    
     @Test
     void parse_connection_string_should_work() {
         var pair = Cosmos.parseConnectionString("AccountEndpoint=https://example-dev.documents.azure.com:443/;AccountKey=abcd==;");
