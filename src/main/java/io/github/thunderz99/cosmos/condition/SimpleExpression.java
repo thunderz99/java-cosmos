@@ -2,14 +2,15 @@ package io.github.thunderz99.cosmos.condition;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
+import com.azure.cosmos.models.SqlParameter;
+import com.azure.cosmos.models.SqlQuerySpec;
 import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
@@ -63,38 +64,38 @@ public class SimpleExpression implements Expression {
 	@Override
 	public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
 
-		var ret = new SqlQuerySpec();
-		var params = new SqlParameterCollection();
+        var ret = new SqlQuerySpec();
+        var params = new ArrayList<SqlParameter>();
 
-		// fullName.last -> @param001_fullName__last
-		// or
-		// "829cc727-2d49-4d60-8f91-b30f50560af7.name" -> @param001_wg31gsa.name
-		var paramName = getParamNameFromKey(this.key, paramIndex.get());
+        // fullName.last -> @param001_fullName__last
+        // or
+        // "829cc727-2d49-4d60-8f91-b30f50560af7.name" -> @param001_wg31gsa.name
+        var paramName = getParamNameFromKey(this.key, paramIndex.get());
 
-		var paramValue = this.value;
+        var paramValue = this.value;
 
-		if (paramValue instanceof Collection<?>) {
-			// collection param value
-			// e.g ( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )
+        if (paramValue instanceof Collection<?>) {
+            // collection param value
+            // e.g ( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )
 
-			var coll = (Collection<?>) paramValue;
+            var coll = (Collection<?>) paramValue;
 
-			if ("IN".equals(this.operator)) {
-				// use IN
-				if (coll.isEmpty()) {
-					//if paramValue is empty, return a FALSE queryText.
-					ret.setQueryText(" (1=0)");
-				} else {
-					paramIndex.getAndIncrement();
-					ret.setQueryText(buildArray(this.key, paramName, coll, params));
-				}
-			} else if (Set.of("=", "!=").contains(this.operator)) {
-				// use = or !=
-				paramIndex.getAndIncrement();
-				ret.setQueryText(String.format(" (%s %s %s)", Condition.getFormattedKey(this.key), this.operator, paramName));
-				params.add(Condition.createSqlParameter(paramName, paramValue));
-			} else {
-				//the default operator for collection
+            if ("IN".equals(this.operator)) {
+                // use IN
+                if (coll.isEmpty()) {
+                    //if paramValue is empty, return a FALSE queryText.
+                    ret.setQueryText(" (1=0)");
+                } else {
+                    paramIndex.getAndIncrement();
+                    ret.setQueryText(buildArray(this.key, paramName, coll, params));
+                }
+            } else if (Set.of("=", "!=").contains(this.operator)) {
+                // use = or !=
+                paramIndex.getAndIncrement();
+                ret.setQueryText(String.format(" (%s %s %s)", Condition.getFormattedKey(this.key), this.operator, paramName));
+                params.add(Condition.createSqlParameter(paramName, paramValue));
+            } else {
+                //the default operator for collection
 				//ARRAY_CONTAINS
 				if (coll.isEmpty()) {
 					//if paramValue is empty, return a FALSE queryText.
@@ -169,43 +170,43 @@ public class SimpleExpression implements Expression {
 		return JsonUtil.toJson(this);
 	}
 
-	/**
-	 * A helper function to generate c.foo IN (...) queryText
-	 *
-	 * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
-	 * "( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )", and add
-	 * paramsValue into params
-	 */
-	static String buildArray(String key, String paramName, Collection<?> paramValue, SqlParameterCollection params) {
-		var ret = new StringBuilder(String.format(" (%s IN (", Condition.getFormattedKey(key)));
+    /**
+     * A helper function to generate c.foo IN (...) queryText
+     * <p>
+     * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
+     * "( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )", and add
+     * paramsValue into params
+     */
+    static String buildArray(String key, String paramName, Collection<?> paramValue, List<SqlParameter> params) {
+        var ret = new StringBuilder(String.format(" (%s IN (", Condition.getFormattedKey(key)));
 
-		int index = 0;
+        int index = 0;
 
-		var paramNameList = new ArrayList<String>();
-		for (var v : paramValue) {
-			var paramNameIdx = String.format("%s__%d", paramName, index);
-			paramNameList.add(paramNameIdx);
-			params.add(Condition.createSqlParameter(paramNameIdx, v));
-			index++;
-		}
-		ret.append(paramNameList.stream().collect(Collectors.joining(", ")));
+        var paramNameList = new ArrayList<String>();
+        for (var v : paramValue) {
+            var paramNameIdx = String.format("%s__%d", paramName, index);
+            paramNameList.add(paramNameIdx);
+            params.add(Condition.createSqlParameter(paramNameIdx, v));
+            index++;
+        }
+        ret.append(paramNameList.stream().collect(Collectors.joining(", ")));
 
-		ret.append("))");
+        ret.append("))");
 
-		return ret.toString();
-	}
+        return ret.toString();
+    }
 
-	/**
-	 * A helper function to generate c.foo ARRAY_CONTAINS (...) queryText
-	 *
-	 * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
-	 * "(ARRAY_CONTAINS("@parentId", c["parentId"]))", and add
-	 * paramsValue into params
-	 */
-	static String buildArrayContains(String key, String paramName, Collection<?> paramValue, SqlParameterCollection params) {
-		var ret = String.format(" (ARRAY_CONTAINS(%s, %s))", paramName, Condition.getFormattedKey(key));
-		params.add(Condition.createSqlParameter(paramName, paramValue));
-		return ret;
-	}
+    /**
+     * A helper function to generate c.foo ARRAY_CONTAINS (...) queryText
+     * <p>
+     * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
+     * "(ARRAY_CONTAINS("@parentId", c["parentId"]))", and add
+     * paramsValue into params
+     */
+    static String buildArrayContains(String key, String paramName, Collection<?> paramValue, List<SqlParameter> params) {
+        var ret = String.format(" (ARRAY_CONTAINS(%s, %s))", paramName, Condition.getFormattedKey(key));
+        params.add(Condition.createSqlParameter(paramName, paramValue));
+        return ret;
+    }
 
 }

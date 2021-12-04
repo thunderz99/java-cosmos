@@ -5,13 +5,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import com.azure.cosmos.models.SqlParameter;
+import com.azure.cosmos.models.SqlQuerySpec;
 import com.fasterxml.jackson.annotation.JsonGetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.google.common.collect.Maps;
 import com.google.common.primitives.Primitives;
-import com.microsoft.azure.documentdb.SqlParameter;
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
@@ -229,36 +228,36 @@ public class Condition {
 
 	public SqlQuerySpec toQuerySpec(Aggregate aggregate) {
 
-		// When rawSql is set, other filter / limit / offset / sort will be ignored.
-		if (rawQuerySpec != null) {
-			return rawQuerySpec;
-		}
+        // When rawSql is set, other filter / limit / offset / sort will be ignored.
+        if (rawQuerySpec != null) {
+            return rawQuerySpec;
+        }
 
-		var select = aggregate != null ? generateAggregateSelect(aggregate) : generateSelect();
+        var select = aggregate != null ? generateAggregateSelect(aggregate) : generateSelect();
 
-		var initialText = String.format("SELECT %s FROM c", select);
-		var initialParams = new SqlParameterCollection();
-		var initialConditionIndex = new AtomicInteger(0);
-		var initialParamIndex = new AtomicInteger(0);
+        var initialText = String.format("SELECT %s FROM c", select);
+        var initialParams = new ArrayList<SqlParameter>();
+        var initialConditionIndex = new AtomicInteger(0);
+        var initialParamIndex = new AtomicInteger(0);
 
-		var filterQuery = generateFilterQuery(initialText, initialParams, initialConditionIndex, initialParamIndex);
+        var filterQuery = generateFilterQuery(initialText, initialParams, initialConditionIndex, initialParamIndex);
 
-		var queryText = filterQuery.queryText;
-		var params = filterQuery.params;
+        var queryText = filterQuery.queryText;
+        var params = filterQuery.params;
 
-		// group by
-		if (aggregate != null && !CollectionUtils.isEmpty(aggregate.groupBy)) {
-			var groupBy = aggregate.groupBy.stream().map(g -> getFormattedKey(g)).collect(Collectors.joining(", "));
-			queryText.append(" GROUP BY ").append(groupBy);
-		}
+        // group by
+        if (aggregate != null && !CollectionUtils.isEmpty(aggregate.groupBy)) {
+            var groupBy = aggregate.groupBy.stream().map(g -> getFormattedKey(g)).collect(Collectors.joining(", "));
+            queryText.append(" GROUP BY ").append(groupBy);
+        }
 
-		// special logic for aggregate with cross-partition=true and sort is empty
-		// We have to add a default sort to overcome a bug. 
-		// see https://social.msdn.microsoft.com/Forums/en-US/535c7e4a-f5cb-4aa3-90f5-39a2c8024191/group-by-fails-for-crosspartition-queries?forum=azurecosmosdb
+        // special logic for aggregate with cross-partition=true and sort is empty
+        // We have to add a default sort to overcome a bug.
+        // see https://social.msdn.microsoft.com/Forums/en-US/535c7e4a-f5cb-4aa3-90f5-39a2c8024191/group-by-fails-for-crosspartition-queries?forum=azurecosmosdb
 
-		if (this.crossPartition && CollectionUtils.isEmpty(sort) && aggregate != null && CollectionUtils.isNotEmpty(aggregate.groupBy)) {
-			// use the groupBy's first field to sort
-			sort = new ArrayList<String>();
+        if (this.crossPartition && CollectionUtils.isEmpty(sort) && aggregate != null && CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+            // use the groupBy's first field to sort
+            sort = new ArrayList<String>();
 			sort.add(aggregate.groupBy.stream().collect(Collectors.toList()).get(0));
 			sort.add("ASC");
 		}
@@ -303,52 +302,52 @@ public class Condition {
 
 		// offset and limit
 		if(aggregate == null || !CollectionUtils.isEmpty(aggregate.groupBy)) {
-			//if not aggregate or not having group by, we do not need offset and  limit. Because the items will be only 1.
-			queryText.append(String.format(" OFFSET %d LIMIT %d", offset, limit));
-		}
+            //if not aggregate or not having group by, we do not need offset and  limit. Because the items will be only 1.
+            queryText.append(String.format(" OFFSET %d LIMIT %d", offset, limit));
+        }
 
-		log.info("queryText:{}", queryText);
+        log.info("queryText:{}", queryText);
 
-		return new SqlQuerySpec(queryText.toString(), params);
+        return new SqlQuerySpec(queryText.toString(), params);
 
-	}
+    }
 
-	/**
-	 * filter parts
-	 *
-	 * @param selectPart queryText
-	 * @param params     params
-	 */
-	FilterQuery generateFilterQuery(String selectPart, SqlParameterCollection params,
-									AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+    /**
+     * filter parts
+     *
+     * @param selectPart queryText
+     * @param params     params
+     */
+    FilterQuery generateFilterQuery(String selectPart, List<SqlParameter> params,
+                                    AtomicInteger conditionIndex, AtomicInteger paramIndex) {
 
-		// process raw sql
-		if (this.rawQuerySpec != null) {
-			conditionIndex.getAndIncrement();
-			params.addAll(this.rawQuerySpec.getParameters());
-			String rawQueryText = processNegativeQuery(this.rawQuerySpec.getQueryText(), this.negative);
-			return new FilterQuery(rawQueryText,
-					params, conditionIndex, paramIndex);
-		}
+        // process raw sql
+        if (this.rawQuerySpec != null) {
+            conditionIndex.getAndIncrement();
+            params.addAll(this.rawQuerySpec.getParameters());
+            String rawQueryText = processNegativeQuery(this.rawQuerySpec.getQueryText(), this.negative);
+            return new FilterQuery(rawQueryText,
+                    params, conditionIndex, paramIndex);
+        }
 
-		// process filters
+        // process filters
 
-		var queryTexts = new ArrayList<String>();
+        var queryTexts = new ArrayList<String>();
 
-		// filter parts
-		var connectPart = getConnectPart(conditionIndex);
+        // filter parts
+        var connectPart = getConnectPart(conditionIndex);
 
-		for (var entry : this.filter.entrySet()) {
+        for (var entry : this.filter.entrySet()) {
 
-			if (StringUtils.isEmpty(entry.getKey())) {
-				// ignore when key is empty
-				continue;
-			}
+            if (StringUtils.isEmpty(entry.getKey())) {
+                // ignore when key is empty
+                continue;
+            }
 
-			var subFilterQueryToAdd = "";
+            var subFilterQueryToAdd = "";
 
-			if (entry.getKey().startsWith(SubConditionType.SUB_COND_AND.name())) {
-				// sub query AND
+            if (entry.getKey().startsWith(SubConditionType.SUB_COND_AND.name())) {
+                // sub query AND
 				var subQueries = extractSubQueries(entry.getValue());
 				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", params, conditionIndex, paramIndex);
 
@@ -407,40 +406,40 @@ public class Condition {
 			return List.of();
 		}
 
-		if (value instanceof Condition) {
-			return List.of((Condition) value);
-		} else if (value instanceof List<?>) {
-			return (List<Condition>) value;
-		}
+        if (value instanceof Condition) {
+            return List.of((Condition) value);
+        } else if (value instanceof List<?>) {
+            return (List<Condition>) value;
+        }
 
-		return List.of();
+        return List.of();
 
-	}
+    }
 
-	/**
-	 * @param conds          conditions
-	 * @param joiner         "AND", "OR"
-	 * @param params         sql params
-	 * @param conditionIndex increment index for conditions (for uniqueness of param names)
-	 * @param paramIndex     increment index for params (for uniqueness of param names)
-	 * @return query text
-	 */
-	String generateFilterQuery4List(List<Condition> conds, String joiner, SqlParameterCollection params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
-		List<String> subTexts = new ArrayList<>();
+    /**
+     * @param conds          conditions
+     * @param joiner         "AND", "OR"
+     * @param params         sql params
+     * @param conditionIndex increment index for conditions (for uniqueness of param names)
+     * @param paramIndex     increment index for params (for uniqueness of param names)
+     * @return query text
+     */
+    String generateFilterQuery4List(List<Condition> conds, String joiner, List<SqlParameter> params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+        List<String> subTexts = new ArrayList<>();
 
-		for (var subCond : conds) {
-			var subFilterQuery = subCond.generateFilterQuery("", params, conditionIndex,
-					paramIndex);
+        for (var subCond : conds) {
+            var subFilterQuery = subCond.generateFilterQuery("", params, conditionIndex,
+                    paramIndex);
 
-			subTexts.add(removeConnectPart(subFilterQuery.queryText.toString()));
+            subTexts.add(removeConnectPart(subFilterQuery.queryText.toString()));
 
-			params = subFilterQuery.params;
-			conditionIndex = subFilterQuery.conditionIndex;
-			paramIndex = subFilterQuery.paramIndex;
-		}
+            params = subFilterQuery.params;
+            conditionIndex = subFilterQuery.conditionIndex;
+            paramIndex = subFilterQuery.paramIndex;
+        }
 
-		var subFilterQuery = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
-				.collect(Collectors.joining(" " + joiner + " ", " (", ")"));
+        var subFilterQuery = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
+                .collect(Collectors.joining(" " + joiner + " ", " (", ")"));
 		// remove empty sub queries
 		return StringUtils.removeStart(subFilterQuery, " ()");
 	}
@@ -639,20 +638,19 @@ public class Condition {
 	}
 
 
-
-	/**
-	 * Use raw sql and params to do custom complex queries. When rawSql is set,
-	 * other filter / limit / offset / sort will be ignored.
-	 *
-	 * @param queryText sql raw queryText
-	 * @param params params used in sql
-	 * @return condition
-	 */
-	public static Condition rawSql(String queryText, SqlParameterCollection params) {
-		var cond = new Condition();
-		cond.rawQuerySpec = new SqlQuerySpec(queryText, params);
-		return cond;
-	}
+    /**
+     * Use raw sql and params to do custom complex queries. When rawSql is set,
+     * other filter / limit / offset / sort will be ignored.
+     *
+     * @param queryText sql raw queryText
+     * @param params    params used in sql
+     * @return condition
+     */
+    public static Condition rawSql(String queryText, List<SqlParameter> params) {
+        var cond = new Condition();
+        cond.rawQuerySpec = new SqlQuerySpec(queryText, params);
+        return cond;
+    }
 
 	/**
 	 * Use raw sql to do custom complex queries. When rawSql is set, other filter /

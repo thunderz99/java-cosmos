@@ -5,12 +5,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.microsoft.azure.documentdb.SqlParameter;
-import com.microsoft.azure.documentdb.SqlParameterCollection;
+import com.azure.cosmos.models.SqlParameter;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import org.assertj.core.util.Lists;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -23,21 +23,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CosmosDatabaseTest {
 
-	static Cosmos cosmos;
-	static CosmosDatabase db;
+    static Cosmos cosmos;
+    static CosmosDatabase db;
 
-	static String dbName = "CosmosDB";
-	static String coll = "UnitTest";
+    static String dbName = "CosmosDB";
+    static String conName = "UnitTest";
 
-	Logger log = LoggerFactory.getLogger(CosmosDatabaseTest.class);
+    Logger log = LoggerFactory.getLogger(CosmosDatabaseTest.class);
 
-	public static class User {
-		public String id;
-		public String firstName;
-		public String lastName;
+    public static class User {
+        public String id;
+        public String firstName;
+        public String lastName;
 
-		public User() {
-		}
+        public User() {
+        }
 
 		public User(String id, String firstName, String lastName) {
 			this.id = id;
@@ -48,12 +48,12 @@ class CosmosDatabaseTest {
 
 	@BeforeAll
 	public static void beforeAll() throws Exception {
-		cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
-		db = cosmos.createIfNotExist(dbName, coll);
+        cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
+        db = cosmos.createIfNotExist(dbName, conName);
 
-		initFamiliesData();
+        initFamiliesData();
 
-	}
+    }
 
 	@AfterAll
 	public static void afterAll() throws Exception {
@@ -64,91 +64,91 @@ class CosmosDatabaseTest {
 	@Test
 	void create_and_read_should_work() throws Exception {
 
-		var user = new User("unittest_create_01", "first01", "last01");
-		db.delete(coll, user.id, "Users");
+        var user = new User("unittest_create_01", "first01", "last01");
+        db.delete(conName, user.id, "Users");
 
-		try {
-			var created = db.create(coll, user, "Users").toObject(User.class);
-			assertThat(created.id).isEqualTo(user.id);
-			assertThat(created.firstName).isEqualTo(user.firstName);
+        try {
+            var created = db.create(conName, user, "Users").toObject(User.class);
+            assertThat(created.id).isEqualTo(user.id);
+            assertThat(created.firstName).isEqualTo(user.firstName);
 
-			var read = db.read(coll, user.id, "Users").toObject(User.class);
-			assertThat(read.id).isEqualTo(user.id);
-			assertThat(read.firstName).isEqualTo(user.firstName);
+            var read = db.read(conName, user.id, "Users").toObject(User.class);
+            assertThat(read.id).isEqualTo(user.id);
+            assertThat(read.firstName).isEqualTo(user.firstName);
 
-		} finally {
-			db.delete(coll, user.id, "Users");
-		}
+        } finally {
+            db.delete(conName, user.id, "Users");
+        }
 
 	}
 
 	@Test
 	void create_should_throw_when_data_is_null() throws Exception {
-		User user = null;
-		assertThatThrownBy(() -> db.create(coll, user, "Users")).isInstanceOf(IllegalArgumentException.class)
-				.hasMessageContaining("create data UnitTest Users");
+        User user = null;
+        assertThatThrownBy(() -> db.create(conName, user, "Users")).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("create data UnitTest Users");
 
-	}
+    }
 
 	@Test
 	void update_should_work() throws Exception {
 
-		var user = new User("unittest_update_01", "first01", "last01");
-		db.delete(coll, user.id, "Users");
+        var user = new User("unittest_update_01", "first01", "last01");
+        db.delete(conName, user.id, "Users");
 
-		try {
-			db.create(coll, user, "Users").toObject(User.class);
+        try {
+            db.create(conName, user, "Users").toObject(User.class);
 
-			var update1 = Map.of("lastName", "lastUpdated");
-			// partial update
-			var updated1 = db.updatePartial(coll, user.id, update1, "Users").toObject(User.class);
-			assertThat(updated1.id).isEqualTo(user.id);
-			assertThat(updated1.firstName).isEqualTo(user.firstName);
-			assertThat(updated1.lastName).isEqualTo(update1.get("lastName"));
+            var update1 = Map.of("lastName", "lastUpdated");
+            // partial update
+            var updated1 = db.updatePartial(conName, user.id, update1, "Users").toObject(User.class);
+            assertThat(updated1.id).isEqualTo(user.id);
+            assertThat(updated1.firstName).isEqualTo(user.firstName);
+            assertThat(updated1.lastName).isEqualTo(update1.get("lastName"));
 
-			// full update
-			user.firstName = "fullUpdateFirst";
-			user.lastName = "fullUpdateLast";
-			var updated2 = db.update(coll, user, "Users").toObject(User.class);
+            // full update
+            user.firstName = "fullUpdateFirst";
+            user.lastName = "fullUpdateLast";
+            var updated2 = db.update(conName, user, "Users").toObject(User.class);
 
-			assertThat(updated2.id).isEqualTo(user.id);
-			assertThat(updated2.firstName).isEqualTo(user.firstName);
-			assertThat(updated2.lastName).isEqualTo(user.lastName);
+            assertThat(updated2.id).isEqualTo(user.id);
+            assertThat(updated2.firstName).isEqualTo(user.firstName);
+            assertThat(updated2.lastName).isEqualTo(user.lastName);
 
-		} finally {
-			db.delete(coll, user.id, "Users");
-		}
+        } finally {
+            db.delete(conName, user.id, "Users");
+        }
 
 	}
 
 	@Test
 	void upsert_should_work() throws Exception {
-		var user = new User("unittest_upsert_01", "first01", "last01");
-		db.delete(coll, user.id, "Users");
+        var user = new User("unittest_upsert_01", "first01", "last01");
+        db.delete(conName, user.id, "Users");
 
-		try {
-			var upserted = db.upsert(coll, user, "Users").toObject(User.class);
-			assertThat(upserted.id).isEqualTo(user.id);
-			assertThat(upserted.firstName).isEqualTo(user.firstName);
+        try {
+            var upserted = db.upsert(conName, user, "Users").toObject(User.class);
+            assertThat(upserted.id).isEqualTo(user.id);
+            assertThat(upserted.firstName).isEqualTo(user.firstName);
 
-			var upsert1 = new User(user.id, "firstUpsert", "lastUpsert");
+            var upsert1 = new User(user.id, "firstUpsert", "lastUpsert");
 
-			// full upsert
-			var upserted1 = db.upsert(coll, upsert1, "Users").toObject(User.class);
-			assertThat(upserted1.id).isEqualTo(upsert1.id);
-			assertThat(upserted1.firstName).isEqualTo(upsert1.firstName);
-			assertThat(upserted1.lastName).isEqualTo(upsert1.lastName);
+            // full upsert
+            var upserted1 = db.upsert(conName, upsert1, "Users").toObject(User.class);
+            assertThat(upserted1.id).isEqualTo(upsert1.id);
+            assertThat(upserted1.firstName).isEqualTo(upsert1.firstName);
+            assertThat(upserted1.lastName).isEqualTo(upsert1.lastName);
 
-			// partial upsert
-			var upsertedParial = db.upsertPartial(coll, user.id, Map.of("lastName", "lastPartialUpsert"), "Users")
-					.toObject(User.class);
-			assertThat(upsertedParial.id).isEqualTo(upsert1.id);
-			assertThat(upsertedParial.firstName).isEqualTo(upsert1.firstName);
-			assertThat(upsertedParial.lastName).isEqualTo("lastPartialUpsert");
+            // partial upsert
+            var upsertedParial = db.upsertPartial(conName, user.id, Map.of("lastName", "lastPartialUpsert"), "Users")
+                    .toObject(User.class);
+            assertThat(upsertedParial.id).isEqualTo(upsert1.id);
+            assertThat(upsertedParial.firstName).isEqualTo(upsert1.firstName);
+            assertThat(upsertedParial.lastName).isEqualTo("lastPartialUpsert");
 
-		} finally {
-			db.delete(coll, user.id, "Users");
-		}
+        } finally {
+            db.delete(conName, user.id, "Users");
+        }
 
 	}
 
@@ -216,323 +216,323 @@ class CosmosDatabaseTest {
 		var user4 = new FullNameUser("id_find_filter4", "Andy", "Henry", 45, "2020-12-01", "Javascript", "Java");
 
 		try {
-			// prepare
-			db.upsert(coll, user1, "Users");
-			db.upsert(coll, user2, "Users");
-			db.upsert(coll, user3, "Users");
+            // prepare
+            db.upsert(conName, user1, "Users");
+            db.upsert(conName, user2, "Users");
+            db.upsert(conName, user3, "Users");
 
-			// different partition
-			db.upsert(coll, user4, "Users2");
+            // different partition
+            db.upsert(conName, user4, "Users2");
 
-			// test basic find
-			{
-				var cond = Condition.filter("fullName.last", "Hanks", //
-						"fullName.first", "Elise" //
-				).sort("id", "ASC") //
-						.limit(10) //
-						.offset(0);
+            // test basic find
+            {
+                var cond = Condition.filter("fullName.last", "Hanks", //
+                        "fullName.first", "Elise" //
+                ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
 
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(1);
-				assertThat(users.get(0)).hasToString(user1.toString());
-			}
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0)).hasToString(user1.toString());
+            }
 
 			// test reserved word find("end")
-			{
-				var cond = Condition.filter("fullName.last", "Hanks", //
-						"end >=", "2020-10-30" //
-				).sort("id", "ASC") //
-						.limit(10) //
-						.offset(0);
+            {
+                var cond = Condition.filter("fullName.last", "Hanks", //
+                        "end >=", "2020-10-30" //
+                ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
 
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(1);
-				assertThat(users.get(0)).hasToString(user2.toString());
-			}
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0)).hasToString(user2.toString());
+            }
 
 			// test fields
-			{
-				var cond = Condition.filter("fullName.last", "Hanks", //
-						"fullName.first", "Elise" //
-				).fields("id", "fullName.last", "age")//
-						.sort("id", "ASC") //
-						.limit(10) //
-						.offset(0);
+            {
+                var cond = Condition.filter("fullName.last", "Hanks", //
+                        "fullName.first", "Elise" //
+                ).fields("id", "fullName.last", "age")//
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
 
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(1);
-				assertThat(users.get(0).id).isEqualTo(user1.id);
-				assertThat(users.get(0).age).isEqualTo(user1.age);
-				assertThat(users.get(0).fullName.last).isEqualTo(user1.fullName.last);
-				assertThat(users.get(0).fullName.first).isNullOrEmpty();
-				assertThat(users.get(0).skills).isEmpty();
-			}
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0).id).isEqualTo(user1.id);
+                assertThat(users.get(0).age).isEqualTo(user1.age);
+                assertThat(users.get(0).fullName.last).isEqualTo(user1.fullName.last);
+                assertThat(users.get(0).fullName.first).isNullOrEmpty();
+                assertThat(users.get(0).skills).isEmpty();
+            }
 
 			// test IN find
 
-			{
-				var cond = Condition.filter("fullName.last", "Hanks", //
-						"id", List.of(user1.id, user2.id, user3.id)).sort("_ts", "DESC") //
-						.limit(10) //
-						.offset(0);
+            {
+                var cond = Condition.filter("fullName.last", "Hanks", //
+                        "id", List.of(user1.id, user2.id, user3.id)).sort("_ts", "DESC") //
+                        .limit(10) //
+                        .offset(0);
 
-				// test find
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                // test find
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(2);
-				assertThat(users.get(0)).hasToString(user2.toString());
+                assertThat(users.size()).isEqualTo(2);
+                assertThat(users.get(0)).hasToString(user2.toString());
 
-				// count
+                // count
 
-				var count = db.count(coll, cond, "Users");
+                var count = db.count(conName, cond, "Users");
 
-				assertThat(count).isEqualTo(2);
-			}
+                assertThat(count).isEqualTo(2);
+            }
 
 			// test limit find
-			{
-				var users = db.find(coll, Condition.filter().sort("_ts", "DESC").limit(2), "Users")
-						.toList(FullNameUser.class);
-				assertThat(users.size()).isEqualTo(2);
-				assertThat(users.get(0)).hasToString(user3.toString());
+            {
+                var users = db.find(conName, Condition.filter().sort("_ts", "DESC").limit(2), "Users")
+                        .toList(FullNameUser.class);
+                assertThat(users.size()).isEqualTo(2);
+                assertThat(users.get(0)).hasToString(user3.toString());
 
-				var maps = db.find(coll, Condition.filter().sort("_ts", "DESC").limit(2), "Users").toMap();
-				assertThat(maps.size()).isEqualTo(2);
-				assertThat(maps.get(1).get("id")).hasToString(user2.id);
-				assertThat(maps.get(1).get("fullName").toString()).contains(user2.fullName.first);
-			}
+                var maps = db.find(conName, Condition.filter().sort("_ts", "DESC").limit(2), "Users").toMap();
+                assertThat(maps.size()).isEqualTo(2);
+                assertThat(maps.get(1).get("id")).hasToString(user2.id);
+                assertThat(maps.get(1).get("fullName").toString()).contains(user2.fullName.first);
+            }
 
 			// test compare operator
-			{
-				var cond = Condition.filter( //
-						"fullName.last !=", "Henry", //
-						"age >=", 30).sort("_ts", "DESC") //
-						.limit(10) //
-						.offset(0);
+            {
+                var cond = Condition.filter( //
+                        "fullName.last !=", "Henry", //
+                        "age >=", 30).sort("_ts", "DESC") //
+                        .limit(10) //
+                        .offset(0);
 
-				// test find
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                // test find
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(1);
-				assertThat(users.get(0)).hasToString(user2.toString());
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0)).hasToString(user2.toString());
 
-				var count = db.count(coll, cond, "Users");
+                var count = db.count(conName, cond, "Users");
 
-				assertThat(count).isEqualTo(1);
-			}
+                assertThat(count).isEqualTo(1);
+            }
 
 			// test function operator
 			{
-				var cond = Condition.filter( //
-						"fullName.last STARTSWITH", "Ha", //
-						"age <", 45, //
-						"fullName.first CONTAINS", "at", //
-						"skills ARRAY_CONTAINS", "Typescript")//
-						.sort("_ts", "DESC") //
-						.limit(10) //
-						.offset(0);
+                var cond = Condition.filter( //
+                        "fullName.last STARTSWITH", "Ha", //
+                        "age <", 45, //
+                        "fullName.first CONTAINS", "at", //
+                        "skills ARRAY_CONTAINS", "Typescript")//
+                        .sort("_ts", "DESC") //
+                        .limit(10) //
+                        .offset(0);
 
-				// test find
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                // test find
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(1);
-				assertThat(users.get(0)).hasToString(user2.toString());
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0)).hasToString(user2.toString());
 
-				var count = db.count(coll, cond, "Users");
+                var count = db.count(conName, cond, "Users");
 
-				assertThat(count).isEqualTo(1);
-			}
+                assertThat(count).isEqualTo(1);
+            }
 			// test LIKE
-			{
-				var cond = Condition.filter( //
-						"fullName.last LIKE", "_ank_", //
-						"age <", 100) //
-						.sort("id", "ASC") //
-						.limit(10) //
-						.offset(0);
+            {
+                var cond = Condition.filter( //
+                        "fullName.last LIKE", "_ank_", //
+                        "age <", 100) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
 
-				// test find
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                // test find
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(2);
-				assertThat(users.get(1).id).isEqualTo(user2.id);
+                assertThat(users.size()).isEqualTo(2);
+                assertThat(users.get(1).id).isEqualTo(user2.id);
 
-				var count = db.count(coll, cond, "Users");
+                var count = db.count(conName, cond, "Users");
 
-				assertThat(count).isEqualTo(2);
-			}
+                assertThat(count).isEqualTo(2);
+            }
 
 			// test ARRAY_CONTAINS_ANY
-			{
-				var cond = Condition.filter( //
-						"skills ARRAY_CONTAINS_ANY", List.of("Typescript", "Blanco"), //
-						"age <", 100) //
-						.sort("id", "ASC") //
-						.limit(10) //
-						.offset(0);
+            {
+                var cond = Condition.filter( //
+                        "skills ARRAY_CONTAINS_ANY", List.of("Typescript", "Blanco"), //
+                        "age <", 100) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
 
-				// test find
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                // test find
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(2);
-				assertThat(users.get(0).id).isEqualTo(user1.id);
-				assertThat(users.get(1).id).isEqualTo(user2.id);
+                assertThat(users.size()).isEqualTo(2);
+                assertThat(users.get(0).id).isEqualTo(user1.id);
+                assertThat(users.get(1).id).isEqualTo(user2.id);
 
-				var count = db.count(coll, cond, "Users");
+                var count = db.count(conName, cond, "Users");
 
-				assertThat(count).isEqualTo(2);
-			}
+                assertThat(count).isEqualTo(2);
+            }
 			// test ARRAY_CONTAINS_ALL
-			{
-				var cond = Condition.filter( //
-						"skills ARRAY_CONTAINS_ALL", List.of("Typescript", "Java"), //
-						"age <", 100) //
-						.sort("id", "ASC") //
-						.limit(10) //
-						.offset(0);
+            {
+                var cond = Condition.filter( //
+                        "skills ARRAY_CONTAINS_ALL", List.of("Typescript", "Java"), //
+                        "age <", 100) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
 
-				// test find
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                // test find
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(1);
-				assertThat(users.get(0).id).isEqualTo(user2.id);
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0).id).isEqualTo(user2.id);
 
-				var count = db.count(coll, cond, "Users");
+                var count = db.count(conName, cond, "Users");
 
-				assertThat(count).isEqualTo(1);
-			}
+                assertThat(count).isEqualTo(1);
+            }
 
 			// test ARRAY_CONTAINS_ALL negative
-			{
-				var cond = Condition.filter( //
-						"skills ARRAY_CONTAINS_ALL", List.of("Typescript", "Java"), //
-						"age <", 100) //
-						.sort("id", "ASC") //
-						.not() //
-						.limit(10) //
-						.offset(0);
+            {
+                var cond = Condition.filter( //
+                        "skills ARRAY_CONTAINS_ALL", List.of("Typescript", "Java"), //
+                        "age <", 100) //
+                        .sort("id", "ASC") //
+                        .not() //
+                        .limit(10) //
+                        .offset(0);
 
-				// test find
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                // test find
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(2);
-				assertThat(users.get(0).id).isEqualTo(user1.id);
-				assertThat(users.get(1).id).isEqualTo(user3.id);
+                assertThat(users.size()).isEqualTo(2);
+                assertThat(users.get(0).id).isEqualTo(user1.id);
+                assertThat(users.get(1).id).isEqualTo(user3.id);
 
-				var count = db.count(coll, cond, "Users");
+                var count = db.count(conName, cond, "Users");
 
-				assertThat(count).isEqualTo(2);
-			}
+                assertThat(count).isEqualTo(2);
+            }
 
 			// test enum
-			{
-				var cond = Condition.filter( //
-						"skills ARRAY_CONTAINS", Skill.Python, //
-						"age <", 100) //
-						.sort("id", "ASC") //
-						.limit(10) //
-						.offset(0);
+            {
+                var cond = Condition.filter( //
+                        "skills ARRAY_CONTAINS", Skill.Python, //
+                        "age <", 100) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
 
-				// test find
-				var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+                // test find
+                var users = db.find(conName, cond, "Users").toList(FullNameUser.class);
 
-				assertThat(users.size()).isEqualTo(1);
-				assertThat(users.get(0).id).isEqualTo(user3.id);
-			}
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0).id).isEqualTo(user3.id);
+            }
 
 			// test aggregate(simple)
-			{
-				var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
+            {
+                var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
 
-				// test find
-				var result = db.aggregate(coll, aggregate,"Users").toMap();
-				assertThat(result).hasSize(2);
+                // test find
+                var result = db.aggregate(conName, aggregate, "Users").toMap();
+                assertThat(result).hasSize(2);
 
-				var expect = Map.of("Hanks", 2, "Henry", 1);
+                var expect = Map.of("Hanks", 2, "Henry", 1);
 
-				var last1 = result.get(0).getOrDefault("last", "").toString();
-				assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(expect.get(last1));
+                var last1 = result.get(0).getOrDefault("last", "").toString();
+                assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(expect.get(last1));
 
-				var last2 = result.get(1).getOrDefault("last", "").toString();
-				assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(expect.get(last2));
+                var last2 = result.get(1).getOrDefault("last", "").toString();
+                assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(expect.get(last2));
 
-			}
+            }
 
 			// test aggregate(max)
-			{
-				var aggregate = Aggregate.function("MAX(c.age) AS maxAge, COUNT(1) AS facetCount").groupBy("fullName.last");
+            {
+                var aggregate = Aggregate.function("MAX(c.age) AS maxAge, COUNT(1) AS facetCount").groupBy("fullName.last");
 
-				// test find
-				var result = db.aggregate(coll, aggregate,"Users").toMap();
-				assertThat(result).hasSize(2);
+                // test find
+                var result = db.aggregate(conName, aggregate, "Users").toMap();
+                assertThat(result).hasSize(2);
 
-				var expectAge = Map.of("Hanks", 30, "Henry", 45);
-				var expectCount = Map.of("Hanks", 2, "Henry", 1);
+                var expectAge = Map.of("Hanks", 30, "Henry", 45);
+                var expectCount = Map.of("Hanks", 2, "Henry", 1);
 
-				var last1 = result.get(0).getOrDefault("last", "").toString();
-				assertThat(Integer.parseInt(result.get(0).getOrDefault("maxAge", "-1").toString())).isEqualTo(expectAge.get(last1));
-				assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(expectCount.get(last1));
+                var last1 = result.get(0).getOrDefault("last", "").toString();
+                assertThat(Integer.parseInt(result.get(0).getOrDefault("maxAge", "-1").toString())).isEqualTo(expectAge.get(last1));
+                assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(expectCount.get(last1));
 
-				var last2 = result.get(1).getOrDefault("last", "").toString();
+                var last2 = result.get(1).getOrDefault("last", "").toString();
 				assertThat(Integer.parseInt(result.get(1).getOrDefault("maxAge", "-1").toString())).isEqualTo(expectAge.get(last2));
 				assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(expectCount.get(last2));
 
 			}
 
 			// test aggregate(with order by)
-			{
-				var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
+            {
+                var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
 
-				var cond = Condition.filter("age <", 100).sort("last", "DESC");
+                var cond = Condition.filter("age <", 100).sort("last", "DESC");
 
-				// test find
-				var result = db.aggregate(coll, aggregate, cond, "Users").toMap();
-				assertThat(result).hasSize(2);
+                // test find
+                var result = db.aggregate(conName, aggregate, cond, "Users").toMap();
+                assertThat(result).hasSize(2);
 
-				var last1 = result.get(0).getOrDefault("last", "").toString();
-				assertThat(last1).isEqualTo("Henry");
-				assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+                var last1 = result.get(0).getOrDefault("last", "").toString();
+                assertThat(last1).isEqualTo("Henry");
+                assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
 
-				var last2 = result.get(1).getOrDefault("last", "").toString();
-				assertThat(last2).isEqualTo("Hanks");
-				assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(2);
+                var last2 = result.get(1).getOrDefault("last", "").toString();
+                assertThat(last2).isEqualTo("Hanks");
+                assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(2);
 
-			}
+            }
 
 			// test query cross-partition
-			{
-				// simple query
-				var cond = Condition.filter("id LIKE", "id_find_filter%").sort("id", "ASC").crossPartition(true);
-				var result = db.find(coll, cond).toList(FullNameUser.class);
-				assertThat(result).hasSizeGreaterThanOrEqualTo(4);
-				assertThat(result.get(0).id).isEqualTo("id_find_filter1");
-				assertThat(result.get(3).id).isEqualTo("id_find_filter4");
-			}
+            {
+                // simple query
+                var cond = Condition.filter("id LIKE", "id_find_filter%").sort("id", "ASC").crossPartition(true);
+                var result = db.find(conName, cond).toList(FullNameUser.class);
+                assertThat(result).hasSizeGreaterThanOrEqualTo(4);
+                assertThat(result.get(0).id).isEqualTo("id_find_filter1");
+                assertThat(result.get(3).id).isEqualTo("id_find_filter4");
+            }
 
 			// aggregate with cross-partition
-			{
-				var aggregate = Aggregate.function("COUNT(1) as facetCount").groupBy("_partition");
-				var cond = Condition.filter("_partition", Set.of("Users", "Users2")).crossPartition(true);
-				var result = db.aggregate(coll, aggregate, cond).toMap();
-				assertThat(result).hasSize(2);
-				assertThat(result.get(0).get("_partition")).isEqualTo("Users");
-				assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(3);
-				assertThat(result.get(1).get("_partition")).isEqualTo("Users2");
-				assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+            {
+                var aggregate = Aggregate.function("COUNT(1) as facetCount").groupBy("_partition");
+                var cond = Condition.filter("_partition", Set.of("Users", "Users2")).crossPartition(true);
+                var result = db.aggregate(conName, aggregate, cond).toMap();
+                assertThat(result).hasSize(2);
+                assertThat(result.get(0).get("_partition")).isEqualTo("Users");
+                assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(3);
+                assertThat(result.get(1).get("_partition")).isEqualTo("Users2");
+                assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
 
-				System.out.println(result);
+                System.out.println(result);
 
-			}
+            }
 
 		} finally {
-			db.delete(coll, user1.id, "Users");
-			db.delete(coll, user2.id, "Users");
-			db.delete(coll, user3.id, "Users");
-			db.delete(coll, user4.id, "Users2");
-		}
+            db.delete(conName, user1.id, "Users");
+            db.delete(conName, user2.id, "Users");
+            db.delete(conName, user3.id, "Users");
+            db.delete(conName, user4.id, "Users2");
+        }
 	}
 
 	@Test
@@ -540,66 +540,66 @@ class CosmosDatabaseTest {
 		// test json from cosmosdb official site
 		// https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
 
-		var partition = "Families";
+        var partition = "Families";
 
-		var queryText = "SELECT c.gender, c.grade\n" + "    FROM Families f\n"
-				+ "    JOIN c IN f.children WHERE f.address.state = @state ORDER BY f.id ASC";
+        var queryText = "SELECT c.gender, c.grade\n" + "    FROM Families f\n"
+                + "    JOIN c IN f.children WHERE f.address.state = @state ORDER BY f.id ASC";
 
-		var params = new SqlParameterCollection(new SqlParameter("@state", "NY"));
+        List<SqlParameter> params = Lists.newArrayList(new SqlParameter("@state", "NY"));
 
-		var cond = Condition.rawSql(queryText, params);
+        var cond = Condition.rawSql(queryText, params);
 
-		var children = db.find(coll, cond, partition).toMap();
+        var children = db.find(conName, cond, partition).toMap();
 
-		assertThat(children).hasSize(2);
+        assertThat(children).hasSize(2);
 
-		assertThat(children.get(0).get("gender")).hasToString("female");
-		assertThat(children.get(1).get("grade")).hasToString("8");
+        assertThat(children.get(0).get("gender")).hasToString("female");
+        assertThat(children.get(1).get("grade")).hasToString("8");
 
-	}
+    }
 
 	@Test
 	void sub_cond_query_should_work_4_OR() throws Exception {
 		// test json from cosmosdb official site
-		// https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
+        // https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
 
-		var partition = "Families";
+        var partition = "Families";
 
-		var cond = Condition.filter(SubConditionType.SUB_COND_OR, List.of( //
-				Condition.filter("address.state", "WA"), //
-				Condition.filter("id", "WakefieldFamily"))) //
-				.sort("id", "ASC") //
-				;
+        var cond = Condition.filter(SubConditionType.SUB_COND_OR, List.of( //
+                Condition.filter("address.state", "WA"), //
+                Condition.filter("id", "WakefieldFamily"))) //
+                .sort("id", "ASC") //
+                ;
 
-		var items = db.find(coll, cond, partition).toMap();
+        var items = db.find(conName, cond, partition).toMap();
 
-		assertThat(items).hasSize(2);
+        assertThat(items).hasSize(2);
 
-		assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
-		assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
+        assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
 
-	}
+    }
 
 	@Test
 	void sub_cond_query_should_work_4_AND() throws Exception {
 		// test json from cosmosdb official site
-		// https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
+        // https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
 
-		var partition = "Families";
+        var partition = "Families";
 
-		var cond = Condition.filter(SubConditionType.SUB_COND_AND, List.of( //
-				Condition.filter("address.state", "WA"), //
-				Condition.filter("lastName", "Andersen"))) //
-				.sort("id", "ASC") //
-				;
+        var cond = Condition.filter(SubConditionType.SUB_COND_AND, List.of( //
+                Condition.filter("address.state", "WA"), //
+                Condition.filter("lastName", "Andersen"))) //
+                .sort("id", "ASC") //
+                ;
 
-		var items = db.find(coll, cond, partition).toMap();
+        var items = db.find(conName, cond, partition).toMap();
 
-		assertThat(items).hasSize(1);
+        assertThat(items).hasSize(1);
 
-		assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
 
-	}
+    }
 
 	@Test
 	void check_invalid_id_should_work() throws Exception {
@@ -616,52 +616,27 @@ class CosmosDatabaseTest {
 		var ids = List.of("\ttabbefore", "cr\rbetween");
 		for (var id : ids) {
 			try {
-				var data = Map.of("id", id, "name", "Lee");
-				assertThatThrownBy(() -> db.create(coll, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
-				assertThatThrownBy(() -> db.upsert(coll, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
-			} finally {
-				var toDelete = db.find(coll, Condition.filter(), partition).toMap();
-				for (var map : toDelete) {
-					var selfLink = map.get("_self").toString();
-					db.deleteBySelfLink(selfLink, partition);
-				}
-			}
-		}
+                var data = Map.of("id", id, "name", "Lee");
+                assertThatThrownBy(() -> db.create(conName, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
+                assertThatThrownBy(() -> db.upsert(conName, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
+            } finally {
+                var toDelete = db.find(conName, Condition.filter(), partition).toMap();
+                for (var map : toDelete) {
+                    var selfLink = map.get("_self").toString();
+                    db.delete(conName, selfLink, partition);
+                }
+            }
+        }
 
-	}
+    }
 
-	@Test
-	void delete_by_self_link_should_work() throws Exception {
+    @Test
+    void get_database_name_should_work() throws Exception {
+        assertThat(db.getDatabaseName()).isEqualTo(dbName);
+    }
 
-		var partition = "SelfLink";
-		var id = "delete_by_self_link_should_work";
-		try {
-			var data = Map.of("id", id, "name", "Lee");
-			var upserted = db.upsert(coll, data, partition).toMap();
-			assertThat(upserted).isNotNull();
-
-			var selfLink = upserted.get("_self").toString();
-			assertThat(selfLink).isNotNull();
-
-			db.deleteBySelfLink(selfLink, partition);
-
-			var read = db.readSuppressing404(coll, id, partition);
-
-			//not exist after deleteBySelfLink
-			assertThat(read).isNull();
-
-		} finally {
-			db.delete(coll, id, partition);
-		}
-	}
-
-	@Test
-	void get_database_name_should_work() throws Exception {
-		assertThat(db.getDatabaseName()).isEqualTo(dbName);
-	}
-
-	@Test
-	void dynamic_field_with_hyphen_should_work() throws Exception {
+    @Test
+    void dynamic_field_with_hyphen_should_work() throws Exception {
         var partition = "SheetConents";
 
         var id = "D001"; // form with content
@@ -679,24 +654,24 @@ class CosmosDatabaseTest {
 
 
         try {
-			db.upsert(coll, data, partition);
-			db.upsert(coll, data2, partition);
-			db.upsert(coll, data3, partition);
+            db.upsert(conName, data, partition);
+            db.upsert(conName, data2, partition);
+            db.upsert(conName, data3, partition);
 
-			{
-				// dynamic fields
-				var cond = Condition.filter("id", id, String.format("%s.name", formId), "Tom");
-				var items = db.find(coll, cond, partition).toMap();
+            {
+                // dynamic fields
+                var cond = Condition.filter("id", id, String.format("%s.name", formId), "Tom");
+                var items = db.find(conName, cond, partition).toMap();
 
-				assertThat(items).hasSize(1);
-				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
-				assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male").containsEntry("address", "NY");
+                assertThat(items).hasSize(1);
+                var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+                assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male").containsEntry("address", "NY");
             }
 
             {
                 // IS_DEFINED = true
                 var cond = Condition.filter("id", id, String.format("%s IS_DEFINED", formId), true);
-                var items = db.find(coll, cond, partition).toMap();
+                var items = db.find(conName, cond, partition).toMap();
                 assertThat(items).hasSize(1);
                 assertThat(items.get(0).get("id")).isEqualTo(id);
             }
@@ -704,7 +679,7 @@ class CosmosDatabaseTest {
             {
                 // IS_DEFINED = false
                 var cond = Condition.filter("id", id, "test IS_DEFINED", false);
-                var items = db.find(coll, cond, partition).toMap();
+                var items = db.find(conName, cond, partition).toMap();
                 assertThat(items).hasSize(1);
                 assertThat(items.get(0).get("id")).isEqualTo(id);
             }
@@ -712,14 +687,14 @@ class CosmosDatabaseTest {
             {
                 // IS_NUMBER = true
                 var cond = Condition.filter("id", id, "age IS_NUMBER", true);
-                var items = db.find(coll, cond, partition).toMap();
+                var items = db.find(conName, cond, partition).toMap();
                 assertThat(items).hasSize(1);
                 assertThat(items.get(0).get("id")).isEqualTo(id);
             }
             {
                 // IS_NUMBER = false
                 var cond = Condition.filter("id", id, String.format("%s IS_NUMBER", formId), false);
-                var items = db.find(coll, cond, partition).toMap();
+                var items = db.find(conName, cond, partition).toMap();
                 assertThat(items).hasSize(1);
                 assertThat(items.get(0).get("id")).isEqualTo(id);
             }
@@ -729,7 +704,7 @@ class CosmosDatabaseTest {
                 var cond1 = Condition.filter("id", id);
                 var cond2 = Condition.rawSql("IS_NUMBER(c.test) = false");
                 var cond = Condition.filter(SubConditionType.SUB_COND_AND, List.of(cond1, cond2));
-                var items = db.find(coll, cond, partition).toMap();
+                var items = db.find(conName, cond, partition).toMap();
                 assertThat(items).hasSize(1);
                 assertThat(items.get(0).get("id")).isEqualTo(id);
             }
@@ -740,7 +715,7 @@ class CosmosDatabaseTest {
                         Condition.filter(String.format("%s IS_DEFINED", formId), false),
                         Condition.filter(String.format("%s.empty", formId), true)
                 )).sort("id", "ASC");
-                var items = db.find(coll, cond, partition).toMap();
+                var items = db.find(conName, cond, partition).toMap();
                 assertThat(items).hasSize(2);
                 assertThat(items.get(0).get("id")).isEqualTo(id2);
                 assertThat(items.get(1).get("id")).isEqualTo(id3);
@@ -752,33 +727,33 @@ class CosmosDatabaseTest {
                         Condition.filter(String.format("%s.name IS_DEFINED", formId), true),
                         Condition.filter(String.format("%s.empty IS_DEFINED", formId), false)
                 )).sort("id", "ASC");
-                var items = db.find(coll, cond, partition).toMap();
+                var items = db.find(conName, cond, partition).toMap();
 				assertThat(items).hasSize(1);
 				assertThat(items.get(0).get("id")).isEqualTo(id);
 			}
 
-			{
-				// nested fields
-				var cond = Condition.filter("id", id, String.format("%s.name", formId), "Tom").fields("id", String.format("%s.name", formId), String.format("%s.sex", formId), "sheet-2.skills");
-				var items = db.find(coll, cond, partition).toMap();
+            {
+                // nested fields
+                var cond = Condition.filter("id", id, String.format("%s.name", formId), "Tom").fields("id", String.format("%s.name", formId), String.format("%s.sex", formId), "sheet-2.skills");
+                var items = db.find(conName, cond, partition).toMap();
 
-				assertThat(items).hasSize(1);
-				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
-				assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male").doesNotContainEntry("address", "NY");
+                assertThat(items).hasSize(1);
+                var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+                assertThat(map).containsEntry("name", "Tom").containsEntry("sex", "Male").doesNotContainEntry("address", "NY");
 
-				var map2 = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get("sheet-2")));
-				assertThat(map2).containsKey("skills");
-				assertThat(map2.values().toString()).contains("Java", "Python");
+                var map2 = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get("sheet-2")));
+                assertThat(map2).containsKey("skills");
+                assertThat(map2.values().toString()).contains("Java", "Python");
 
 
-			}
+            }
 
 
 		} finally {
-			db.delete(coll, id, partition);
-			db.delete(coll, id2, partition);
-			db.delete(coll, id3, partition);
-		}
+            db.delete(conName, id, partition);
+            db.delete(conName, id2, partition);
+            db.delete(conName, id3, partition);
+        }
 
 	}
 
@@ -793,47 +768,47 @@ class CosmosDatabaseTest {
 
 
 		try {
-			db.upsert(coll, data, partition);
+            db.upsert(conName, data, partition);
 
-			{
-				// dynamic fields with ARRAY_CONTAINS_ALL
-				var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ALL", formId), Set.of("Java", "Python"));
-				var items = db.find(coll, cond, partition).toMap();
+            {
+                // dynamic fields with ARRAY_CONTAINS_ALL
+                var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ALL", formId), Set.of("Java", "Python"));
+                var items = db.find(conName, cond, partition).toMap();
 
-				assertThat(items).hasSize(1);
-				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
-				assertThat(map).containsEntry("name", "Jerry");
-			}
-			{
-				// dynamic fields with ARRAY_CONTAINS_ALL, not hit
-				var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ALL", formId), Set.of("Java", "CSharp"));
-				var items = db.find(coll, cond, partition).toMap();
+                assertThat(items).hasSize(1);
+                var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+                assertThat(map).containsEntry("name", "Jerry");
+            }
+            {
+                // dynamic fields with ARRAY_CONTAINS_ALL, not hit
+                var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ALL", formId), Set.of("Java", "CSharp"));
+                var items = db.find(conName, cond, partition).toMap();
 
-				assertThat(items).hasSize(0);
-			}
-			{
-				// dynamic fields with ARRAY_CONTAINS_ANY
-				var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ANY", formId), Set.of("Java", "CSharp"));
-				var items = db.find(coll, cond, partition).toMap();
+                assertThat(items).hasSize(0);
+            }
+            {
+                // dynamic fields with ARRAY_CONTAINS_ANY
+                var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ANY", formId), Set.of("Java", "CSharp"));
+                var items = db.find(conName, cond, partition).toMap();
 
-				assertThat(items).hasSize(1);
-				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
-				assertThat(map).containsEntry("name", "Jerry");
-			}
+                assertThat(items).hasSize(1);
+                var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+                assertThat(map).containsEntry("name", "Jerry");
+            }
 
-			{
-				// dynamic fields with ARRAY_CONTAINS
-				var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS", formId), "Java");
-				var items = db.find(coll, cond, partition).toMap();
+            {
+                // dynamic fields with ARRAY_CONTAINS
+                var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS", formId), "Java");
+                var items = db.find(conName, cond, partition).toMap();
 
-				assertThat(items).hasSize(1);
-				var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
-				assertThat(map).containsEntry("name", "Jerry");
-			}
+                assertThat(items).hasSize(1);
+                var map = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get(formId)));
+                assertThat(map).containsEntry("name", "Jerry");
+            }
 
 		} finally {
-			db.delete(coll, id, partition);
-		}
+            db.delete(conName, id, partition);
+        }
 
 	}
 
@@ -843,12 +818,12 @@ class CosmosDatabaseTest {
 		try (var is1 = CosmosDatabaseTest.class.getResourceAsStream("family1.json");
 			 var is2 = CosmosDatabaseTest.class.getResourceAsStream("family2.json")) {
 
-			var family1 = JsonUtil.toMap(is1);
-			var family2 = JsonUtil.toMap(is2);
+            var family1 = JsonUtil.toMap(is1);
+            var family2 = JsonUtil.toMap(is2);
 
-			db.upsert(coll, family1, partition);
-			db.upsert(coll, family2, partition);
-		}
+            db.upsert(conName, family1, partition);
+            db.upsert(conName, family2, partition);
+        }
 
 	}
 

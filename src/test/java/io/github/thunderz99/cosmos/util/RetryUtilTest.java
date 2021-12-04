@@ -1,16 +1,15 @@
 package io.github.thunderz99.cosmos.util;
 
-import com.microsoft.azure.documentdb.DocumentClientException;
-import org.junit.jupiter.api.Test;
-
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.microsoft.azure.documentdb.internal.HttpConstants.HttpHeaders.RETRY_AFTER_IN_MILLISECONDS;
+import com.azure.cosmos.implementation.RequestRateTooLargeException;
+import com.azure.cosmos.implementation.http.HttpHeaders;
+import org.junit.jupiter.api.Test;
+
 import static java.time.Duration.ofSeconds;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 class RetryUtilTest {
 
@@ -27,14 +26,17 @@ class RetryUtilTest {
         { // success after 2 retries
             final var i = new AtomicInteger(0);
 
+            var headers = new HttpHeaders();
+            headers.set("x-ms-retry-after-ms", "10");
+
             // success within 1 second
             var ret = assertTimeout(ofSeconds(1), () ->
-                RetryUtil.executeWithRetry(() -> {
-                    if(i.incrementAndGet() < 2){
-                        throw new DocumentClientException(429, new com.microsoft.azure.documentdb.Error("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10"));
-                    }
-                    return "OK";
-                })
+                    RetryUtil.executeWithRetry(() -> {
+                        if (i.incrementAndGet() < 2) {
+                            throw new RequestRateTooLargeException("test", headers, null);
+                        }
+                        return "OK";
+                    })
             );
             assertThat(ret).isEqualTo("OK");
         }
@@ -44,18 +46,17 @@ class RetryUtilTest {
     @Test
     void executeWithRetry_should_throw_exception_after_max_retries() throws Exception {
 
-
         // throw exception after 10 retries
         final var i = new AtomicInteger(0);
 
         assertThatThrownBy(() ->
-            RetryUtil.executeWithRetry(() -> {
-                if(i.incrementAndGet() < 12){
-                    throw new DocumentClientException(429);
-                }
-                return "OK";
-            }, 1)
-        ).isInstanceOfSatisfying(DocumentClientException.class, e -> {
+                RetryUtil.executeWithRetry(() -> {
+                    if (i.incrementAndGet() < 12) {
+                        throw new RequestRateTooLargeException();
+                    }
+                    return "OK";
+                }, 1)
+        ).isInstanceOfSatisfying(RequestRateTooLargeException.class, e -> {
             assertThat(e.getStatusCode()).isEqualTo(429);
         });
 
