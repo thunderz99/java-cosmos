@@ -1,12 +1,11 @@
 package io.github.thunderz99.cosmos.condition;
 
-import com.microsoft.azure.documentdb.SqlParameter;
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
-
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import com.azure.cosmos.models.SqlParameter;
+import com.azure.cosmos.models.SqlQuerySpec;
 
 /**
  * A helper class for SqlQuerySpec to serialize to/from json
@@ -39,7 +38,7 @@ public class SqlQuerySpec4Json {
         var querySpec = new SqlQuerySpec();
         querySpec.setQueryText(this.queryText);
         var sqlParams = this.params.entrySet().stream().map(entry -> new SqlParameter(entry.getKey(), entry.getValue())).collect(Collectors.toList());
-        querySpec.setParameters(new SqlParameterCollection(sqlParams));
+        querySpec.setParameters(sqlParams);
         return querySpec;
     }
 }

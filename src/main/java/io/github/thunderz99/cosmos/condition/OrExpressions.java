@@ -5,18 +5,18 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
+import com.azure.cosmos.models.SqlParameter;
+import com.azure.cosmos.models.SqlQuerySpec;
+
 
 /**
  * Expressions like "firstName OR lastName STARTSWITH" : "H"
  *
  * @author zhang.lei
- *
  */
 public class OrExpressions implements Expression {
 
-	public List<SimpleExpression> simpleExps = new ArrayList<>();
+    public List<SimpleExpression> simpleExps = new ArrayList<>();
 
 	public OrExpressions() {
 	}
@@ -60,12 +60,12 @@ public class OrExpressions implements Expression {
 				.collect(Collectors.joining(" OR", " (", " )"));
 
 		var params = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForParam).getParameters())
-				.reduce(new SqlParameterCollection(), (sum, elm) -> {
-					sum.addAll(elm);
-					return sum;
-				});
+                .reduce(new ArrayList<SqlParameter>(), (sum, elm) -> {
+                    sum.addAll(elm);
+                    return sum;
+                });
 
-		ret.setQueryText(queryText);
+        ret.setQueryText(queryText);
 		ret.setParameters(params);
 
 		return ret;

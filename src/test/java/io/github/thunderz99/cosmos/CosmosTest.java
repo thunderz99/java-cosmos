@@ -3,7 +3,7 @@ package io.github.thunderz99.cosmos;
 import java.util.Map;
 import java.util.Set;
 
-import com.microsoft.azure.documentdb.DocumentClientException;
+import io.github.cdimascio.dotenv.Dotenv;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import org.junit.jupiter.api.Test;
 
@@ -15,12 +15,16 @@ public class CosmosTest {
     static String dbName = "CosmosDB";
     static String coll = "UnitTest";
 
+    static Dotenv dotenv = Dotenv.load();
 
     @Test
-    void testConnectionString() throws DocumentClientException {
-        var cosmos = new Cosmos("AccountEndpoint=https://example.azure.com:443/;AccountKey=abcd==;");
+    void parse_connection_string_should_work() {
+        var pair = Cosmos.parseConnectionString("AccountEndpoint=https://example-dev.documents.azure.com:443/;AccountKey=abcd==;");
+        assertThat(pair.getLeft()).isEqualTo("https://example-dev.documents.azure.com:443/");
+        assertThat(pair.getRight()).isEqualTo("abcd==");
 
-        assertThat(cosmos.client).isNotNull();
+        var account = Cosmos.parseAcount(pair.getLeft());
+        assertThat(account).isEqualTo("example-dev");
     }
 
     @Test
@@ -69,15 +73,6 @@ public class CosmosTest {
             var uniqueKeyPolicy = Cosmos.getUniqueKeyPolicy(Set.of("/_uniqueKey1", "/_uniqueKey2"));
             cosmos.createIfNotExist(dbName, testColl, uniqueKeyPolicy);
 
-            var collection = cosmos.readCollection(dbName, testColl);
-            var uniqueKeys = collection.getUniqueKeyPolicy().getUniqueKeys();
-
-            assertThat(uniqueKeys).hasSize(2);
-
-            for (var uniqueKey : uniqueKeys) {
-                assertThat(uniqueKey.getPaths()).hasSize(1).containsAnyOf("/_uniqueKey1", "/_uniqueKey2");
-            }
-
             var doc1 = db.upsert(testColl, Map.of("id", id1, "_uniqueKey1", "key1", "_uniqueKey2", "key2"), partition);
             assertThat(doc1).isNotNull();
             assertThat(doc1.toMap().getOrDefault("id", "")).isEqualTo(id1);
@@ -98,11 +93,5 @@ public class CosmosTest {
 
     }
 
-
-    @Test
-    void cosmos_account_should_be_get() throws DocumentClientException {
-        var cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
-        assertThat(cosmos.getAccount()).isEqualTo("rapid-cosmos-japaneast");
-    }
 
 }

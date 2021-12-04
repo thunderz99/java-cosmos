@@ -29,7 +29,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.2.24</version>
+  <version>0.4.0</version>
 </dependency>
 
 ```
@@ -44,7 +44,7 @@ import io.github.thunderz99.cosmos.Cosmos
 
 public static void main(String[] args) {
     var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1")
-    db.upsert("Collection1", new User("id011", "Tom", "Banks"))
+    db.upsert("Container1", new User("id011", "Tom", "Banks"))
     
     var cond = Condition.filter(
       "id", "id010", // id equal to 'id010'
@@ -55,7 +55,7 @@ public static void main(String[] args) {
     .offset(0) //optional offset
     .limit(100); //optional limit
     
-    var users = db.find("Collection1", cond).toList(User.class)
+    var users = db.find("Container1", cond).toList(User.class)
 }
 
 class User{
@@ -86,7 +86,7 @@ class User{
 // Save user into Coll:Collection1, partition:Users.
 // If you do not specify the partition. It will default to coll name.
 var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1");
-db.upsert("Collection1", new User("id011", "Tom", "Banks"), "Users");
+db.upsert("Container1", new User("id011", "Tom", "Banks"), "Users");
 
 // The default partition key is "_partition", so we'll get a json like this:
 // {
@@ -103,12 +103,12 @@ db.upsert("Collection1", new User("id011", "Tom", "Banks"), "Users");
 ```java
 
 var cosmos = new Cosmos(System.getenv("YOUR_CONNECTION_STRING"));
-var db = cosmos.createIfNotExist("Database1", "Collection1");
-db.upsert("Collection1", new User("id011", "Tom", "Banks"))
+var db = cosmos.createIfNotExist("Database1", "Container1");
+db.upsert("Container1", new User("id011", "Tom", "Banks"))
   
 // create a collection with uniqueIndexPolicy
 var uniqueKeyPolicy = Cosmos.getUniqueKeyPolicy(Set.of("/_uniqueKey1", "/_uniqueKey2"));
-var db = cosmos.createIfNotExist("Database1", "Collection2", uniqueKeyPolicy);
+var db = cosmos.createIfNotExist("Database1", "Container2", uniqueKeyPolicy);
 
 ```
 
@@ -119,20 +119,20 @@ var db = cosmos.createIfNotExist("Database1", "Collection2", uniqueKeyPolicy);
 var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1");
 
 // Create
-db.create("Collection1", new User("id011", "Tom", "Banks"), "Users");
+db.create("Container1", new User("id011", "Tom", "Banks"), "Users");
 
 // Read
-var user1 = db.read("Collection1", "id001", "Users").toObject(User.class);
+var user1 = db.read("Container1", "id001", "Users").toObject(User.class);
 
 // Update
 user1.lastName = "Updated";
-db.update("Collection1", user1, "Users");
+db.update("Container1", user1, "Users");
 
 // Upsert
-db.upsert("Collection1", user1, "Users");
+db.upsert("Container1", user1, "Users");
 
 // Delete
-db.delete("Collection1", user1,id, "Users");
+db.delete("Container1", user1,id, "Users");
 
 ```
 
@@ -140,7 +140,7 @@ db.delete("Collection1", user1,id, "Users");
 
 ```java
 
-db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"), "Users");
+db.updatePartial("Container", user1.id, Map.of("lastName", "UpdatedPartially"), "Users");
 
 
 ```
@@ -185,7 +185,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
     .offset(0) //optional offset
     .limit(100); //optional limit
     
-    var users = db.find("Collection1", cond).toList(User.class);
+    var users = db.find("Container1", cond).toList(User.class);
 
 
 ```
@@ -200,7 +200,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
     // see https://docs.microsoft.com/en-us/azure/cosmos-db/sql-query-aggregate-functions
     var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
     
-    var result = db.aggregate("Collection1", aggregate, Condition.filter("age >=", 20));
+    var result = db.aggregate("Container1", aggregate, Condition.filter("age >=", 20));
 
     // will generate a sql like this:
     /* SELECT COUNT(1) as facetCount, c.location, c.gender WHERE age >= 20 GROUP BY c.location, c.gender
@@ -223,7 +223,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
     // This is current a limitation that you cannot write aggregate functions when using cross-partition. This will be resolved in later version.
     var aggregate = Aggregate.function("COUNT(1) as facetCount").groupBy("_partition");
     var cond = Condition.filter().crossPartition(true);
-    var result = db.aggregate("Collection1", aggregate, cond);
+    var result = db.aggregate("Container1", aggregate, cond);
 
 ```
 
@@ -263,7 +263,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
       )
      );      
                                 
-    db.find("Collection1", cond, "Partition1");
+    db.find("Container1", cond, "Partition1");
                                 
     
 ```

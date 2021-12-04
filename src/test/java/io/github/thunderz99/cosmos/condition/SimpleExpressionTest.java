@@ -1,11 +1,11 @@
 package io.github.thunderz99.cosmos.condition;
 
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import org.json.JSONArray;
-import org.junit.jupiter.api.Test;
-
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import com.azure.cosmos.models.SqlParameter;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -15,7 +15,7 @@ class SimpleExpressionTest {
     @Test
     void buildArrayContains() {
 
-        var params = new SqlParameterCollection();
+        var params = new ArrayList<SqlParameter>();
 
         var queryText = SimpleExpression.buildArrayContains("skills", "@param001_skills", List.of("Java", "Python"), params);
 
@@ -24,9 +24,9 @@ class SimpleExpressionTest {
 
         params.forEach( p -> {
             assertThat(p.getName()).isEqualTo("@param001_skills");
-            var value = p.get("value");
-            assertThat(value instanceof JSONArray).isTrue();
-            var set = (JSONArray) value;
+            var value = p.getValue(List.class);
+            assertThat(value instanceof List<?>).isTrue();
+            var set = (List<?>) value;
             assertThat(set.get(0)).isEqualTo("Java");
             assertThat(set.get(1)).isEqualTo("Python");
         });
@@ -47,9 +47,9 @@ class SimpleExpressionTest {
 
             params.forEach( p -> {
                 assertThat(p.getName()).isEqualTo("@param000_status");
-                var value = p.get("value");
-                assertThat(value instanceof JSONArray).isTrue();
-                var set = (JSONArray) value;
+                var value = p.getValue(List.class);
+                assertThat(value instanceof List<?>).isTrue();
+                var set = (List<?>) value;
                 assertThat(set.get(0)).isEqualTo("A");
                 assertThat(set.get(1)).isEqualTo("B");
             });
@@ -92,9 +92,9 @@ class SimpleExpressionTest {
 
             params.forEach( p -> {
                 assertThat(p.getName()).isEqualTo("@param000_status");
-                var value = p.get("value");
-                assertThat(value instanceof JSONArray).isTrue();
-                var set = (JSONArray) value;
+                var value = p.getValue(List.class);
+                assertThat(value instanceof List<?>).isTrue();
+                var set = (List<?>) value;
                 assertThat(set.get(0)).isEqualTo("A");
                 assertThat(set.get(1)).isEqualTo("B");
             });
@@ -113,10 +113,10 @@ class SimpleExpressionTest {
 
             params.forEach( p -> {
                 assertThat(p.getName()).isEqualTo("@param000_status");
-                var value = p.get("value");
-                assertThat(value instanceof JSONArray).isTrue();
-                var set = (JSONArray) value;
-                assertThat(set.length()).isEqualTo(0);
+                var value = p.getValue(List.class);
+                assertThat(value instanceof List<?>).isTrue();
+                var set = (List<?>) value;
+                assertThat(set).isEmpty();
             });
 
         }
@@ -133,10 +133,10 @@ class SimpleExpressionTest {
 
             params.forEach(p -> {
                 assertThat(p.getName()).isEqualTo("@param000_status");
-                var value = p.get("value");
-                assertThat(value instanceof JSONArray).isTrue();
-                var set = (JSONArray) value;
-                assertThat(set.length()).isEqualTo(0);
+                var value = p.getValue(List.class);
+                assertThat(value instanceof List<?>).isTrue();
+                var set = (List<?>) value;
+                assertThat(set).isEmpty();
             });
 
         }
