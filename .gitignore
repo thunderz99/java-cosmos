@@ -10,6 +10,7 @@ deploy-settings.xml
 # Idea
 .idea
 java-cosmos.iml
+.java-version
 
 # Compiled class file
 *.class
