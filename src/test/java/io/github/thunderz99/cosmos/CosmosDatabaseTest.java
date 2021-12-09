@@ -1,9 +1,6 @@
 package io.github.thunderz99.cosmos;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import com.azure.cosmos.models.SqlParameter;
 import io.github.thunderz99.cosmos.condition.Aggregate;
@@ -80,18 +77,56 @@ class CosmosDatabaseTest {
             db.delete(conName, user.id, "Users");
         }
 
-	}
+    }
 
-	@Test
-	void create_should_throw_when_data_is_null() throws Exception {
+    public static class SheetContent {
+        public String id;
+        public LinkedHashMap<String, Object> contents;
+    }
+
+    @Test
+    void upsert_and_read_integer_should_work() throws Exception {
+
+        var sheet = new LinkedHashMap<String, Object>();
+        var id = "upsert_and_read_integer_should_work001";
+        sheet.put("id", id);
+        var contents = new LinkedHashMap<String, Object>();
+        contents.put("name", "Tom");
+        contents.put("age", 20);
+        sheet.put("contents", contents);
+
+        try {
+            var upserted = db.upsert(conName, sheet, "Sheets");
+            var map = upserted.toObject(LinkedHashMap.class);
+
+            var upsertedContents = (Map<String, Object>) map.get("contents");
+
+            assertThat(map).containsEntry("id", id);
+            assertThat(upsertedContents).containsEntry("name", "Tom");
+            assertThat(upsertedContents).containsEntry("age", 20);
+
+            var read = db.read(conName, id, "Sheets").toObject(SheetContent.class);
+            assertThat(read.contents).containsEntry("name", "Tom");
+            assertThat(read.contents).containsEntry("age", 20);
+
+
+        } finally {
+            db.delete(conName, id, "Sheets");
+        }
+
+    }
+
+
+    @Test
+    void create_should_throw_when_data_is_null() throws Exception {
         User user = null;
         assertThatThrownBy(() -> db.create(conName, user, "Users")).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("create data UnitTest Users");
 
     }
 
-	@Test
-	void update_should_work() throws Exception {
+    @Test
+    void update_should_work() throws Exception {
 
         var user = new User("unittest_update_01", "first01", "last01");
         db.delete(conName, user.id, "Users");
