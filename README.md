@@ -152,6 +152,13 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
       "$AND", List.of(
         Condition.filter("tagIds ARRAY_CONTAINS_ALL", List.of("T001", "T002")).not() // A negative condition. see cosmosdb NOT
         Condition.filter("city", "Tokyo")
+      ),
+      "$NOT", Map.of("lastName CONTAINS", "Willington"), // A negative query using $NOT
+      "$NOT 2", Map.of("$OR 3",  // A nested filter using $NOT and $OR
+        List.of(
+          Map.of("lastName", ""),  // note they will do the same thing using Condition.filter or Map.of
+          Map.of("age >=", 20)
+        )
       )
     )
     .fields("id", "lastName", "age", "organization.name") // select certain fields
