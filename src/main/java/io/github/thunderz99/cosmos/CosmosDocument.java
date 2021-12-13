@@ -2,35 +2,47 @@ package io.github.thunderz99.cosmos;
 
 import java.util.Map;
 
-import org.json.JSONObject;
-
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import org.json.JSONObject;
 
 /**
  * Represent a CosmosDB document. Has a JSONObject inside.
- *
+ * <p>
  * Having toObject and toJson util method to convert to Class or String
  * conveniently.
- *
  */
 public class CosmosDocument {
 
-	JSONObject jsonObj;
+    /**
+     * used for sdk v2
+     */
+    JSONObject jsonObj;
 
-	public CosmosDocument(JSONObject jsonObj) {
-		this.jsonObj = jsonObj;
-	}
+    /**
+     * used for sdk v4
+     */
+    Map<String, Object> mapObj;
 
-	public <T> T toObject(Class<T> classOfT) {
-		return JsonUtil.fromJson(jsonObj.toString(), classOfT);
-	}
+    public CosmosDocument(JSONObject jsonObj) {
+        this.jsonObj = jsonObj;
+    }
 
-	public String toJson() {
-		return jsonObj.toString();
-	}
+    public CosmosDocument(Map<String, Object> mapObj) {
+        this.mapObj = mapObj;
+    }
 
-	public Map<String, Object> toMap() {
+    public <T> T toObject(Class<T> classOfT) {
+        return mapObj == null ? JsonUtil.fromJson(jsonObj.toString(), classOfT)
+                : JsonUtil.fromMap(mapObj, classOfT);
+    }
 
-		return JsonUtil.toMap(jsonObj.toString());
-	}
+    public String toJson() {
+        return mapObj == null ? jsonObj.toString()
+                : JsonUtil.toJson(mapObj);
+    }
+
+    public Map<String, Object> toMap() {
+        return mapObj == null ? JsonUtil.toMap(jsonObj.toString())
+                : mapObj;
+    }
 }

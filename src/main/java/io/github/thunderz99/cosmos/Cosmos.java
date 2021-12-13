@@ -6,10 +6,13 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import com.azure.cosmos.CosmosClient;
+import com.azure.cosmos.CosmosClientBuilder;
 import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.util.Checker;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,30 +34,27 @@ public class Cosmos {
 
     DocumentClient client;
 
+    CosmosClient clientV4;
+
     String account;
 
-    static Pattern p = Pattern.compile("AccountEndpoint=(?<endpoint>.+);AccountKey=(?<key>.+)");
+    static Pattern connectionStringPattern = Pattern.compile("AccountEndpoint=(?<endpoint>.+);AccountKey=(?<key>.+);");
 
     public Cosmos(String connectionString) {
 
-        var matcher = p.matcher(connectionString);
-        if (!matcher.find()) {
-            throw new IllegalStateException(
-                    "Make sure connectionString contains 'AccountEndpoint=' and 'AccountKey=' ");
-        }
-        String endpoint = matcher.group("endpoint");
-        String key = matcher.group("key");
-
-        Checker.check(StringUtils.isNotBlank(endpoint), "Make sure connectionString contains 'AccountEndpoint=' ");
-
-        Checker.check(StringUtils.isNotBlank(key), "Make sure connectionString contains 'AccountKey='");
-
-        if (log.isInfoEnabled()) {
-            log.info("endpoint:{}", endpoint);
-            log.info("key:{}...", key.substring(0, 3));
-        }
+        Pair<String, String> pair = parseConnectionString(connectionString);
+        var endpoint = pair.getLeft();
+        var key = pair.getRight();
 
         this.client = new DocumentClient(endpoint, key, ConnectionPolicy.GetDefault(), ConsistencyLevel.Session);
+
+        this.clientV4 = new CosmosClientBuilder()
+                .endpoint(endpoint)
+                .key(key)
+                .preferredRegions(List.of("Japan East", "West US"))
+                .consistencyLevel(com.azure.cosmos.ConsistencyLevel.SESSION)
+                .contentResponseOnWriteEnabled(true)
+                .buildClient();
     }
 
 
@@ -66,7 +66,7 @@ public class Cosmos {
      */
     public CosmosDatabase getDatabase(String db) {
         Checker.checkNotEmpty(db, "db");
-        return new CosmosDatabase(client, db, this);
+        return new CosmosDatabase(this, db);
     }
 
 
@@ -87,7 +87,7 @@ public class Cosmos {
             createCollectionIfNotExist(client, db, coll, uniqueKeyPolicy);
         }
 
-        return new CosmosDatabase(client, db, this);
+        return new CosmosDatabase(this, db);
     }
 
     /**
@@ -110,7 +110,7 @@ public class Cosmos {
             createCollectionIfNotExist(client, db, coll);
         }
 
-        return new CosmosDatabase(client, db, this);
+        return new CosmosDatabase(this, db);
     }
 
     /**
@@ -346,12 +346,11 @@ public class Cosmos {
     }
 
     static boolean isResourceNotFoundException(Exception e) {
-        if (e instanceof DocumentClientException) {
-            var de = (DocumentClientException) e;
-            return (de.getStatusCode() == 404);
+        if (e instanceof CosmosException) {
+            var ce = (CosmosException) e;
+            return ce.getStatusCode() == 404;
         }
-        var message = e.getMessage() == null ? "" : e.getMessage();
-        return message.contains("Resource Not Found") ? true : false;
+        return StringUtils.contains(e.getMessage(), "Resource Not Found") ? true : false;
     }
 
     /**
@@ -383,5 +382,26 @@ public class Cosmos {
             return "";
         }
         return client.getDatabaseAccount().get("id").toString();
+    }
+
+    static Pair<String, String> parseConnectionString(String connectionString) {
+
+        var matcher = connectionStringPattern.matcher(connectionString);
+        if (!matcher.find()) {
+            throw new IllegalStateException(
+                    "Make sure connectionString contains 'AccountEndpoint=' and 'AccountKey=' ");
+        }
+        String endpoint = matcher.group("endpoint");
+        String key = matcher.group("key");
+
+        Checker.check(StringUtils.isNotBlank(endpoint), "Make sure connectionString contains 'AccountEndpoint=' ");
+        Checker.check(StringUtils.isNotBlank(key), "Make sure connectionString contains 'AccountKey='");
+
+        if (log.isInfoEnabled()) {
+            log.info("endpoint:{}", endpoint);
+            log.info("key:{}...", key.substring(0, 3));
+        }
+
+        return Pair.of(endpoint, key);
     }
 }

@@ -1,5 +1,11 @@
 package io.github.thunderz99.cosmos;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import com.azure.cosmos.CosmosClient;
+import com.azure.cosmos.models.CosmosPatchOperations;
 import com.microsoft.azure.documentdb.DocumentClient;
 import com.microsoft.azure.documentdb.FeedOptions;
 import com.microsoft.azure.documentdb.PartitionKey;
@@ -8,14 +14,12 @@ import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import io.github.thunderz99.cosmos.util.MapUtil;
 import io.github.thunderz99.cosmos.util.RetryUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * Class representing a database instance.
@@ -26,47 +30,51 @@ import java.util.stream.Collectors;
  */
 public class CosmosDatabase {
 
-	private static Logger log = LoggerFactory.getLogger(CosmosDatabase.class);
+    private static Logger log = LoggerFactory.getLogger(CosmosDatabase.class);
 
-	String db;
+    String db;
 
-	String account;
+    String account;
 
-	DocumentClient client;
+    DocumentClient client;
 
-	Cosmos cosmosAccount;
+    CosmosClient clientV4;
 
-	CosmosDatabase(DocumentClient client, String db, Cosmos cosmosAccount) {
-		this.client = client;
-		this.db = db;
-		this.cosmosAccount = cosmosAccount;
-	}
+    Cosmos cosmosAccount;
+
+    CosmosDatabase(Cosmos cosmosAccount, String db) {
+        this.cosmosAccount = cosmosAccount;
+        this.db = db;
+        this.client = cosmosAccount.client;
+        this.clientV4 = cosmosAccount.clientV4;
+    }
 
 
-	/**
-	 * Create a document
-	 * @param coll collection name
-	 * @param data data object
-	 * @param partition partition name
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos Client Exception
-	 */
-	public CosmosDocument create(String coll, Object data, String partition) throws Exception {
+    /**
+     * Create a document
+     *
+     * @param coll      collection name
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos Client Exception
+     */
+    public CosmosDocument create(String coll, Object data, String partition) throws Exception {
 
 
         Checker.checkNotBlank(coll, "coll");
-		Checker.checkNotBlank(partition, "partition");
-		Checker.checkNotNull(data, "create data " + coll + " " + partition);
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotNull(data, "create data " + coll + " " + partition);
 
 
-		Map<String, Object> objectMap = JsonUtil.toMap(data);
+        Map<String, Object> objectMap = JsonUtil.toMap(data);
 
         // add partition info
-		objectMap.put(Cosmos.getDefaultPartitionKey(), partition);
+        objectMap.put(Cosmos.getDefaultPartitionKey(), partition);
 
-		var collectionLink = Cosmos.getCollectionLink(db, coll);
+        var collectionLink = Cosmos.getCollectionLink(db, coll);
 
-		checkValidId(objectMap);
+        checkValidId(objectMap);
 
 		var resource = RetryUtil.executeWithRetry( () -> client.createDocument(
                 collectionLink,
@@ -185,215 +193,241 @@ public class CosmosDatabase {
 	 * @throws Exception Cosmos client exception
 	 */
 	public CosmosDocument update(String coll, Object data, String partition) throws Exception {
-		
-		Checker.checkNotBlank(coll, "coll");
-		Checker.checkNotBlank(partition, "partition");
-		Checker.checkNotNull(data, "update data " + coll + " " + partition);
 
-		var map = JsonUtil.toMap(data);
-		var id = map.getOrDefault("id", "").toString();
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotNull(data, "update data " + coll + " " + partition);
 
-		Checker.checkNotBlank(id, "id");
-		checkValidId(id);
+        var map = JsonUtil.toMap(data);
+        var id = map.getOrDefault("id", "").toString();
 
-		var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        Checker.checkNotBlank(id, "id");
+        checkValidId(id);
 
-		// add partition info
-		map.put(Cosmos.getDefaultPartitionKey(), partition);
+        var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
-		var resource = RetryUtil.executeWithRetry( () -> client.replaceDocument(documentLink, map, requestOptions(partition)).getResource());
+        // add partition info
+        map.put(Cosmos.getDefaultPartitionKey(), partition);
 
-		log.info("updated Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        var resource = RetryUtil.executeWithRetry(() -> client.replaceDocument(documentLink, map, requestOptions(partition)).getResource());
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
-	}
+        log.info("updated Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+
+        return new CosmosDocument(resource.toObject(JSONObject.class));
+    }
 
 
-	/**
-	 * Update existing data. if not exist, throw Not Found Exception.
-	 * @param coll collection name
-	 * @param data data object
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument update(String coll, Object data) throws Exception {
-		return update(coll, data, coll);
-	}
+    /**
+     * Update existing data. if not exist, throw Not Found Exception.
+     *
+     * @param coll collection name
+     * @param data data object
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocument update(String coll, Object data) throws Exception {
+        return update(coll, data, coll);
+    }
 
-	/**
-	 * Update existing data. Partial update supported(Only 1st json hierarchy supported). If not exist, throw Not Found Exception.
-	 * @param coll collection name
-	 * @param id id of document
-	 * @param data data object
-	 * @param partition partition name
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument updatePartial(String coll, String id, Object data, String partition)
-			throws Exception {
+    /**
+     * Update existing data. Partial update supported(Only 1st json hierarchy supported). If not exist, throw Not Found Exception.
+     *
+     * <p>
+     * see <a href="https://devblogs.microsoft.com/cosmosdb/partial-document-update-ga/">partial update official docs</a>
+     * </p>
+     *
+     * @param coll      collection name
+     * @param id        id of document
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocument updatePartial(String coll, String id, Object data, String partition)
+            throws Exception {
 
-		Checker.checkNotBlank(id, "id");
-		Checker.checkNotBlank(coll, "coll");
-		Checker.checkNotBlank(partition, "partition");
-		Checker.checkNotNull(data, "updatePartial data " + coll + " " + partition);
+        Checker.checkNotBlank(id, "id");
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotNull(data, "updatePartial data " + coll + " " + partition);
 
-		var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        checkValidId(id);
 
-		var origin = read(coll, id, partition).toMap();
+        var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
-		var newData = JsonUtil.toMap(data);
-		// add partition info
-		newData.put(Cosmos.getDefaultPartitionKey(), partition);
+        //var origin = read(coll, id, partition).toMap();
 
-		// Object.assign(origin, newData)
-		var merged = merge(origin, newData);
+        var patchData = JsonUtil.toMap(data);
+        // Remove partition key from patchData, because it is not needed for a patch action.
+        patchData.remove(Cosmos.getDefaultPartitionKey());
 
-		checkValidId(merged);
-		var resource = RetryUtil.executeWithRetry( () -> client.replaceDocument(documentLink, merged, requestOptions(partition)).getResource());
+        var flatPatchMap = MapUtil.toFlatMap(patchData);
 
-		log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        var patchOps = CosmosPatchOperations.create();
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
-	}
+        for (var entry : flatPatchMap.entrySet()) {
+            patchOps.set(entry.getKey(), entry.getValue());
+        }
 
-	/**
-	 * Update existing data. Partial update supported(Only 1st json hierarchy supported). If not exist, throw Not Found Exception.
-	 * @param coll collection name
-	 * @param id id of document
-	 * @param data data object
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument updatePartial(String coll, String id, Object data) throws Exception {
-		return updatePartial(coll, id, data, coll);
-	}
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
 
-	/**
-	 * Update existing data. Create a new one if not exist. "id" field must be contained in data.
-	 * @param coll collection name
-	 * @param data data object
-	 * @param partition partition name
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument upsert(String coll, Object data, String partition) throws Exception {
+        var response = container.patchItem(id, new com.azure.cosmos.models.PartitionKey(partition), patchOps, LinkedHashMap.class);
 
-		var map = JsonUtil.toMap(data);
-		var id = map.getOrDefault("id", "").toString();
+        var item = response.getItem();
 
-		Checker.checkNotBlank(id, "id");
-		checkValidId(id);
-		Checker.checkNotBlank(coll, "coll");
-		Checker.checkNotBlank(partition, "partition");
-		Checker.checkNotNull(data, "upsert data " + coll + " " + partition);
+        log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-		var collectionLink = Cosmos.getCollectionLink(db, coll);
+        return new CosmosDocument(item);
+    }
 
-		// add partition info
-		map.put(Cosmos.getDefaultPartitionKey(), partition);
+    /**
+     * Update existing data. Partial update supported(Only 1st json hierarchy supported). If not exist, throw Not Found Exception.
+     *
+     * <p>
+     * see <a href="https://devblogs.microsoft.com/cosmosdb/partial-document-update-ga/">partial update official docs</a>
+     * </p>
+     *
+     * @param coll collection name
+     * @param id   id of document
+     * @param data data object
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocument updatePartial(String coll, String id, Object data) throws Exception {
+        return updatePartial(coll, id, data, coll);
+    }
 
-		var resource = RetryUtil.executeWithRetry( () -> client.upsertDocument(collectionLink, map, requestOptions(partition), true).getResource());
+    /**
+     * Update existing data. Create a new one if not exist. "id" field must be contained in data.
+     *
+     * @param coll      collection name
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocument upsert(String coll, Object data, String partition) throws Exception {
+        
+        var map = JsonUtil.toMap(data);
+        var id = map.getOrDefault("id", "").toString();
 
-		log.info("upsert Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
+        Checker.checkNotBlank(id, "id");
+        checkValidId(id);
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotNull(data, "upsert data " + coll + " " + partition);
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
-	}
+        var collectionLink = Cosmos.getCollectionLink(db, coll);
 
-	/**
-	 * Update existing data. Create a new one if not exist. "id" field must be contained in data.
-	 * @param coll collection name
-	 * @param data data object
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument upsert(String coll, Object data) throws Exception {
-		return upsert(coll, data, coll);
-	}
+        // add partition info
+        map.put(Cosmos.getDefaultPartitionKey(), partition);
 
-	/**
-	 * Upsert data (Partial upsert supported. Only the 1st json hierarchy). if not
-	 * exist, create the data. if already exist, update the data. "id" field must be
-	 * contained in data.
-	 *
-	 * @param coll collection name
-	 * @param id id of document
-	 * @param data data object
-	 * @param partition partition name
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument upsertPartial(String coll, String id, Object data, String partition)
-			throws Exception {
+        var resource = RetryUtil.executeWithRetry(() -> client.upsertDocument(collectionLink, map, requestOptions(partition), true).getResource());
 
-		Checker.checkNotBlank(id, "id");
-		Checker.checkNotBlank(coll, "coll");
-		Checker.checkNotBlank(partition, "partition");
-		Checker.checkNotNull(data, "upsertPartial data " + coll + " " + partition);
+        log.info("upsert Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
 
-		var collectionLink = Cosmos.getCollectionLink(db, coll);
+        return new CosmosDocument(resource.toObject(JSONObject.class));
+    }
 
-		var originResource = readSuppressing404(coll, id, partition);
-		var origin = originResource == null ? null : originResource.toMap();
+    /**
+     * Update existing data. Create a new one if not exist. "id" field must be contained in data.
+     *
+     * @param coll collection name
+     * @param data data object
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocument upsert(String coll, Object data) throws Exception {
+        return upsert(coll, data, coll);
+    }
 
-		var newData = JsonUtil.toMap(data);
-		// add partition info
-		newData.put(Cosmos.getDefaultPartitionKey(), partition);
+    /**
+     * Deprecated. Please use updatePartial instead. Upsert data (Partial upsert supported. Only the 1st json hierarchy). if not
+     * exist, create the data. if already exist, update the data. "id" field must be
+     * contained in data.
+     *
+     * @param coll      collection name
+     * @param id        id of document
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    @Deprecated
+    public CosmosDocument upsertPartial(String coll, String id, Object data, String partition)
+            throws Exception {
 
-		var merged = origin == null ? newData : merge(origin, newData);
+        Checker.checkNotBlank(id, "id");
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotNull(data, "upsertPartial data " + coll + " " + partition);
 
-		checkValidId(merged);
-		var resource = RetryUtil.executeWithRetry( () -> client.upsertDocument(collectionLink, merged, requestOptions(partition), true).getResource());
+        var collectionLink = Cosmos.getCollectionLink(db, coll);
 
-		log.info("upsertPartial Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
+        var originResource = readSuppressing404(coll, id, partition);
+        var origin = originResource == null ? null : originResource.toMap();
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
-	}
+        var newData = JsonUtil.toMap(data);
+        // add partition info
+        newData.put(Cosmos.getDefaultPartitionKey(), partition);
 
-	/**
-	 * Upsert data (Partial upsert supported. Only the 1st json hierarchy). if not
-	 * exist, create the data. if already exist, update the data. "id" field must be
-	 * contained in data.
-	 *
-	 * @param coll collection name
-	 * @param id id of document
-	 * @param data data object
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument upsertPartial(String coll, String id, Object data) throws Exception {
-		return upsertPartial(coll, id, data, coll);
-	}
+        var merged = origin == null ? newData : merge(origin, newData);
 
-	/**
-	 * Delete a document. Do nothing if object not exist
-	 * @param coll collection name
-	 * @param id id of document
-	 * @param partition partition name
-	 * @return CosmosDatabase instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDatabase delete(String coll, String id, String partition) throws Exception {
+        checkValidId(merged);
+        var resource = RetryUtil.executeWithRetry(() -> client.upsertDocument(collectionLink, merged, requestOptions(partition), true).getResource());
 
-		Checker.checkNotBlank(coll, "coll");
-		Checker.checkNotBlank(id, "id");
-		Checker.checkNotBlank(partition, "partition");
+        log.info("upsertPartial Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
 
-		var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        return new CosmosDocument(resource.toObject(JSONObject.class));
+    }
 
-		try {
-			RetryUtil.executeWithRetry( () -> client.deleteDocument(documentLink, requestOptions(partition)).getResource());
-			log.info("deleted Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+    /**
+     * Deprecated. Please use updatePartial instead. Upsert data (Partial upsert supported. Only the 1st json hierarchy). if not
+     * exist, create the data. if already exist, update the data. "id" field must be
+     * contained in data.
+     *
+     * @param coll collection name
+     * @param id   id of document
+     * @param data data object
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    @Deprecated
+    public CosmosDocument upsertPartial(String coll, String id, Object data) throws Exception {
+        return upsertPartial(coll, id, data, coll);
+    }
 
-		} catch (Exception e) {
-			if (Cosmos.isResourceNotFoundException(e)) {
-				log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", documentLink, partition, getAccount());
-				return this;
-			}
-			throw e;
-		}
-		return this;
+    /**
+     * Delete a document. Do nothing if object not exist
+     *
+     * @param coll      collection name
+     * @param id        id of document
+     * @param partition partition name
+     * @return CosmosDatabase instance
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDatabase delete(String coll, String id, String partition) throws Exception {
 
-	}
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(id, "id");
+        Checker.checkNotBlank(partition, "partition");
+
+        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+
+        try {
+            RetryUtil.executeWithRetry(() -> client.deleteDocument(documentLink, requestOptions(partition)).getResource());
+            log.info("deleted Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+
+        } catch (Exception e) {
+            if (Cosmos.isResourceNotFoundException(e)) {
+                log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+                return this;
+            }
+            throw e;
+        }
+        return this;
+
+    }
 
 	/**
 	 * Delete a document by selfLink. Do nothing if object not exist

@@ -15,12 +15,11 @@ public class CosmosTest {
     static String dbName = "CosmosDB";
     static String coll = "UnitTest";
 
-
     @Test
-    void testConnectionString() throws DocumentClientException {
-        var cosmos = new Cosmos("AccountEndpoint=https://example.azure.com:443/;AccountKey=abcd==;");
-
-        assertThat(cosmos.client).isNotNull();
+    void parse_connection_string_should_work() {
+        var pair = Cosmos.parseConnectionString("AccountEndpoint=https://example-dev.documents.azure.com:443/;AccountKey=abcd==;");
+        assertThat(pair.getLeft()).isEqualTo("https://example-dev.documents.azure.com:443/");
+        assertThat(pair.getRight()).isEqualTo("abcd==");
     }
 
     @Test
