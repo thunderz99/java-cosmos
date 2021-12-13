@@ -24,27 +24,36 @@ import org.slf4j.LoggerFactory;
  */
 public class Condition {
 
-	private static Logger log = LoggerFactory.getLogger(Condition.class);
+    private static Logger log = LoggerFactory.getLogger(Condition.class);
 
-	/**
-	 * Default constructor
-	 */
-	public Condition() {
-	}
+    /**
+     * Default constructor
+     */
+    public Condition() {
+    }
 
-	public Map<String, Object> filter = new LinkedHashMap<>();
+    /**
+     * A constructor accepting a map as filter
+     *
+     * @param filter
+     */
+    public Condition(Map<String, Object> filter) {
+        this.filter = filter;
+    }
 
-	public List<String> sort = List.of();
+    public Map<String, Object> filter = new LinkedHashMap<>();
 
-	public Set<String> fields = new LinkedHashSet<>();
+    public List<String> sort = List.of();
 
-	public int offset = 0;
-	public int limit = 100;
+    public Set<String> fields = new LinkedHashSet<>();
 
-	/**
-	 * whether this query is cross-partition or not (default to false)
-	 */
-	public boolean crossPartition = false;
+    public int offset = 0;
+    public int limit = 100;
+
+    /**
+     * whether this query is cross-partition or not (default to false)
+     */
+    public boolean crossPartition = false;
 
     /**
      * whether this query is a negative query. (default to false)
@@ -340,30 +349,37 @@ public class Condition {
 
 		for (var entry : this.filter.entrySet()) {
 
-			if (StringUtils.isEmpty(entry.getKey())) {
-				// ignore when key is empty
-				continue;
-			}
+            if (StringUtils.isEmpty(entry.getKey())) {
+                // ignore when key is empty
+                continue;
+            }
 
-			var subFilterQueryToAdd = "";
+            var subFilterQueryToAdd = "";
 
-			if (entry.getKey().startsWith(SubConditionType.SUB_COND_AND.name())) {
-				// sub query AND
-				var subQueries = extractSubQueries(entry.getValue());
-				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", params, conditionIndex, paramIndex);
+            if (entry.getKey().startsWith(SubConditionType.AND)) {
+                // sub query AND
+                var subQueries = extractSubQueries(entry.getValue());
+                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", params, conditionIndex, paramIndex);
 
-			} else if (entry.getKey().startsWith(SubConditionType.SUB_COND_OR.name())) {
-				// sub query OR
-				var subQueries = extractSubQueries(entry.getValue());
-				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", params, conditionIndex, paramIndex);
+            } else if (entry.getKey().startsWith(SubConditionType.OR)) {
+                // sub query OR
+                var subQueries = extractSubQueries(entry.getValue());
+                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", params, conditionIndex, paramIndex);
 
-			} else {
-				// normal expression
-				var exp = parse(entry.getKey(), entry.getValue());
-				var expQuerySpec = exp.toQuerySpec(paramIndex);
-				subFilterQueryToAdd = expQuerySpec.getQueryText();
-				params.addAll(expQuerySpec.getParameters());
-			}
+            } else if (entry.getKey().startsWith(SubConditionType.NOT)) {
+                // sub query NOT
+                var subQueries = extractSubQueries(entry.getValue());
+                var subQueryWithNot = Condition.filter(SubConditionType.AND, subQueries).not();
+                // recursively generate the filterQuery with negative flag true
+                var filterQueryWithNot = subQueryWithNot.generateFilterQuery("", params, conditionIndex, paramIndex);
+                subFilterQueryToAdd = " " + removeConnectPart(filterQueryWithNot.queryText.toString());
+            } else {
+                // normal expression
+                var exp = parse(entry.getKey(), entry.getValue());
+                var expQuerySpec = exp.toQuerySpec(paramIndex);
+                subFilterQueryToAdd = expQuerySpec.getQueryText();
+                params.addAll(expQuerySpec.getParameters());
+            }
 
 			if (StringUtils.isNotEmpty(subFilterQueryToAdd)) {
 				queryTexts.add(subFilterQueryToAdd);
@@ -403,47 +419,72 @@ public class Condition {
 	 * @param value
 	 */
 	static List<Condition> extractSubQueries(Object value) {
-		if (value == null) {
-			return List.of();
-		}
+        if (value == null) {
+            return List.of();
+        }
 
-		if (value instanceof Condition) {
-			return List.of((Condition) value);
-		} else if (value instanceof List<?>) {
-			return (List<Condition>) value;
-		}
+        if (value instanceof Condition || value instanceof Map<?, ?>) {
+            // single condition
+            return List.of(extractSubQuery(value));
+        } else if (value instanceof List<?>) {
+            // multi condition
+            var listValue = (List<Object>) value;
+            return listValue.stream().map(v -> extractSubQuery(v)).filter(Objects::nonNull).collect(Collectors.toList());
+        }
 
-		return List.of();
+        return List.of();
+    }
 
-	}
+    /**
+     * extract subQuery for SUB_COND_AND / SUB_COND_OR 's filter value, single condition only.
+     *
+     * @param value
+     */
+    static Condition extractSubQuery(Object value) {
+        if (value == null) {
+            return null;
+        }
 
-	/**
-	 * @param conds          conditions
-	 * @param joiner         "AND", "OR"
-	 * @param params         sql params
-	 * @param conditionIndex increment index for conditions (for uniqueness of param names)
-	 * @param paramIndex     increment index for params (for uniqueness of param names)
-	 * @return query text
-	 */
-	String generateFilterQuery4List(List<Condition> conds, String joiner, SqlParameterCollection params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
-		List<String> subTexts = new ArrayList<>();
+        if (value instanceof Condition) {
+            // single condition
+            return (Condition) value;
+        } else if (value instanceof Map<?, ?>) {
+            // single condition in the form of map
+            return new Condition(JsonUtil.toMap(value));
+        } else if (value instanceof Collection<?>) {
+            throw new IllegalArgumentException("Cannot convert input to a single condition. Ensure the input is a single value(not a collection)." + value);
+        }
+        throw new IllegalArgumentException("Invalid input. expect a condition or a map. " + value);
+    }
 
-		for (var subCond : conds) {
-			var subFilterQuery = subCond.generateFilterQuery("", params, conditionIndex,
-					paramIndex);
 
-			subTexts.add(removeConnectPart(subFilterQuery.queryText.toString()));
+    /**
+     * @param conds          conditions
+     * @param joiner         "AND", "OR"
+     * @param params         sql params
+     * @param conditionIndex increment index for conditions (for uniqueness of param names)
+     * @param paramIndex     increment index for params (for uniqueness of param names)
+     * @return query text
+     */
+    String generateFilterQuery4List(List<Condition> conds, String joiner, SqlParameterCollection params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+        List<String> subTexts = new ArrayList<>();
 
-			params = subFilterQuery.params;
-			conditionIndex = subFilterQuery.conditionIndex;
-			paramIndex = subFilterQuery.paramIndex;
-		}
+        for (var subCond : conds) {
+            var subFilterQuery = subCond.generateFilterQuery("", params, conditionIndex,
+                    paramIndex);
 
-		var subFilterQuery = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
-				.collect(Collectors.joining(" " + joiner + " ", " (", ")"));
-		// remove empty sub queries
-		return StringUtils.removeStart(subFilterQuery, " ()");
-	}
+            subTexts.add(removeConnectPart(subFilterQuery.queryText.toString()));
+
+            params = subFilterQuery.params;
+            conditionIndex = subFilterQuery.conditionIndex;
+            paramIndex = subFilterQuery.paramIndex;
+        }
+
+        var subFilterQuery = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
+                .collect(Collectors.joining(" " + joiner + " ", " (", ")"));
+        // remove empty sub queries
+        return StringUtils.removeStart(subFilterQuery, " ()");
+    }
 
 	private String removeConnectPart(String subQueryText) {
 		return StringUtils.removeStart(StringUtils.removeStart(subQueryText, " WHERE"), " AND").trim();
@@ -600,116 +641,105 @@ public class Condition {
 	 */
 	public static Expression parse(String key, Object value) {
 
-		//simple expression
-		var simpleMatcher = simpleExpressionPattern.matcher(key);
-		if(simpleMatcher.find()){
-			if (key.contains(" OR ")) {
-				return new OrExpressions(simpleMatcher.group(1), value, simpleMatcher.group(2));
-			} else {
-				return new SimpleExpression(simpleMatcher.group(1), value, simpleMatcher.group(2));
-			}
-		}
+        //simple expression
+        var simpleMatcher = simpleExpressionPattern.matcher(key);
+        if (simpleMatcher.find()) {
+            if (key.contains(" OR ")) {
+                return new OrExpressions(simpleMatcher.group(1), value, simpleMatcher.group(2));
+            } else {
+                return new SimpleExpression(simpleMatcher.group(1), value, simpleMatcher.group(2));
+            }
+        }
 
-		//subquery expression
-		var subqueryMatcher = subQueryExpressionPattern.matcher(key);
+        //subquery expression
+        var subqueryMatcher = subQueryExpressionPattern.matcher(key);
 
-		if(subqueryMatcher.find()){
-			return new SubQueryExpression(subqueryMatcher.group(1), subqueryMatcher.group(3), value, subqueryMatcher.group(2));
-		}
+        if (subqueryMatcher.find()) {
+            return new SubQueryExpression(subqueryMatcher.group(1), subqueryMatcher.group(3), value, subqueryMatcher.group(2));
+        }
 
-		//default key / value expression
-		if (key.contains(" OR ")) {
-			return new OrExpressions(key, value);
-		} else {
-			return new SimpleExpression(key, value);
-		}
-	}
+        //default key / value expression
+        if (key.contains(" OR ")) {
+            return new OrExpressions(key, value);
+        } else {
+            return new SimpleExpression(key, value);
+        }
+    }
 
-	/**
-	 * parse key and value to generate a simple expression (key = value)
-	 * @param key filter's key
-	 * @param value filter's value
-	 * @return expression for WHERE clause
-	 */
-	public static SimpleExpression toSimpleExpression(String key, Object value) {
-		var exp = new SimpleExpression();
-		exp.key = key;
-		exp.value = value;
-		return exp;
-	}
+    /**
+     * parse key and value to generate a simple expression (key = value)
+     *
+     * @param key   filter's key
+     * @param value filter's value
+     * @return expression for WHERE clause
+     */
+    public static SimpleExpression toSimpleExpression(String key, Object value) {
+        var exp = new SimpleExpression();
+        exp.key = key;
+        exp.value = value;
+        return exp;
+    }
 
 
+    /**
+     * Use raw sql and params to do custom complex queries. When rawSql is set,
+     * other filter / limit / offset / sort will be ignored.
+     *
+     * @param queryText sql raw queryText
+     * @param params    params used in sql
+     * @return condition
+     */
+    public static Condition rawSql(String queryText, SqlParameterCollection params) {
+        var cond = new Condition();
+        cond.rawQuerySpec = new SqlQuerySpec(queryText, params);
+        return cond;
+    }
 
-	/**
-	 * Use raw sql and params to do custom complex queries. When rawSql is set,
-	 * other filter / limit / offset / sort will be ignored.
-	 *
-	 * @param queryText sql raw queryText
-	 * @param params params used in sql
-	 * @return condition
-	 */
-	public static Condition rawSql(String queryText, SqlParameterCollection params) {
-		var cond = new Condition();
-		cond.rawQuerySpec = new SqlQuerySpec(queryText, params);
-		return cond;
-	}
+    /**
+     * Use raw sql to do custom complex queries. When rawSql is set, other filter /
+     * limit / offset / sort will be ignored.
+     *
+     * @param queryText sql raw queryText
+     * @return condition
+     */
+    public static Condition rawSql(String queryText) {
+        var cond = new Condition();
+        cond.rawQuerySpec = new SqlQuerySpec(queryText);
+        return cond;
+    }
 
-	/**
-	 * Use raw sql to do custom complex queries. When rawSql is set, other filter /
-	 * limit / offset / sort will be ignored.
-	 *
-	 * @param queryText sql raw queryText
-	 * @return condition
-	 */
-	public static Condition rawSql(String queryText) {
-		var cond = new Condition();
-		cond.rawQuerySpec = new SqlQuerySpec(queryText);
-		return cond;
-	}
+    /**
+     * Instead of c.key, return c["key"] or c["key1"]["key2"] for query. In order for cosmosdb reserved words
+     *
+     * @param key filter's key
+     * @return formatted filter's key c["key1"]["key2"]
+     */
+    static String getFormattedKey(String key) {
+        return getFormattedKey(key, "c");
+    }
 
-	/**
-	 * sub query 's OR / RAW operator
-	 *
-	 * <p>
-	 * TODO SUB_COND_NOT operator
-	 * </p>
-	 */
-	public enum SubConditionType {
-		SUB_COND_AND, SUB_COND_OR
-	}
+    /**
+     * Instead of c.key, return c["key"] or c["key1"]["key2"] for query. In order for cosmosdb reserved words
+     *
+     * @param key filter's key
+     * @param
+     * @return formatted filter's key c["key1"]["key2"]
+     */
+    static String getFormattedKey(String key, String collectionAlias) {
+        Checker.checkNotBlank(collectionAlias, "collectionAlias");
 
-	/**
-	 * Instead of c.key, return c["key"] or c["key1"]["key2"] for query. In order for cosmosdb reserved words
-	 *
-	 * @param key filter's key
-	 * @return formatted filter's key c["key1"]["key2"]
-	 */
-	static String getFormattedKey(String key) {
-		return getFormattedKey(key, "c");
-	}
+        if (StringUtils.isEmpty(key)) {
+            return collectionAlias;
+        }
 
-	/**
-	 * Instead of c.key, return c["key"] or c["key1"]["key2"] for query. In order for cosmosdb reserved words
-	 *
-	 * @param key filter's key
-	 * @param
-	 * @return formatted filter's key c["key1"]["key2"]
-	 */
-	static String getFormattedKey(String key, String collectionAlias) {
-		Checker.checkNotBlank(collectionAlias, "collectionAlias");
-
-		if(StringUtils.isEmpty(key)){
-			return collectionAlias;
-		}
-
-		var parts = key.split("\\.");
-		var sb = new StringBuilder();
-		sb.append(collectionAlias);
-		for( var part : List.of(parts)){
-			sb.append("[\"" + part + "\"]");
-		}
-		return sb.toString();
-	}
+        var parts = key.split("\\.");
+        var sb = new StringBuilder();
+        sb.append(collectionAlias);
+        for (var part : List.of(parts)) {
+            sb.append("[\"" + part + "\"]");
+        }
+        return sb.toString();
+    }
 
 	/**
 	 * cond always true

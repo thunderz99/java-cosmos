@@ -1,0 +1,10 @@
+{
+  "$OR": [
+    {
+      "address.state": "WA"
+    },
+    {
+      "id": "WakefieldFamily"
+    }
+  ]
+}

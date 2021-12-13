@@ -1,0 +1,9 @@
+{
+  "$NOT":
+    {
+      "address.state": "WA"
+    },
+  "$NOT 2":  {
+      "id": "AndersenFamily"
+    }
+}
