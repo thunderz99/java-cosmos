@@ -822,7 +822,7 @@ public class Condition {
 		}
 
 		// primitive type
-		if (value instanceof String || Primitives.isWrapperType(value.getClass()) || value.getClass().isPrimitive()) {
+		if (value instanceof String || Primitives.isWrapperType(value.getClass()) || value.getClass().isPrimitive() || value.getClass().isEnum()) {
 			return value;
 		}
 

@@ -749,6 +749,21 @@ class ConditionTest {
 		}
 	}
 
+    public enum Status {
+        enrolled, suspended, retired
+    }
+
+    @Test
+    public void copy_should_work_for_enum() {
+
+        var cond = Condition.filter("id", "ID001", "status", Status.enrolled);
+
+        var copy = cond.copy();
+        assertThat(copy.filter.get("id")).isEqualTo("ID001");
+        assertThat(copy.filter.get("status")).isEqualTo(Status.enrolled);
+
+    }
+
 	@Test
 	public void buildQuerySpec_should_work_for_is_defined() {
 
