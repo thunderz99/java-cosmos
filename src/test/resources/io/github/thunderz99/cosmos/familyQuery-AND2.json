@@ -1,0 +1,10 @@
+{
+  "$AND": [
+    {
+      "address.state": "WA"
+    },
+    {
+      "lastName": "Andersen"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import java.util.*;
 import com.azure.cosmos.models.SqlParameter;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.assertj.core.util.Lists;
@@ -14,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -25,6 +25,11 @@ class CosmosDatabaseTest {
 
     static String dbName = "CosmosDB";
     static String conName = "UnitTest";
+
+    static FullNameUser user1 = null;
+    static FullNameUser user2 = null;
+    static FullNameUser user3 = null;
+    static FullNameUser user4 = null;
 
     Logger log = LoggerFactory.getLogger(CosmosDatabaseTest.class);
 
@@ -49,13 +54,13 @@ class CosmosDatabaseTest {
         db = cosmos.createIfNotExist(dbName, conName);
 
         initFamiliesData();
+        initData4ComplexQuery();
 
     }
 
 	@AfterAll
 	public static void afterAll() throws Exception {
-		// cosmos.deleteCollection(dbName, coll);
-		// cosmos.deleteDatabase(dbName);
+        deleteData4ComplexQuery();
 	}
 
 	@Test
@@ -593,64 +598,177 @@ class CosmosDatabaseTest {
 
     }
 
-	@Test
-	void sub_cond_query_should_work_4_OR() throws Exception {
-		// test json from cosmosdb official site
+    @Test
+    void sub_cond_query_should_work_4_OR() throws Exception {
+        // test json from cosmosdb official site
         // https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
 
-        var partition = "Families";
+        {
+            // using Condition.filter as a sub query
+            var partition = "Families";
 
-        var cond = Condition.filter(SubConditionType.SUB_COND_OR, List.of( //
-                Condition.filter("address.state", "WA"), //
-                Condition.filter("id", "WakefieldFamily"))) //
-                .sort("id", "ASC") //
-                ;
+            var cond = Condition.filter(SubConditionType.OR, List.of( //
+                    Condition.filter("address.state", "WA"), //
+                    Condition.filter("id", "WakefieldFamily"))) //
+                    .sort("id", "ASC") //
+                    ;
 
-        var items = db.find(conName, cond, partition).toMap();
+            var items = db.find(conName, cond, partition).toMap();
 
-        assertThat(items).hasSize(2);
+            assertThat(items).hasSize(2);
 
-        assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
-        assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+            assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
+        }
+        {
+            // using map as a sub query (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var cond = Condition.filter(SubConditionType.OR, List.of( //
+                    Map.of("address.state", "WA"), //
+                    Map.of("id", "WakefieldFamily"))) //
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(conName, cond, partition).toMap();
+
+            assertThat(items).hasSize(2);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+            assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
+        }
+
+        {
+            // using json to represent a filter (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var filter = JsonUtil.toMap(this.getClass().getResourceAsStream("familyQuery-OR.json"));
+            var cond = new Condition(filter).sort("id", "ASC");
+
+            var items = db.find(conName, cond, partition).toMap();
+
+            assertThat(items).hasSize(2);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+            assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
+        }
+
+        {
+            // using json to represent a nested filter, combined with AND, OR, NOT
+            var partition = "Families";
+
+            var filter = JsonUtil.toMap(this.getClass().getResourceAsStream("familyQuery-nested.json"));
+            var cond = new Condition(filter).sort("id", "ASC");
+
+            var items = db.find(conName, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
+        }
 
     }
 
-	@Test
-	void sub_cond_query_should_work_4_AND() throws Exception {
-		// test json from cosmosdb official site
+    @Test
+    void sub_cond_query_should_work_4_AND() throws Exception {
+        // test json from cosmosdb official site
         // https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
 
-        var partition = "Families";
+        {
+            // using Condition.filter as a sub query
+            var partition = "Families";
 
-        var cond = Condition.filter(SubConditionType.SUB_COND_AND, List.of( //
-                Condition.filter("address.state", "WA"), //
-                Condition.filter("lastName", "Andersen"))) //
-                .sort("id", "ASC") //
-                ;
+            var cond = Condition.filter(SubConditionType.AND, List.of( //
+                    Condition.filter("address.state", "WA"), //
+                    Condition.filter("lastName", "Andersen"))) //
+                    .sort("id", "ASC") //
+                    ;
 
-        var items = db.find(conName, cond, partition).toMap();
+            var items = db.find(conName, cond, partition).toMap();
 
-        assertThat(items).hasSize(1);
+            assertThat(items).hasSize(1);
 
-        assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+        {
+            // using map as a sub query (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var cond = Condition.filter(SubConditionType.AND, List.of( //
+                    Map.of("address.state", "WA"), //
+                    Map.of("lastName", "Andersen"))) //
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(conName, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+        {
+            // using json to represent a filter (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var filter = JsonUtil.toMap(this.getClass().getResourceAsStream("familyQuery-AND.json"));
+            var cond = new Condition(filter).sort("id", "ASC");
+
+            var items = db.find(conName, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+        {
+            // using json to represent a filter (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var filter = JsonUtil.toMap(this.getClass().getResourceAsStream("familyQuery-AND2.json"));
+            var cond = new Condition(filter).sort("id", "ASC");
+
+            var items = db.find(conName, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
 
     }
 
-	@Test
-	void check_invalid_id_should_work() throws Exception {
-		var ids = List.of("\ttabbefore", "tabafter\t", "tab\nbetween", "\ncrbefore", "crafter\r", "cr\n\rbetween");
-		for (var id : ids) {
-			assertThatThrownBy(() -> CosmosDatabase.checkValidId(id)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("id cannot contain");
-		}
+    @Test
+    void sub_cond_query_should_work_4_NOT() throws Exception {
+        // test json from cosmosdb official site
+        // https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
 
-	}
-	@Test
-	void invalid_id_should_be_checked() throws Exception {
+        {
+            // using json to represent a filter (in order to support rest api 's parameter)
+            var partition = "Families";
 
-		var partition = "InvalidIdTest";
-		var ids = List.of("\ttabbefore", "cr\rbetween");
-		for (var id : ids) {
-			try {
+            var filter = JsonUtil.toMap(this.getClass().getResourceAsStream("familyQuery-NOT.json"));
+            var cond = new Condition(filter).sort("id", "ASC");
+
+            var items = db.find(conName, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
+        }
+
+    }
+
+    @Test
+    void check_invalid_id_should_work() throws Exception {
+        var ids = List.of("\ttabbefore", "tabafter\t", "tab\nbetween", "\ncrbefore", "crafter\r", "cr\n\rbetween");
+        for (var id : ids) {
+            assertThatThrownBy(() -> CosmosDatabase.checkValidId(id)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("id cannot contain");
+        }
+
+    }
+
+    @Test
+    void invalid_id_should_be_checked() throws Exception {
+
+        var partition = "InvalidIdTest";
+        var ids = List.of("\ttabbefore", "cr\rbetween");
+        for (var id : ids) {
+            try {
                 var data = Map.of("id", id, "name", "Lee");
                 assertThatThrownBy(() -> db.create(conName, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
                 assertThatThrownBy(() -> db.upsert(conName, data, partition).toMap()).isInstanceOf(IllegalArgumentException.class).hasMessageContaining(id);
@@ -738,7 +856,7 @@ class CosmosDatabaseTest {
                 // use rawSql to implement IS_NUMBER
                 var cond1 = Condition.filter("id", id);
                 var cond2 = Condition.rawSql("IS_NUMBER(c.test) = false");
-                var cond = Condition.filter(SubConditionType.SUB_COND_AND, List.of(cond1, cond2));
+                var cond = Condition.filter(SubConditionType.AND, List.of(cond1, cond2));
                 var items = db.find(conName, cond, partition).toMap();
                 assertThat(items).hasSize(1);
                 assertThat(items.get(0).get("id")).isEqualTo(id);
@@ -746,7 +864,7 @@ class CosmosDatabaseTest {
 
             {
                 // IS_DEFINED = false in OR condition. result: 2 item
-                var cond = Condition.filter("id LIKE", "D00%", SubConditionType.SUB_COND_OR, List.of(
+                var cond = Condition.filter("id LIKE", "D00%", SubConditionType.OR, List.of(
                         Condition.filter(String.format("%s IS_DEFINED", formId), false),
                         Condition.filter(String.format("%s.empty", formId), true)
                 )).sort("id", "ASC");
@@ -758,7 +876,7 @@ class CosmosDatabaseTest {
 
             {
                 // IS_DEFINED = false in OR condition. result: 1 item
-                var cond = Condition.filter("id LIKE", "D00%", SubConditionType.SUB_COND_AND, List.of(
+                var cond = Condition.filter("id LIKE", "D00%", SubConditionType.AND, List.of(
                         Condition.filter(String.format("%s.name IS_DEFINED", formId), true),
                         Condition.filter(String.format("%s.empty IS_DEFINED", formId), false)
                 )).sort("id", "ASC");
@@ -848,10 +966,10 @@ class CosmosDatabaseTest {
 	}
 
 	static void initFamiliesData() throws Exception {
-		var partition = "Families";
+        var partition = "Families";
 
-		try (var is1 = CosmosDatabaseTest.class.getResourceAsStream("family1.json");
-			 var is2 = CosmosDatabaseTest.class.getResourceAsStream("family2.json")) {
+        try (var is1 = CosmosDatabaseTest.class.getResourceAsStream("family1.json");
+             var is2 = CosmosDatabaseTest.class.getResourceAsStream("family2.json")) {
 
             var family1 = JsonUtil.toMap(is1);
             var family2 = JsonUtil.toMap(is2);
@@ -860,6 +978,27 @@ class CosmosDatabaseTest {
             db.upsert(conName, family2, partition);
         }
 
-	}
+    }
+
+    static void initData4ComplexQuery() throws Exception {
+        user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "2020-10-01", "Blanco");
+        user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "2020-11-01", "Typescript", "Javascript", "React", "Java");
+        user3 = new FullNameUser("id_find_filter3", "Tom", "Henry", 45, "2020-12-01", "Java", "Go", "Python");
+        user4 = new FullNameUser("id_find_filter4", "Andy", "Henry", 45, "2020-12-01", "Javascript", "Java");
+
+        // prepare
+        db.upsert(conName, user1, "Users");
+        db.upsert(conName, user2, "Users");
+        db.upsert(conName, user3, "Users");
+        // different partition
+        db.upsert(conName, user4, "Users2");
+    }
+
+    static void deleteData4ComplexQuery() throws Exception {
+        db.delete(conName, user1.id, "Users");
+        db.delete(conName, user2.id, "Users");
+        db.delete(conName, user3.id, "Users");
+        db.delete(conName, user4.id, "Users2");
+    }
 
 }
