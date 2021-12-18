@@ -722,16 +722,32 @@ class ConditionTest {
             for (var param : params) {
                 assertThat(param.getName()).startsWith("@param0");
                 if (param.getName().endsWith("01")) {
-					assertThat(param.getValue(String.class)).isEqualTo("Tom");
-				} else {
-					assertThat(param.getValue(Integer.class)).isEqualTo(20);
-				}
-			}
-		}
-	}
+                    assertThat(param.getValue(String.class)).isEqualTo("Tom");
+                } else {
+                    assertThat(param.getValue(Integer.class)).isEqualTo(20);
+                }
+            }
+        }
+    }
 
-	@Test
-	public void buildQuerySpec_should_work_for_is_defined() {
+    public enum Status {
+        enrolled, suspended, retired
+    }
+
+
+    @Test
+    public void copy_should_work_for_enum() {
+
+        var cond = Condition.filter("id", "ID001", "status", Status.enrolled);
+
+        var copy = cond.copy();
+        assertThat(copy.filter.get("id")).isEqualTo("ID001");
+        assertThat(copy.filter.get("status")).isEqualTo(Status.enrolled);
+
+    }
+
+    @Test
+    public void buildQuerySpec_should_work_for_is_defined() {
 
         var q = Condition.filter("id", "Hanks", //
                 "age IS_DEFINED", true) //

@@ -810,23 +810,23 @@ public class Condition {
 
 		// if value is a condition, copy the nested condition
 		if (value instanceof Condition) {
-			return ((Condition) value).copy();
-		}
+            return ((Condition) value).copy();
+        }
 
-		// if value is a collection
-		if (value instanceof Collection<?>) {
-			var coll = (Collection<?>) value;
-			return coll.stream().map(item -> copyValue(item)).collect(Collectors.toList());
-		}
+        // if value is a collection
+        if (value instanceof Collection<?>) {
+            var coll = (Collection<?>) value;
+            return coll.stream().map(item -> copyValue(item)).collect(Collectors.toList());
+        }
 
-		// primitive type
-		if (value instanceof String || Primitives.isWrapperType(value.getClass()) || value.getClass().isPrimitive()) {
-			return value;
-		}
+        // primitive type
+        if (value instanceof String || Primitives.isWrapperType(value.getClass()) || value.getClass().isPrimitive() || value.getClass().isEnum()) {
+            return value;
+        }
 
-		return JsonUtil.toMap(value);
+        return JsonUtil.toMap(value);
 
-	}
+    }
 
 	/**
 	 * fix enum exception in documentdb sdk
