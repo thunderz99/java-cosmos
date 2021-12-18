@@ -1,0 +1,19 @@
+{
+  "$AND" : [
+    {
+      "$OR": [
+        {
+          "address.state": "WA"
+        },
+        {
+          "id": "WakefieldFamily"
+        }
+      ]
+    },
+    {
+      "$NOT": {
+        "creationDate =": 1431620472
+      }
+    }
+  ]
+}

@@ -23,27 +23,36 @@ import org.slf4j.LoggerFactory;
  */
 public class Condition {
 
-	private static Logger log = LoggerFactory.getLogger(Condition.class);
+    private static Logger log = LoggerFactory.getLogger(Condition.class);
 
-	/**
-	 * Default constructor
-	 */
-	public Condition() {
-	}
+    /**
+     * Default constructor
+     */
+    public Condition() {
+    }
 
-	public Map<String, Object> filter = new LinkedHashMap<>();
+    /**
+     * A constructor accepting a map as filter
+     *
+     * @param filter
+     */
+    public Condition(Map<String, Object> filter) {
+        this.filter = filter;
+    }
 
-	public List<String> sort = List.of();
+    public Map<String, Object> filter = new LinkedHashMap<>();
 
-	public Set<String> fields = new LinkedHashSet<>();
+    public List<String> sort = List.of();
 
-	public int offset = 0;
-	public int limit = 100;
+    public Set<String> fields = new LinkedHashSet<>();
 
-	/**
-	 * whether this query is cross-partition or not (default to false)
-	 */
-	public boolean crossPartition = false;
+    public int offset = 0;
+    public int limit = 100;
+
+    /**
+     * whether this query is cross-partition or not (default to false)
+     */
+    public boolean crossPartition = false;
 
     /**
      * whether this query is a negative query. (default to false)
@@ -346,23 +355,30 @@ public class Condition {
 
             var subFilterQueryToAdd = "";
 
-            if (entry.getKey().startsWith(SubConditionType.SUB_COND_AND.name())) {
+            if (entry.getKey().startsWith(SubConditionType.AND)) {
                 // sub query AND
-				var subQueries = extractSubQueries(entry.getValue());
-				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", params, conditionIndex, paramIndex);
+                var subQueries = extractSubQueries(entry.getValue());
+                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", params, conditionIndex, paramIndex);
 
-			} else if (entry.getKey().startsWith(SubConditionType.SUB_COND_OR.name())) {
-				// sub query OR
-				var subQueries = extractSubQueries(entry.getValue());
-				subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", params, conditionIndex, paramIndex);
+            } else if (entry.getKey().startsWith(SubConditionType.OR)) {
+                // sub query OR
+                var subQueries = extractSubQueries(entry.getValue());
+                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", params, conditionIndex, paramIndex);
 
-			} else {
-				// normal expression
-				var exp = parse(entry.getKey(), entry.getValue());
-				var expQuerySpec = exp.toQuerySpec(paramIndex);
-				subFilterQueryToAdd = expQuerySpec.getQueryText();
-				params.addAll(expQuerySpec.getParameters());
-			}
+            } else if (entry.getKey().startsWith(SubConditionType.NOT)) {
+                // sub query NOT
+                var subQueries = extractSubQueries(entry.getValue());
+                var subQueryWithNot = Condition.filter(SubConditionType.AND, subQueries).not();
+                // recursively generate the filterQuery with negative flag true
+                var filterQueryWithNot = subQueryWithNot.generateFilterQuery("", params, conditionIndex, paramIndex);
+                subFilterQueryToAdd = " " + removeConnectPart(filterQueryWithNot.queryText.toString());
+            } else {
+                // normal expression
+                var exp = parse(entry.getKey(), entry.getValue());
+                var expQuerySpec = exp.toQuerySpec(paramIndex);
+                subFilterQueryToAdd = expQuerySpec.getQueryText();
+                params.addAll(expQuerySpec.getParameters());
+            }
 
 			if (StringUtils.isNotEmpty(subFilterQueryToAdd)) {
 				queryTexts.add(subFilterQueryToAdd);
@@ -384,32 +400,57 @@ public class Condition {
 		return new FilterQuery(queryText, params, conditionIndex, paramIndex);
 	}
 
-	/**
-	 * add negative NOT operator for queryText, if not empty
-	 *
-	 * @param queryText
-	 * @param negative
-	 * @return
-	 */
-	static String processNegativeQuery(String queryText, boolean negative) {
-		return negative && StringUtils.isNotEmpty(queryText) ?
-				" NOT(" + queryText + ")" : queryText;
-	}
+    /**
+     * add negative NOT operator for queryText, if not empty
+     *
+     * @param queryText
+     * @param negative
+     * @return
+     */
+    static String processNegativeQuery(String queryText, boolean negative) {
+        return negative && StringUtils.isNotEmpty(queryText) ?
+                " NOT(" + queryText + ")" : queryText;
+    }
 
-	/**
-	 * extract subQueries for SUB_COND_AND / SUB_COND_OR 's filter value
-	 *
-	 * @param value
-	 */
-	static List<Condition> extractSubQueries(Object value) {
-		if (value == null) {
-			return List.of();
-		}
+    /**
+     * extract subQuery for SUB_COND_AND / SUB_COND_OR 's filter value, single condition only.
+     *
+     * @param value
+     */
+    static Condition extractSubQuery(Object value) {
+        if (value == null) {
+            return null;
+        }
 
         if (value instanceof Condition) {
-            return List.of((Condition) value);
+            // single condition
+            return (Condition) value;
+        } else if (value instanceof Map<?, ?>) {
+            // single condition in the form of map
+            return new Condition(JsonUtil.toMap(value));
+        } else if (value instanceof Collection<?>) {
+            throw new IllegalArgumentException("Cannot convert input to a single condition. Ensure the input is a single value(not a collection)." + value);
+        }
+        throw new IllegalArgumentException("Invalid input. expect a condition or a map. " + value);
+    }
+
+    /**
+     * extract subQueries for SUB_COND_AND / SUB_COND_OR 's filter value
+     *
+     * @param value
+     */
+    static List<Condition> extractSubQueries(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+
+        if (value instanceof Condition || value instanceof Map<?, ?>) {
+            // single condition
+            return List.of(extractSubQuery(value));
         } else if (value instanceof List<?>) {
-            return (List<Condition>) value;
+            // multi condition
+            var listValue = (List<Object>) value;
+            return listValue.stream().map(v -> extractSubQuery(v)).filter(Objects::nonNull).collect(Collectors.toList());
         }
 
         return List.of();
@@ -663,17 +704,6 @@ public class Condition {
 		var cond = new Condition();
 		cond.rawQuerySpec = new SqlQuerySpec(queryText);
 		return cond;
-	}
-
-	/**
-	 * sub query 's OR / RAW operator
-	 *
-	 * <p>
-	 * TODO SUB_COND_NOT operator
-	 * </p>
-	 */
-	public enum SubConditionType {
-		SUB_COND_AND, SUB_COND_OR
 	}
 
 	/**

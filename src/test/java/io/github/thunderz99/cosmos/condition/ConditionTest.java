@@ -10,7 +10,6 @@ import com.azure.cosmos.models.SqlParameter;
 import org.assertj.core.util.Lists;
 import org.junit.jupiter.api.Test;
 
-import static io.github.thunderz99.cosmos.condition.Condition.SubConditionType;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -162,27 +161,27 @@ class ConditionTest {
         assertThat(params.get(0)).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks"));
     }
 
-	@Test
-	public void generate_field_should_work() {
-		assertThat(Condition.generateSelectByFields(Set.of("organization.primary-leader.name")))
-				.isEqualTo("VALUE {\"organization\":{\"primary-leader\":{\"name\":c[\"organization\"][\"primary-leader\"][\"name\"]}}}");
-	}
+    @Test
+    public void generate_field_should_work() {
+        assertThat(Condition.generateSelectByFields(Set.of("organization.primary-leader.name")))
+                .isEqualTo("VALUE {\"organization\":{\"primary-leader\":{\"name\":c[\"organization\"][\"primary-leader\"][\"name\"]}}}");
+    }
 
-	@Test
-	public void generate_field_should_throw_when_invalid_field() {
-		for (var ch : List.of("{", "}", ",", "\"", "'")) {
-			assertThatThrownBy(() -> Condition.generateSelectByFields(Set.of(ch))).isInstanceOf(IllegalArgumentException.class)
-					.hasMessageContaining("field cannot").hasMessageContaining(ch);
+    @Test
+    public void generate_field_should_throw_when_invalid_field() {
+        for (var ch : List.of("{", "}", ",", "\"", "'")) {
+            assertThatThrownBy(() -> Condition.generateSelectByFields(Set.of(ch))).isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("field cannot").hasMessageContaining(ch);
 
-		}
+        }
 
-	}
+    }
 
-	@Test
-	public void buildQuerySpec_should_work_for_sub_cond_or() {
+    @Test
+    public void buildQuerySpec_should_work_for_sub_cond_or() {
         {
             var q = Condition.filter("fullName.last", "Hanks", //
-                    SubConditionType.SUB_COND_OR,
+                    SubConditionType.OR,
                     List.of(Condition.filter("position", "leader"), Condition.filter("organization", "executive")), //
                     "age", 30) //
                     .sort("_ts", "DESC") //
@@ -203,7 +202,7 @@ class ConditionTest {
 
         {
             //sub query in single condition without a List
-            var q = Condition.filter(SubConditionType.SUB_COND_OR,
+            var q = Condition.filter(SubConditionType.OR,
                     Condition.filter("position", "leader"))
                     .toQuerySpec();
             assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE ((c[\"position\"] = @param000_position)) OFFSET 0 LIMIT 100");
@@ -214,9 +213,9 @@ class ConditionTest {
         {
             //multiple SUB_COND_OR s
             var q = Condition.filter(
-                    SubConditionType.SUB_COND_OR,
+                    SubConditionType.OR,
                     Condition.filter("position", "leader"),
-                    SubConditionType.SUB_COND_OR + " 2",
+                    SubConditionType.OR + " 2",
                     Condition.filter("address", "London")
             )
                     .toQuerySpec();
@@ -227,11 +226,11 @@ class ConditionTest {
         }
     }
 
-	@Test
-	public void buildQuerySpec_should_work_for_sub_cond_or_from_the_beginning() {
+    @Test
+    public void buildQuerySpec_should_work_for_sub_cond_or_from_the_beginning() {
 
         var q = Condition.filter( //
-                SubConditionType.SUB_COND_OR,
+                SubConditionType.OR,
                 List.of(Condition.filter("position", "leader"), Condition.filter("organization", "executive")) //
         ) //
                 .sort("_ts", "DESC") //
@@ -249,13 +248,13 @@ class ConditionTest {
     }
 
 
-	@Test
-	public void buildQuerySpec_should_work_for_sub_cond_and() {
+    @Test
+    public void buildQuerySpec_should_work_for_sub_cond_and() {
 
         {
             // SUB_COND_AND mixed with sort, offset, limit
             var q = Condition.filter( //
-                    SubConditionType.SUB_COND_AND,
+                    SubConditionType.AND,
                     List.of(Condition.filter("position", "leader"), Condition.filter("organization", "executive")) //
             ) //
                     .sort("_ts", "DESC") //
@@ -274,7 +273,7 @@ class ConditionTest {
 
         {
             //sub query in single condition without a List
-            var q = Condition.filter(SubConditionType.SUB_COND_AND,
+            var q = Condition.filter(SubConditionType.AND,
                     Condition.filter("position", "leader"))
                     .toQuerySpec();
             assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE ((c[\"position\"] = @param000_position)) OFFSET 0 LIMIT 100");
@@ -285,9 +284,9 @@ class ConditionTest {
         {
             //multiple SUB_COND_AND s
             var q = Condition.filter(
-                    SubConditionType.SUB_COND_AND,
+                    SubConditionType.AND,
                     Condition.filter("position", "leader"),
-                    SubConditionType.SUB_COND_AND + " another",
+                    SubConditionType.AND + " another",
                     List.of(Condition.rawSql("1=1"))
             )
                     .toQuerySpec();
@@ -312,59 +311,59 @@ class ConditionTest {
 	@Test
 	public void buildQuerySpec_should_work_for_empty_sub_query() {
 
-		{
-			var q = Condition.filter(SubConditionType.SUB_COND_OR, //
-					List.of()).toQuerySpec();
+        {
+            var q = Condition.filter(SubConditionType.OR, //
+                    List.of()).toQuerySpec();
 
-			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c OFFSET 0 LIMIT 100");
-			assertThat(q.getParameters()).isEmpty();
-		}
+            assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c OFFSET 0 LIMIT 100");
+            assertThat(q.getParameters()).isEmpty();
+        }
 
-		{
-			var q = Condition.filter(SubConditionType.SUB_COND_OR, //
-					List.of(Condition.filter("id", 1))).toQuerySpec();
+        {
+            var q = Condition.filter(SubConditionType.OR, //
+                    List.of(Condition.filter("id", 1))).toQuerySpec();
 
-			assertThat(q.getQueryText().trim())
-					.isEqualTo("SELECT * FROM c WHERE ((c[\"id\"] = @param000_id)) OFFSET 0 LIMIT 100");
-			assertThat(q.getParameters()).hasSize(1);
-		}
+            assertThat(q.getQueryText().trim())
+                    .isEqualTo("SELECT * FROM c WHERE ((c[\"id\"] = @param000_id)) OFFSET 0 LIMIT 100");
+            assertThat(q.getParameters()).hasSize(1);
+        }
 
-		{
-			var q = Condition.filter("id", 1, SubConditionType.SUB_COND_AND, //
-					List.of()).toQuerySpec();
+        {
+            var q = Condition.filter("id", 1, SubConditionType.AND, //
+                    List.of()).toQuerySpec();
 
-			assertThat(q.getQueryText().trim())
-					.isEqualTo("SELECT * FROM c WHERE (c[\"id\"] = @param000_id) OFFSET 0 LIMIT 100");
-			assertThat(q.getParameters()).hasSize(1);
-		}
+            assertThat(q.getQueryText().trim())
+                    .isEqualTo("SELECT * FROM c WHERE (c[\"id\"] = @param000_id) OFFSET 0 LIMIT 100");
+            assertThat(q.getParameters()).hasSize(1);
+        }
 
-		{
-			var q = Condition.filter(SubConditionType.SUB_COND_AND, //
-					List.of(Condition.filter(), Condition.filter())).toQuerySpec();
+        {
+            var q = Condition.filter(SubConditionType.AND, //
+                    List.of(Condition.filter(), Condition.filter())).toQuerySpec();
 
-			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c OFFSET 0 LIMIT 100");
-			assertThat(q.getParameters()).hasSize(0);
-		}
+            assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c OFFSET 0 LIMIT 100");
+            assertThat(q.getParameters()).hasSize(0);
+        }
 
-		{
-			var q = Condition.filter("id", 1, SubConditionType.SUB_COND_OR, //
-					List.of(Condition.filter())).toQuerySpec();
+        {
+            var q = Condition.filter("id", 1, SubConditionType.OR, //
+                    List.of(Condition.filter())).toQuerySpec();
 
-			assertThat(q.getQueryText().trim())
-					.isEqualTo("SELECT * FROM c WHERE (c[\"id\"] = @param000_id) OFFSET 0 LIMIT 100");
-			assertThat(q.getParameters()).hasSize(1);
-		}
+            assertThat(q.getQueryText().trim())
+                    .isEqualTo("SELECT * FROM c WHERE (c[\"id\"] = @param000_id) OFFSET 0 LIMIT 100");
+            assertThat(q.getParameters()).hasSize(1);
+        }
 
-		{
-			var q = Condition.filter("id", 1, SubConditionType.SUB_COND_OR, //
-					List.of(Condition.filter(), Condition.filter("name", "Tom"))).toQuerySpec();
+        {
+            var q = Condition.filter("id", 1, SubConditionType.OR, //
+                    List.of(Condition.filter(), Condition.filter("name", "Tom"))).toQuerySpec();
 
-			assertThat(q.getQueryText().trim()).isEqualTo(
-					"SELECT * FROM c WHERE (c[\"id\"] = @param000_id) AND ((c[\"name\"] = @param001_name)) OFFSET 0 LIMIT 100");
-			assertThat(q.getParameters()).hasSize(2);
-		}
+            assertThat(q.getQueryText().trim()).isEqualTo(
+                    "SELECT * FROM c WHERE (c[\"id\"] = @param000_id) AND ((c[\"name\"] = @param001_name)) OFFSET 0 LIMIT 100");
+            assertThat(q.getParameters()).hasSize(2);
+        }
 
-	}
+    }
 
 	@Test
 	public void buildQuerySpec_should_work_for_raw_cond() {
@@ -372,7 +371,7 @@ class ConditionTest {
         {
             // use SUB_COND_AND and Condition.rawSql
             var q = Condition.filter("open", true, //
-                    SubConditionType.SUB_COND_AND, //
+                    SubConditionType.AND, //
                     List.of(Condition.rawSql("1=1"))).toQuerySpec();
 
             assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (c[\"open\"] = @param000_open) AND (1=1) OFFSET 0 LIMIT 100");
@@ -386,7 +385,7 @@ class ConditionTest {
             List<SqlParameter> params = Lists.newArrayList(new SqlParameter("@raw_param_status", "%enroll%"));
 
             var q = Condition.filter("open", true, //
-                    SubConditionType.SUB_COND_AND, //
+                    SubConditionType.AND, //
                     List.of(Condition.rawSql("c.status LIKE @raw_param_status", params))).toQuerySpec();
 
             assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (c[\"open\"] = @param000_open) AND (c.status LIKE @raw_param_status) OFFSET 0 LIMIT 100");
@@ -622,23 +621,23 @@ class ConditionTest {
 	@Test
 	public void copy_should_support_nested_conditions() {
 
-		var cond = Condition.filter("id", "ID001", SubConditionType.SUB_COND_OR.name(), List.of(
-				Condition.filter("name", "Tom"),
-				Condition.filter("age >", "20")
-		));
+        var cond = Condition.filter("id", "ID001", SubConditionType.OR, List.of(
+                Condition.filter("name", "Tom"),
+                Condition.filter("age >", "20")
+        ));
 
-		var copy = cond.copy();
-		assertThat(copy.filter.get("id")).isEqualTo("ID001");
-		var subCondObjs = copy.filter.get(SubConditionType.SUB_COND_OR.name());
-		assertThat(subCondObjs instanceof List<?>).isTrue();
+        var copy = cond.copy();
+        assertThat(copy.filter.get("id")).isEqualTo("ID001");
+        var subCondObjs = copy.filter.get(SubConditionType.OR);
+        assertThat(subCondObjs instanceof List<?>).isTrue();
 
-		if (subCondObjs instanceof List<?>) {
-			var list = (List<?>) subCondObjs;
-			for (var subCondObj : list) {
-				assertThat(subCondObj instanceof Condition).isTrue();
-			}
-		}
-	}
+        if (subCondObjs instanceof List<?>) {
+            var list = (List<?>) subCondObjs;
+            for (var subCondObj : list) {
+                assertThat(subCondObj instanceof Condition).isTrue();
+            }
+        }
+    }
 
 	@Test
 	public void copy_should_work() {
@@ -787,14 +786,14 @@ class ConditionTest {
 	@Test
 	public void true_condition_in_subquery_should_work() {
 
-		var cond1 = Condition.trueCondition();
-		var cond2 = Condition.filter("id", "001");
+        var cond1 = Condition.trueCondition();
+        var cond2 = Condition.filter("id", "001");
 
-		var cond = Condition.filter(SubConditionType.SUB_COND_AND, List.of(cond1, cond2));
+        var cond = Condition.filter(SubConditionType.AND, List.of(cond1, cond2));
 
-		var q = cond.toQuerySpec();
+        var q = cond.toQuerySpec();
 
-		assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE (1=1 AND (c[\"id\"] = @param000_id)) OFFSET 0 LIMIT 100");
+        assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE (1=1 AND (c[\"id\"] = @param000_id)) OFFSET 0 LIMIT 100");
 
         var params = List.copyOf(q.getParameters());
 

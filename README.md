@@ -29,7 +29,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.4.1</version>
+  <version>0.4.2</version>
 </dependency>
 
 ```
@@ -167,17 +167,24 @@ db.updatePartial("Container", user1.id, Map.of("lastName", "UpdatedPartially"), 
       "tagIds ARRAY_CONTAINS", "T001", // see cosmosdb ARRAY_CONTAINS
       "tagIds ARRAY_CONTAINS_ANY", List.of("T001", "T002"), // see cosmosdb EXISTS
       "tags ARRAY_CONTAINS_ALL name", List.of("Java", "React"), // see cosmosdb EXISTS
-      "SUB_COND_OR", List.of( // add an OR sub condition
+      "$OR", List.of( // add an OR sub condition
         Condition.filter("position", "leader"),  // subquery's fields/order/offset/limit will be ignored
         Condition.filter("organization.id", "executive_committee")
       ),
-      "SUB_COND_OR 2", List.of( // add another OR sub condition (name it SUB_COND_OR xxx in order to avoid the same key to a previous SUB_COND_OR )
+      "$OR 2", List.of( // add another OR sub condition (name it $OR xxx in order to avoid the same key to a previous $OR )
         Condition.filter("position", "leader"),  // subquery's fields/order/offset/limit will be ignored
         Condition.filter("organization.id", "executive_committee")
       ),
-      "SUB_COND_AND", List.of(
+      "$AND", List.of(
         Condition.filter("tagIds ARRAY_CONTAINS_ALL", List.of("T001", "T002")).not() // A negative condition. see cosmosdb NOT
         Condition.filter("city", "Tokyo")
+      ),
+      "$NOT", Map.of("lastName CONTAINS", "Willington"), // A negative query using $NOT
+      "$NOT 2", Map.of("$OR 3",  // A nested filter using $NOT and $OR
+        List.of(
+          Map.of("lastName", ""),  // note they will do the same thing using Condition.filter or Map.of
+          Map.of("age >=", 20)
+        )
       )
     )
     .fields("id", "lastName", "age", "organization.name") // select certain fields
@@ -251,12 +258,12 @@ db.updatePartial("Container", user1.id, Map.of("lastName", "UpdatedPartially"), 
     var params =  new SqlParameterCollection(new SqlParameter("@state", "%NY%"));
 
     var cond = Condition.filter(
-      "SUB_COND_AND", 
+      "$AND", 
       List.of(
         Condition.filter("gender", "female"), 
         Condition.rawSql("c.state LIKE @state", params)
       ),
-      "SUB_COND_AND another", // name it SUB_COND_OR xxx in order to avoid the same key to a previous SUB_COND_AND
+      "$AND another", // name it $OR xxx in order to avoid the same key to a previous $AND
       List.of(
         Condition.filter("age > ", "22"), 
         Condition.rawSql("c.address != \"\" ")
@@ -268,3 +275,81 @@ db.updatePartial("Container", user1.id, Map.of("lastName", "UpdatedPartially"), 
     
 ```
 
+
+
+### Queries using json as a filter
+
+Support the following operators in order to implement nested filter queries using JSON, especially for a rest api.
+
+
+#### $NOT example
+
+```
+
+var queryJson="""
+{
+  "$NOT":
+    {
+      "address.state": "WA"
+    },
+  "$NOT 2":  {
+      "id": "AndersenFamily"
+    }
+}
+"""
+
+var cond = new Condition(JsonUtil.toMap(queryJson)).sort("id", "ASC");
+var items = db.find(conName, cond, partition);
+
+```
+
+#### $OR example
+
+```
+{
+  "$OR": [
+    {
+      "address.state": "WA"
+    },
+    {
+      "id": "WakefieldFamily"
+    }
+  ]
+}
+```
+
+#### $AND example
+
+```
+{
+  "$AND": {
+    "address.state": "WA",
+    "lastName": "Andersen"
+  }
+}
+```
+
+#### nested example
+
+```
+{
+  "$AND" : [
+    {
+      "$OR": [
+        {
+          "address.state": "WA"
+        },
+        {
+          "id": "WakefieldFamily"
+        }
+      ]
+    },
+    {
+      "$NOT": {
+        "creationDate =": 1431620472
+      }
+    }
+  ]
+}
+
+```
