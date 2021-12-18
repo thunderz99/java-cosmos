@@ -235,3 +235,4 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"),
 
     db.find("Collection1", cond, "Partition1");
 ```
+
