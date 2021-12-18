@@ -275,3 +275,81 @@ db.updatePartial("Container", user1.id, Map.of("lastName", "UpdatedPartially"), 
     
 ```
 
+
+
+### Queries using json as a filter
+
+Support the following operators in order to implement nested filter queries using JSON, especially for a rest api.
+
+
+#### $NOT example
+
+```
+
+var queryJson="""
+{
+  "$NOT":
+    {
+      "address.state": "WA"
+    },
+  "$NOT 2":  {
+      "id": "AndersenFamily"
+    }
+}
+"""
+
+var cond = new Condition(JsonUtil.toMap(queryJson)).sort("id", "ASC");
+var items = db.find(conName, cond, partition);
+
+```
+
+#### $OR example
+
+```
+{
+  "$OR": [
+    {
+      "address.state": "WA"
+    },
+    {
+      "id": "WakefieldFamily"
+    }
+  ]
+}
+```
+
+#### $AND example
+
+```
+{
+  "$AND": {
+    "address.state": "WA",
+    "lastName": "Andersen"
+  }
+}
+```
+
+#### nested example
+
+```
+{
+  "$AND" : [
+    {
+      "$OR": [
+        {
+          "address.state": "WA"
+        },
+        {
+          "id": "WakefieldFamily"
+        }
+      ]
+    },
+    {
+      "$NOT": {
+        "creationDate =": 1431620472
+      }
+    }
+  ]
+}
+
+```
