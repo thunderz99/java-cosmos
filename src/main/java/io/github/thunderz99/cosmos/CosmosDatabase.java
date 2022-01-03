@@ -271,7 +271,7 @@ public class CosmosDatabase {
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
-        var response = container.patchItem(id, new com.azure.cosmos.models.PartitionKey(partition), patchOps, LinkedHashMap.class);
+        var response = RetryUtil.executeWithRetry(() -> container.patchItem(id, new com.azure.cosmos.models.PartitionKey(partition), patchOps, LinkedHashMap.class));
 
         var item = response.getItem();
 
