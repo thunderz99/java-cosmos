@@ -6,10 +6,7 @@ import java.util.stream.Collectors;
 
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.models.CosmosPatchOperations;
-import com.microsoft.azure.documentdb.DocumentClient;
-import com.microsoft.azure.documentdb.FeedOptions;
-import com.microsoft.azure.documentdb.PartitionKey;
-import com.microsoft.azure.documentdb.RequestOptions;
+import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.util.Checker;
@@ -255,14 +252,22 @@ public class CosmosDatabase {
 
         var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
-        //var origin = read(coll, id, partition).toMap();
-
         var patchData = JsonUtil.toMap(data);
+
+
         // Remove partition key from patchData, because it is not needed for a patch action.
         patchData.remove(Cosmos.getDefaultPartitionKey());
 
         var flatPatchMap = MapUtil.toFlatMap(patchData);
 
+        if (flatPatchMap.size() > 10) {
+            // If patchData's operations exceed 10, the patch method is unable to deal.
+            // We have to use the traditional way using read, merge and upsert.
+            return updatePartialByMerge(coll, id, patchData, partition);
+
+        }
+
+        // We use the new patch method.
         var patchOps = CosmosPatchOperations.create();
 
         for (var entry : flatPatchMap.entrySet()) {
@@ -278,6 +283,38 @@ public class CosmosDatabase {
         log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
         return new CosmosDocument(item);
+    }
+
+
+    /**
+     * @param coll
+     * @param id
+     * @param data
+     * @param partition
+     * @return
+     */
+    CosmosDocument updatePartialByMerge(String coll, String id, Map<String, Object> data, String partition) throws Exception {
+
+        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+
+        var origin = read(coll, id, partition).toMap();
+
+        var newData = JsonUtil.toMap(data);
+        // add partition info
+        newData.put(Cosmos.getDefaultPartitionKey(), partition);
+
+        // Object.assign(origin, newData)
+        var merged = merge(origin, newData);
+
+        checkValidId(merged);
+        var etag = merged.getOrDefault("etag", "").toString();
+
+        var resource = RetryUtil.executeWithRetry(() -> client.replaceDocument(documentLink, merged, requestOptions(partition, etag)).getResource());
+
+        log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+
+        return new CosmosDocument(resource.toObject(JSONObject.class));
+
     }
 
     /**
@@ -639,68 +676,86 @@ public class CosmosDatabase {
 
 	public int count(String coll, Condition cond, String partition) throws Exception {
 
-		var collectionLink = Cosmos.getCollectionLink(db, coll);
+        var collectionLink = Cosmos.getCollectionLink(db, coll);
 
-		var options = new FeedOptions();
-		options.setPartitionKey(new PartitionKey(partition));
+        var options = new FeedOptions();
+        options.setPartitionKey(new PartitionKey(partition));
 
-		var querySpec = cond.toQuerySpecForCount();
+        var querySpec = cond.toQuerySpecForCount();
 
-		var docs = RetryUtil.executeWithRetry( () -> client.queryDocuments(collectionLink, querySpec, options).getQueryIterable().toList());
+        var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec, options).getQueryIterable().toList());
 
-		if(log.isInfoEnabled()){
-			log.info("count Document:{}, cond:{}, partition:{}, account:{}", coll, cond, partition, getAccount());
-		}
+        if (log.isInfoEnabled()) {
+            log.info("count Document:{}, cond:{}, partition:{}, account:{}", coll, cond, partition, getAccount());
+        }
 
-		return docs.get(0).getInt("$1");
+        return docs.get(0).getInt("$1");
 
-	}
-
-	RequestOptions requestOptions(String partition) {
-		var options = new RequestOptions();
-		options.setPartitionKey(new PartitionKey(partition));
-		return options;
     }
 
-	/**
-	 *
-	 * Object.assign(m1, m2) in javascript.
-	 *
-	 * @param m1
-	 * @param m2
-	 * @return
-	 */
-	static Map<String, Object> merge(Map<String, Object> m1, Map<String, Object> m2) {
-		m1.putAll(m2);
-		return m1;
-	}
+    RequestOptions requestOptions(String partition) {
+        var options = new RequestOptions();
+        options.setPartitionKey(new PartitionKey(partition));
+        return options;
+    }
 
-	/**
-	 * Get cosmos db account id associated with this instance.
-	 * @return
-	 * @throws Exception Cosmos client exception
-	 */
-	String getAccount() throws Exception {
-		if(StringUtils.isNotEmpty(this.account)){
-			return this.account;
-		}
-		this.account = Cosmos.getAccount(this.client);
-		return this.account;
-	}
+    RequestOptions requestOptions(String partition, String etag) {
+        var options = new RequestOptions();
+        options.setPartitionKey(new PartitionKey(partition));
 
-	/**
-	 * Get cosmos db account instance associated with this instance.
-	 * @return cosmosAccount
-	 */
-	public Cosmos getCosmosAccount() {
-		return this.cosmosAccount;
-	}
+        // using etag for optimistic concurrency control
+        // see https://docs.microsoft.com/en-us/azure/cosmos-db/sql/database-transactions-optimistic-concurrency#optimistic-concurrency-control
 
-	/**
-	 * Get cosmos database name associated with this instance.
-	 * @return database name
-	 */
-	public String getDatabaseName() {
+        if (StringUtils.isNotEmpty(etag)) {
+            var accessCondition = new AccessCondition();
+            accessCondition.setCondition(etag);
+            options.setAccessCondition(accessCondition);
+        }
+
+        return options;
+    }
+
+    /**
+     * Object.assign(m1, m2) in javascript.
+     *
+     * @param m1
+     * @param m2
+     * @return
+     */
+    static Map<String, Object> merge(Map<String, Object> m1, Map<String, Object> m2) {
+        m1.putAll(m2);
+        return m1;
+    }
+
+    /**
+     * Get cosmos db account id associated with this instance.
+     *
+     * @return
+     * @throws Exception Cosmos client exception
+     */
+    String getAccount() throws Exception {
+        if (StringUtils.isNotEmpty(this.account)) {
+            return this.account;
+        }
+        this.account = Cosmos.getAccount(this.client);
+        return this.account;
+    }
+
+    /**
+     * Get cosmos db account instance associated with this instance.
+     *
+     * @return cosmosAccount
+     */
+    public Cosmos getCosmosAccount() {
+        return this.cosmosAccount;
+    }
+
+    /**
+     * Get cosmos database name associated with this instance.
+     *
+     * @return database name
+     */
+    public String getDatabaseName() {
 		return this.db;
 	}
 

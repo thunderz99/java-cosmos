@@ -1,9 +1,7 @@
 package io.github.thunderz99.cosmos;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.IntStream;
 
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
@@ -917,7 +915,8 @@ class CosmosDatabaseTest {
         var id = "updatePartial_should_work_001"; // form with content
         var age = 20;
         var formId = "829cc727-2d49-4d60-8f91-b30f50560af7"; //uuid
-        var formContent = Map.of("name", "Tom", "sex", "Male", "address", "NY");
+        var formContent = Map.of("name", "Tom", "sex", "Male", "address", "NY", "tags",
+                List.of(Map.of("id", "t001", "name", "backend"), Map.of("id", "t002", "name", "frontend")));
         var data = Map.of("id", id, "age", age, formId, formContent, "sheet-2", Map.of("skills", Set.of("Java", "Python")));
 
         try {
@@ -945,6 +944,45 @@ class CosmosDatabaseTest {
 
                 assertThat(((Map<String, Object>) patched.get("sheet-2")).get("skills")).isEqualTo(List.of("Java", "JavaScript"));
 
+            }
+
+            {
+                // partial update an array's item
+                var partialMap = Map.of("name", "Alex", "sheet-2", Map.of("skills/1", "Kotlin"));
+
+                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                assertThat(patched).containsEntry("name", "Alex")
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition);
+
+                assertThat(((Map<String, Object>) patched.get("sheet-2")).get("skills")).isEqualTo(List.of("Java", "Kotlin"));
+            }
+
+            {
+                // partial update an array's nested item
+                var partialMap = Map.of("name", "Kate", formId, Map.of("tags/0", Map.of("name", "fullstack")));
+
+                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                assertThat(patched).containsEntry("name", "Kate")
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition);
+
+                assertThat(((List<Map<String, Object>>) ((Map<String, Object>) patched.get(formId)).get("tags")).get(0).get("name")).isEqualTo("fullstack");
+            }
+            {
+                // partial update containing fields more than 10
+                var formMap = new HashMap<String, Integer>();
+                IntStream.range(0, 10).forEach(i -> formMap.put("key" + i, i));
+                var partialMap = Map.of("name", "Kate", formId, formMap);
+
+                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                assertThat(patched).containsEntry("name", "Kate")
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition);
+
+
+                assertThat(((Map<String, Object>) patched.get(formId)).get("key5")).isEqualTo(5);
+                
             }
 
         } finally {
