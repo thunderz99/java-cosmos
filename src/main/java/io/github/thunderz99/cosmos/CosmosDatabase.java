@@ -227,10 +227,13 @@ public class CosmosDatabase {
     }
 
     /**
-     * Update existing data. Partial update supported(Only 1st json hierarchy supported). If not exist, throw Not Found Exception.
+     * Partial update existing data(Simple version). Input is a map, and the key/value in the map would be patched to the target document in SET mode.
      *
      * <p>
      * see <a href="https://devblogs.microsoft.com/cosmosdb/partial-document-update-ga/">partial update official docs</a>
+     * </p>
+     * <p>
+     * If you want more complex partial update / patch features, please use patch method, which supports ADD / SET / REPLACE / DELETE / INCREMENT and etc.
      * </p>
      *
      * @param coll      collection name
@@ -238,7 +241,7 @@ public class CosmosDatabase {
      * @param data      data object
      * @param partition partition name
      * @return CosmosDocument instance
-     * @throws Exception Cosmos client exception
+     * @throws Exception Cosmos client exception. If not exist, throw Not Found Exception.
      */
     public CosmosDocument updatePartial(String coll, String id, Object data, String partition)
             throws Exception {
@@ -285,13 +288,15 @@ public class CosmosDatabase {
         return new CosmosDocument(item);
     }
 
-
     /**
-     * @param coll
-     * @param id
-     * @param data
-     * @param partition
-     * @return
+     * Update a document with read / merge / upsert method. this will be used when patch operations' size exceed the limit of 10.
+     *
+     * @param coll      collection name
+     * @param id        id of document
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception. If not exist, throw Not Found Exception.
      */
     CosmosDocument updatePartialByMerge(String coll, String id, Map<String, Object> data, String partition) throws Exception {
 
@@ -716,13 +721,32 @@ public class CosmosDatabase {
     }
 
     /**
-     * Object.assign(m1, m2) in javascript.
+     * like Object.assign(m1, m2) in javascript, but support nested merge.
      *
      * @param m1
      * @param m2
-     * @return
+     * @return map after merge
      */
     static Map<String, Object> merge(Map<String, Object> m1, Map<String, Object> m2) {
+
+        for (var entry : m1.entrySet()) {
+            var key = entry.getKey();
+            var value = entry.getValue();
+
+            var value2 = m2.get(key);
+
+            // do nested merge
+            if (value != null && value instanceof Map<?, ?> && value2 != null && value2 instanceof Map<?, ?>) {
+                var subMap1 = (Map<String, Object>) value;
+                var subMap2 = (Map<String, Object>) value2;
+
+                subMap1 = merge(subMap1, subMap2);
+                m2.put(key, subMap1);
+            }
+
+        }
+
+
         m1.putAll(m2);
         return m1;
     }
