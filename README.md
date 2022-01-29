@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.5.2</version>
+  <version>0.5.3</version>
 </dependency>
 ```
 
@@ -122,7 +122,16 @@ db.delete("Collection1", user1,id, "Users");
 ### Partial Update
 
 ```java
+// When fields to update is less than or equal to 10, the official Java SDK v4's patchItem method will be used. 
+// See https://devblogs.microsoft.com/cosmosdb/partial-document-update-ga/
 db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"), "Users");
+
+// When fields to update is greater than 10, the read / merge / upsert method will be used.
+// Because v4's patchItem has a limit of 10 operations
+db.updatePartial("Collection", user1.id, Map.of("age", 20, "lastName", "Hanks",...), "Users")
+
+// Currently, this method only support SET operation. ADD / REPLACE / DELETE / INCREMENT will be implemented in the future.
+
 ```
 
 
