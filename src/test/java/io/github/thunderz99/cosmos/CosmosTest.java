@@ -17,7 +17,7 @@ public class CosmosTest {
 
     @Test
     void parse_connection_string_should_work() {
-        var pair = Cosmos.parseConnectionString("AccountEndpoint=https://example-dev.documents.azure.com:443/;AccountKey=abcd==;");
+        var pair = Cosmos.parseConnectionString("AccountEndpoint=https://192.168.0.108:8081/;AccountKey=abcd==;");
         assertThat(pair.getLeft()).isEqualTo("https://example-dev.documents.azure.com:443/");
         assertThat(pair.getRight()).isEqualTo("abcd==");
     }
