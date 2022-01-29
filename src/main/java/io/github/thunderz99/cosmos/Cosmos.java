@@ -41,6 +41,10 @@ public class Cosmos {
     static Pattern connectionStringPattern = Pattern.compile("AccountEndpoint=(?<endpoint>.+);AccountKey=(?<key>.+);");
 
     public Cosmos(String connectionString) {
+        this(connectionString, null);
+    }
+
+    public Cosmos(String connectionString, List<String> preferredRegions) {
 
         Pair<String, String> pair = parseConnectionString(connectionString);
         var endpoint = pair.getLeft();
@@ -51,7 +55,7 @@ public class Cosmos {
         this.clientV4 = new CosmosClientBuilder()
                 .endpoint(endpoint)
                 .key(key)
-                .preferredRegions(List.of("Japan East", "West US"))
+                .preferredRegions(preferredRegions)
                 .consistencyLevel(com.azure.cosmos.ConsistencyLevel.SESSION)
                 .contentResponseOnWriteEnabled(true)
                 .buildClient();
