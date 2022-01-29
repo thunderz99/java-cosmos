@@ -1,10 +1,9 @@
 package io.github.thunderz99.cosmos;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.IntStream;
 
+import com.google.common.collect.Lists;
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
 import io.github.thunderz99.cosmos.condition.Aggregate;
@@ -917,7 +916,8 @@ class CosmosDatabaseTest {
         var id = "updatePartial_should_work_001"; // form with content
         var age = 20;
         var formId = "829cc727-2d49-4d60-8f91-b30f50560af7"; //uuid
-        var formContent = Map.of("name", "Tom", "sex", "Male", "address", "NY");
+        var formContent = Map.of("name", "Tom", "sex", "Male", "address", "NY", "tags",
+                List.of(Map.of("id", "t001", "name", "backend"), Map.of("id", "t002", "name", "frontend")));
         var data = Map.of("id", id, "age", age, formId, formContent, "sheet-2", Map.of("skills", Set.of("Java", "Python")));
 
         try {
@@ -944,6 +944,94 @@ class CosmosDatabaseTest {
                         .containsEntry("_partition", partition);
 
                 assertThat(((Map<String, Object>) patched.get("sheet-2")).get("skills")).isEqualTo(List.of("Java", "JavaScript"));
+
+            }
+
+            {
+                // partial update an array's item
+                var partialMap = Map.of("name", "Alex", "sheet-2", Map.of("skills/1", "Kotlin"));
+
+                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                assertThat(patched).containsEntry("name", "Alex")
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition);
+
+                assertThat(((Map<String, Object>) patched.get("sheet-2")).get("skills")).isEqualTo(List.of("Java", "Kotlin"));
+            }
+
+            {
+                // partial update an array's nested item
+                var partialMap = Map.of("name", "Kate", formId, Map.of("tags/0", Map.of("name", "fullstack")));
+
+                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                assertThat(patched).containsEntry("name", "Kate")
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition);
+
+                assertThat(((List<Map<String, Object>>) ((Map<String, Object>) patched.get(formId)).get("tags")).get(0).get("name")).isEqualTo("fullstack");
+            }
+            {
+                // partial update containing fields more than 10
+                var formMap = new HashMap<String, Integer>();
+                IntStream.range(0, 10).forEach(i -> formMap.put("key" + i, i));
+                var partialMap = Map.of("name", "Kate", formId, formMap);
+
+                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                assertThat(patched).containsEntry("name", "Kate")
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition);
+
+
+                assertThat(((Map<String, Object>) patched.get(formId)).get("key5")).isEqualTo(5);
+
+            }
+
+        } finally {
+            db.delete(coll, id, partition);
+        }
+
+    }
+
+    @Test
+    void updatePartial_should_work_with_optimistic_concurrency_control() throws Exception {
+        var partition = "SheetConents";
+
+        var id = "updatePartial_should_work_with_optimistic_concurrency_control"; // form with content
+        var age = 20;
+        var formId = "03a69e73-18b8-44e5-a0b1-1b2739ca6e60"; //uuid
+        var formContent = Map.of("name", "Tom", "sex", "Male", "address", "NY", "tags",
+                List.of(Map.of("id", "t001", "name", "backend"), Map.of("id", "t002", "name", "frontend")));
+        var data = Map.of("id", id, "age", age, "sort", "010", formId, formContent, "sheet-2", Map.of("skills", Set.of("Java", "Python")));
+
+        try {
+            var upserted = db.upsert(coll, data, partition).toMap();
+
+            assertThat(upserted).containsKeys("id", "age", formId);
+
+            {
+                // read by A,B, update by B and A with different field should succeed
+                var partialMapA = Map.of("age", 25);
+
+                var partialMapB = Map.of("sort", "099", "employeeCode", "X0123");
+
+                var patchedB = db.updatePartial(coll, id, partialMapB, partition).toMap();
+
+                var patchedA = db.updatePartial(coll, id, partialMapA, partition).toMap();
+
+
+                // B should update sort and add employeeCode only
+                assertThat(patchedB).containsEntry("sort", "099").containsEntry("employeeCode", "X0123")
+                        .containsEntry("age", 20) // age keep not change
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition)
+                ;
+
+                // A should update age only, and retain B's sort value
+                assertThat(patchedA).containsEntry("age", 25) // age updated
+                        .containsEntry("sort", "099").containsEntry("employeeCode", "X0123") // sort and employeeCode remains B's result
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition)
+                ;
 
             }
 
@@ -1044,6 +1132,38 @@ class CosmosDatabaseTest {
             db.delete(coll, id2, partition);
         }
 
+
+    }
+
+    @Test
+    void merge_should_work_for_nested_json() {
+
+        var map1 = new LinkedHashMap<String, Object>();
+        map1.put("id", "ID001");
+        map1.put("name", "Tom");
+        map1.put("sort", "010");
+        var contents = new LinkedHashMap<String, Object>();
+        contents.put("phone", "12345");
+        contents.put("addresses", Lists.newArrayList("NY", "DC"));
+        map1.put("contents", contents);
+
+        var map2 = new LinkedHashMap<String, Object>();
+        map2.put("name", "Jane");
+        var contents2 = new LinkedHashMap<String, Object>();
+        contents2.put("skill", "backend");
+        contents.put("addresses", Lists.newArrayList("NY", "Houston"));
+        map2.put("contents", contents2);
+
+        var merged = CosmosDatabase.merge(map1, map2);
+
+        assertThat(merged).containsEntry("name", "Jane") // updated
+                .containsEntry("sort", "010") // reserved
+        ;
+        assertThat((Map<String, Object>) merged.get("contents"))
+                .containsEntry("phone", "12345") // reserved
+                .containsEntry("skill", "backend") //updated
+                .containsEntry("addresses", Lists.newArrayList("NY", "Houston")) //updated
+        ;
 
     }
 
