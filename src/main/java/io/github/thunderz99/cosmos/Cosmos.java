@@ -10,6 +10,7 @@ import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosClientBuilder;
 import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.util.Checker;
+import io.github.thunderz99.cosmos.util.EnvUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -40,6 +41,8 @@ public class Cosmos {
 
     static Pattern connectionStringPattern = Pattern.compile("AccountEndpoint=(?<endpoint>.+);AccountKey=(?<key>.+);");
 
+    public static final String JC_SDK_V4_ENABLE = "JC_SDK_V4_ENABLE";
+
     public Cosmos(String connectionString) {
         this(connectionString, null);
     }
@@ -52,13 +55,17 @@ public class Cosmos {
 
         this.client = new DocumentClient(endpoint, key, ConnectionPolicy.GetDefault(), ConsistencyLevel.Session);
 
-        this.clientV4 = new CosmosClientBuilder()
-                .endpoint(endpoint)
-                .key(key)
-                .preferredRegions(preferredRegions)
-                .consistencyLevel(com.azure.cosmos.ConsistencyLevel.SESSION)
-                .contentResponseOnWriteEnabled(true)
-                .buildClient();
+        var v4Enable = Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.JC_SDK_V4_ENABLE, "false"));
+
+        if (v4Enable) {
+            this.clientV4 = new CosmosClientBuilder()
+                    .endpoint(endpoint)
+                    .key(key)
+                    .preferredRegions(preferredRegions)
+                    .consistencyLevel(com.azure.cosmos.ConsistencyLevel.SESSION)
+                    .contentResponseOnWriteEnabled(true)
+                    .buildClient();
+        }
     }
 
 
