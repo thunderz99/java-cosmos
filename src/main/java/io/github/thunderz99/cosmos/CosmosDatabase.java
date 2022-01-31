@@ -263,11 +263,10 @@ public class CosmosDatabase {
 
         var flatPatchMap = MapUtil.toFlatMap(patchData);
 
-        if (flatPatchMap.size() > 10) {
+        if (flatPatchMap.size() > 10 || this.clientV4 == null) {
             // If patchData's operations exceed 10, the patch method is unable to deal.
             // We have to use the traditional way using read, merge and upsert.
             return updatePartialByMerge(coll, id, patchData, partition);
-
         }
 
         // We use the new patch method.

@@ -949,26 +949,32 @@ class CosmosDatabaseTest {
 
             {
                 // partial update an array's item
-                var partialMap = Map.of("name", "Alex", "sheet-2", Map.of("skills/1", "Kotlin"));
+                if (Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.JC_SDK_V4_ENABLE, "false"))) {
+                    // only supported wen SDK v4 is enabled
+                    var partialMap = Map.of("name", "Alex", "sheet-2", Map.of("skills/1", "Kotlin"));
 
-                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
-                assertThat(patched).containsEntry("name", "Alex")
-                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
-                        .containsEntry("_partition", partition);
+                    var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                    assertThat(patched).containsEntry("name", "Alex")
+                            .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                            .containsEntry("_partition", partition);
 
-                assertThat(((Map<String, Object>) patched.get("sheet-2")).get("skills")).isEqualTo(List.of("Java", "Kotlin"));
+                    assertThat(((Map<String, Object>) patched.get("sheet-2")).get("skills")).isEqualTo(List.of("Java", "Kotlin"));
+                }
             }
 
             {
                 // partial update an array's nested item
-                var partialMap = Map.of("name", "Kate", formId, Map.of("tags/0", Map.of("name", "fullstack")));
+                if (Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.JC_SDK_V4_ENABLE, "false"))) {
+                    // only supported wen SDK v4 is enabl
+                    var partialMap = Map.of("name", "Kate", formId, Map.of("tags/0", Map.of("name", "fullstack")));
 
-                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
-                assertThat(patched).containsEntry("name", "Kate")
-                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
-                        .containsEntry("_partition", partition);
+                    var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                    assertThat(patched).containsEntry("name", "Kate")
+                            .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                            .containsEntry("_partition", partition);
 
-                assertThat(((List<Map<String, Object>>) ((Map<String, Object>) patched.get(formId)).get("tags")).get(0).get("name")).isEqualTo("fullstack");
+                    assertThat(((List<Map<String, Object>>) ((Map<String, Object>) patched.get(formId)).get("tags")).get(0).get("name")).isEqualTo("fullstack");
+                }
             }
             {
                 // partial update containing fields more than 10
