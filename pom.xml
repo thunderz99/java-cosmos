@@ -88,13 +88,7 @@
             <artifactId>azure-documentdb</artifactId>
             <version>2.6.4</version>
         </dependency>
-
-        <dependency>
-            <groupId>com.azure</groupId>
-            <artifactId>azure-cosmos</artifactId>
-            <version>4.25.0</version>
-        </dependency>
-
+        
         <dependency>
             <groupId>io.github.cdimascio</groupId>
             <artifactId>java-dotenv</artifactId>

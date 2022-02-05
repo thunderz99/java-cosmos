@@ -1,11 +1,8 @@
 package io.github.thunderz99.cosmos;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import com.azure.cosmos.CosmosClient;
-import com.azure.cosmos.models.CosmosPatchOperations;
 import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
@@ -35,15 +32,12 @@ public class CosmosDatabase {
 
     DocumentClient client;
 
-    CosmosClient clientV4;
-
     Cosmos cosmosAccount;
 
     CosmosDatabase(Cosmos cosmosAccount, String db) {
         this.cosmosAccount = cosmosAccount;
         this.db = db;
         this.client = cosmosAccount.client;
-        this.clientV4 = cosmosAccount.clientV4;
     }
 
 
@@ -263,28 +257,7 @@ public class CosmosDatabase {
 
         var flatPatchMap = MapUtil.toFlatMap(patchData);
 
-        if (flatPatchMap.size() > 10 || this.clientV4 == null) {
-            // If patchData's operations exceed 10, the patch method is unable to deal.
-            // We have to use the traditional way using read, merge and upsert.
-            return updatePartialByMerge(coll, id, patchData, partition);
-        }
-
-        // We use the new patch method.
-        var patchOps = CosmosPatchOperations.create();
-
-        for (var entry : flatPatchMap.entrySet()) {
-            patchOps.set(entry.getKey(), entry.getValue());
-        }
-
-        var container = this.clientV4.getDatabase(db).getContainer(coll);
-
-        var response = RetryUtil.executeWithRetry(() -> container.patchItem(id, new com.azure.cosmos.models.PartitionKey(partition), patchOps, LinkedHashMap.class));
-
-        var item = response.getItem();
-
-        log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
-
-        return new CosmosDocument(item);
+        return updatePartialByMerge(coll, id, patchData, partition);
     }
 
     /**
