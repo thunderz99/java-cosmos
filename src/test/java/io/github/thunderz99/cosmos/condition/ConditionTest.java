@@ -794,26 +794,45 @@ class ConditionTest {
 	}
 
 	@Test
-	public void negative_should_have_effect_for_a_condition_rawSql() {
+    public void negative_should_have_effect_for_a_condition_rawSql() {
 
-		var filterQuery = Condition.rawSql("\"tokyo\" IN c.cities") //
-				.not() // negative will have no effect for a whole rawSql
-				.generateFilterQuery("", new SqlParameterCollection(), new AtomicInteger(), new AtomicInteger());
+        var filterQuery = Condition.rawSql("\"tokyo\" IN c.cities") //
+                .not() // negative will have no effect for a whole rawSql
+                .generateFilterQuery("", new SqlParameterCollection(), new AtomicInteger(), new AtomicInteger());
 
-		assertThat(filterQuery.queryText.toString()).isEqualTo(
-				" NOT(\"tokyo\" IN c.cities)");
+        assertThat(filterQuery.queryText.toString()).isEqualTo(
+                " NOT(\"tokyo\" IN c.cities)");
 
-	}
+    }
 
-	@Test
-	public void processNegativeQuery_should_work() {
-		assertThat(Condition.processNegativeQuery(null, true)).isNull();
-		assertThat(Condition.processNegativeQuery(null, false)).isNull();
-		assertThat(Condition.processNegativeQuery("", true)).isEmpty();
-		assertThat(Condition.processNegativeQuery("", false)).isEmpty();
+    @Test
+    public void buildQuerySpec_should_work_for_IN_operator_followed_by_str() {
 
-		assertThat(Condition.processNegativeQuery("c.age >= 1", false)).isEqualTo("c.age >= 1");
-		assertThat(Condition.processNegativeQuery("c.age >= 1", true)).isEqualTo(" NOT(c.age >= 1)");
+        var q = Condition.filter("fullName.last", "Hanks", //
+                "id IN", "id001") //
+                .sort("_ts", "DESC") //
+                .offset(10) //
+                .limit(20) //
+                .toQuerySpec();
+
+        assertThat(q.getQueryText().trim()).isEqualTo(
+                "SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"id\"] IN (@param001_id__0)) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+
+        var params = List.copyOf(q.getParameters());
+
+        assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id__0", "id001").toJson());
+    }
+
+    @Test
+    public void processNegativeQuery_should_work() {
+        assertThat(Condition.processNegativeQuery(null, true)).isNull();
+        assertThat(Condition.processNegativeQuery(null, false)).isNull();
+        assertThat(Condition.processNegativeQuery("", true)).isEmpty();
+        assertThat(Condition.processNegativeQuery("", false)).isEmpty();
+
+        assertThat(Condition.processNegativeQuery("c.age >= 1", false)).isEqualTo("c.age >= 1");
+        assertThat(Condition.processNegativeQuery("c.age >= 1", true)).isEqualTo(" NOT(c.age >= 1)");
 
 	}
 

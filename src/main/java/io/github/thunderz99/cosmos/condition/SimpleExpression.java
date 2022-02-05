@@ -2,6 +2,7 @@ package io.github.thunderz99.cosmos.condition;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
@@ -63,26 +64,32 @@ public class SimpleExpression implements Expression {
 	@Override
 	public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
 
-		var ret = new SqlQuerySpec();
-		var params = new SqlParameterCollection();
+        var ret = new SqlQuerySpec();
+        var params = new SqlParameterCollection();
 
-		// fullName.last -> @param001_fullName__last
-		// or
-		// "829cc727-2d49-4d60-8f91-b30f50560af7.name" -> @param001_wg31gsa.name
-		var paramName = getParamNameFromKey(this.key, paramIndex.get());
+        // fullName.last -> @param001_fullName__last
+        // or
+        // "829cc727-2d49-4d60-8f91-b30f50560af7.name" -> @param001_wg31gsa.name
+        var paramName = getParamNameFromKey(this.key, paramIndex.get());
 
-		var paramValue = this.value;
+        var paramValue = this.value;
 
-		if (paramValue instanceof Collection<?>) {
-			// collection param value
-			// e.g ( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )
+        // Robust process for operator IN and paramValue is not Collection
 
-			var coll = (Collection<?>) paramValue;
+        if ("IN".equals(this.operator) && !(paramValue instanceof Collection<?>)) {
+            paramValue = List.of(paramValue);
+        }
 
-			if ("IN".equals(this.operator)) {
-				// use IN
-				if (coll.isEmpty()) {
-					//if paramValue is empty, return a FALSE queryText.
+        if (paramValue instanceof Collection<?>) {
+            // collection param value
+            // e.g ( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )
+
+            var coll = (Collection<?>) paramValue;
+
+            if ("IN".equals(this.operator)) {
+                // use IN
+                if (coll.isEmpty()) {
+                    //if paramValue is empty, return a FALSE queryText.
 					ret.setQueryText(" (1=0)");
 				} else {
 					paramIndex.getAndIncrement();
