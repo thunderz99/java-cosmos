@@ -39,7 +39,7 @@ public class Cosmos {
 
     String account;
 
-    static Pattern connectionStringPattern = Pattern.compile("AccountEndpoint=(?<endpoint>.+);AccountKey=(?<key>.+);");
+    static Pattern connectionStringPattern = Pattern.compile("AccountEndpoint=(?<endpoint>.+);AccountKey=(?<key>[^;]+);?");
 
     public static final String JC_SDK_V4_ENABLE = "JC_SDK_V4_ENABLE";
 
