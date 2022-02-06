@@ -32,8 +32,6 @@ public class RetryUtil {
                 return func.call();
             } catch (DocumentClientException dce) {
                 cosmosException = new CosmosException(dce);
-            } catch (com.azure.cosmos.CosmosException ce) {
-                cosmosException = new CosmosException(ce);
             }
 
             if (cosmosException.getStatusCode() == 429 || cosmosException.getMessage().contains("Request rate is large")) {
