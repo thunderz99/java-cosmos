@@ -8,7 +8,6 @@ import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
-import io.github.thunderz99.cosmos.util.MapUtil;
 import io.github.thunderz99.cosmos.util.RetryUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.json.JSONObject;
@@ -247,15 +246,10 @@ public class CosmosDatabase {
 
         checkValidId(id);
 
-        var documentLink = Cosmos.getDocumentLink(db, coll, id);
-
         var patchData = JsonUtil.toMap(data);
-
 
         // Remove partition key from patchData, because it is not needed for a patch action.
         patchData.remove(Cosmos.getDefaultPartitionKey());
-
-        var flatPatchMap = MapUtil.toFlatMap(patchData);
 
         return updatePartialByMerge(coll, id, patchData, partition);
     }
@@ -280,18 +274,26 @@ public class CosmosDatabase {
         // add partition info
         newData.put(Cosmos.getDefaultPartitionKey(), partition);
 
-        // Object.assign(origin, newData)
+        // this is like `Object.assign(origin, newData)` in JavaScript, but support nested merge.
         var merged = merge(origin, newData);
 
         checkValidId(merged);
         var etag = merged.getOrDefault("etag", "").toString();
 
-        var resource = RetryUtil.executeWithRetry(() -> client.replaceDocument(documentLink, merged, requestOptions(partition, etag)).getResource());
+        var resource = RetryUtil.executeWithRetry(() -> {
+            
+                    return replaceDocumentWithRefreshingEtag(partition, documentLink, merged, etag);
+                }
+        );
 
         log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
         return new CosmosDocument(resource.toObject(JSONObject.class));
 
+    }
+
+    private Document replaceDocumentWithRefreshingEtag(String partition, String documentLink, Map<String, Object> merged, String etag) throws DocumentClientException {
+        return client.replaceDocument(documentLink, merged, requestOptions(partition, etag)).getResource();
     }
 
     /**
