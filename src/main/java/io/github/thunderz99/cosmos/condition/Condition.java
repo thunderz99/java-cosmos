@@ -21,6 +21,10 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Condition for find. (e.g. filter / sort / offset / limit)
+ *
+ * <p>
+ * for details, @see <a href="https://github.com/thunderz99/java-cosmos#complex-queries">github README</a>
+ * </p>
  */
 public class Condition {
 
@@ -100,6 +104,10 @@ public class Condition {
 
     /**
      * add filters
+     *
+     * <p>
+     * for details, @see <a href="https://github.com/thunderz99/java-cosmos#complex-queries">github README</a>
+     * </p>
      *
      * @param filters search filters using key / value pair.
      * @return condition
