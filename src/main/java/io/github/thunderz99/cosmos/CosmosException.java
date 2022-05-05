@@ -7,16 +7,10 @@ public class CosmosException extends RuntimeException {
     static final long serialVersionUID = 1L;
 
     private DocumentClientException dce;
-    private com.azure.cosmos.CosmosException ce;
 
     public CosmosException(DocumentClientException dce) {
         super(dce.getMessage(), dce);
         this.dce = dce;
-    }
-
-    public CosmosException(com.azure.cosmos.CosmosException ce) {
-        super(ce.getMessage(), ce);
-        this.ce = ce;
     }
 
     /**
@@ -24,7 +18,7 @@ public class CosmosException extends RuntimeException {
      * @return status code of exception.
      */
     public int getStatusCode(){
-        return dce == null ? ce.getStatusCode() : dce.getStatusCode();
+        return dce.getStatusCode();
     }
 
     /**
@@ -33,7 +27,7 @@ public class CosmosException extends RuntimeException {
      * @return time to retry in milliseconds
      */
     public long getRetryAfterInMilliseconds(){
-        return dce == null ? ce.getRetryAfterDuration().toMillis() : dce.getRetryAfterInMilliseconds();
+        return dce.getRetryAfterInMilliseconds();
     }
 
 
