@@ -2,6 +2,10 @@ package io.github.thunderz99.cosmos.rest;
 
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.Map;
 
 import javax.crypto.Mac;
@@ -85,7 +89,7 @@ public class RestClient {
         }
     }
 
-    public CosmosDocument increment(String db, String coll, String id, String path, String partition){
+    public CosmosDocument increment(String db, String coll, String id, String path, String partition) throws Exception {
 
         var resourceLink = StringUtils.removeStart(Cosmos.getDocumentLink(db, coll, id), "/");
 
@@ -112,10 +116,11 @@ public class RestClient {
 
     /**
      * A method to smoke test whether auth and rest api work
+     *
      * @param db database name
      * @return map object represent a cosmos database
      */
-    Map<String, Object> getDatabase(String db){
+    Map<String, Object> getDatabase(String db) throws Exception {
 
         var resourceLink = StringUtils.removeStart(Cosmos.getDatabaseLink(db), "/");
 
@@ -130,13 +135,14 @@ public class RestClient {
 
     /**
      * Check the http result and get data. If http status is not 2xx, throw CosmosException
+     *
      * @param result
      * @return
      */
-    static Map<String, Object> checkAndGetData(HttpResponse<JsonNode> result) {
+    static Map<String, Object> checkAndGetData(HttpResponse<JsonNode> result) throws Exception {
         var data = result.getBody().getObject().toMap();
-        if(result.getStatus() >= 300){
-            if(result.getStatus() >= 300){
+        if (result.getStatus() >= 300) {
+            if (result.getStatus() >= 300) {
                 throw new CosmosException(result.getStatus(), MapUtils.getString(data, "code"), MapUtils.getString(data, "message"));
             }
         }
@@ -163,18 +169,20 @@ public class RestClient {
 
     /**
      * build http headers for rest api auth
-     * @param key master key
-     * @param verb GET/POST/PUT/DELETE/PATCH
+     *
+     * @param key          master key
+     * @param verb         GET/POST/PUT/DELETE/PATCH
      * @param resourceType dbs/colls/docs
      * @param resourceLink dbs/{databaseId}/colls/{containerId}/docs/{docId}
      * @return auth headers map
      */
-    Map<String, String> buildAuthHeaders(String key, String verb, String resourceType, String resourceLink) {
+    Map<String, String> buildAuthHeaders(String key, String verb, String resourceType, String resourceLink) throws Exception {
 
         Map<String, String> headers = Maps.newHashMap();
         headers.put("Accept", "application/json");
+        headers.put("Cache-Control", "no-cache");
         headers.put("x-ms-version", "2018-12-31");
-        var date = Utils.getCurrentTimeGMT();
+        var date = getCurrentDatetimeGMT();
         headers.put("x-ms-date", date);
         headers.put("Authorization", buildAuthToken(key, verb, resourceType, resourceLink, date));
 
@@ -193,18 +201,30 @@ public class RestClient {
      * @param date  RFC 7231 Date/Time Formats), e.g. "Tue, 01 Nov 1994 08:12:31 GMT".
      * @return authToken. e.g. "type=master&ver=1.0&sig={hashSignature}"
      */
-    String buildAuthToken(String key, String verb, String resourceType, String resourceLink, String date) {
-        String body = String.format("%s\n%s\n%s\n%s\n\n", verb.toLowerCase(), resourceType, resourceLink, date.toLowerCase());
+    String buildAuthToken(String key, String verb, String resourceType, String resourceLink, String date) throws Exception {
+        String stringToSign = String.format("%s\n%s\n%s\n%s\n\n", verb.toLowerCase(), resourceType, resourceLink, date.toLowerCase());
         Mac mac = null;
 
         try {
-            mac = (Mac)this.macInstance.clone();
+            mac = (Mac) this.macInstance.clone();
         } catch (CloneNotSupportedException e) {
             throw new IllegalStateException(e);
         }
 
-        byte[] digest = mac.doFinal(body.getBytes());
+        byte[] digest = mac.doFinal(stringToSign.getBytes("UTF-8"));
         String hashSignature = Utils.encodeBase64String(digest);
         return "type=master&ver=1.0&sig=" + hashSignature;
+    }
+
+    /**
+     * return current time in RFC 7231 Date/Time Formats), e.g. "Tue, 01 Nov 1994 08:12:31 GMT".
+     *
+     * @return RFC 7231 Date/Time Formats
+     */
+    static String getCurrentDatetimeGMT() {
+        var formatter = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz").withLocale(Locale.US);
+        // to obtain a time slightly before now, to avoid a future time
+        var datetime = ZonedDateTime.now(ZoneId.of("Etc/GMT")).minusSeconds(5);
+        return datetime.format(formatter);
     }
 }
