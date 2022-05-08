@@ -951,7 +951,7 @@ class CosmosDatabaseTest {
 
             {
                 // partial update an array's item
-                if (Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.JC_SDK_V4_ENABLE, "false"))) {
+                if (Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.COSMOS_SDK_V4_ENABLE, "false"))) {
                     // only supported wen SDK v4 is enabled
                     var partialMap = Map.of("name", "Alex", "sheet-2", Map.of("skills/1", "Kotlin"));
 
@@ -966,7 +966,7 @@ class CosmosDatabaseTest {
 
             {
                 // partial update an array's nested item
-                if (Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.JC_SDK_V4_ENABLE, "false"))) {
+                if (Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.COSMOS_SDK_V4_ENABLE, "false"))) {
                     // only supported wen SDK v4 is enabl
                     var partialMap = Map.of("name", "Kate", formId, Map.of("tags/0", Map.of("name", "fullstack")));
 
@@ -1193,6 +1193,31 @@ class CosmosDatabaseTest {
             db.delete(coll, id2, partition);
         }
 
+
+    }
+
+    @Test
+    void increment_should_work() throws Exception {
+        var partition = "IncrementTests";
+        var id = "increment_should_work";
+
+
+        try {
+            var data1 = Map.of("id", id, "contents", Map.of("age", 20));
+            db.upsert(coll, data1, partition).toMap();
+            {
+                // increment by 1
+                var inc1 = db.increment(coll, id, "/contents/age", 1, partition).toMap();
+                assertThat((Map<String, Object>) inc1.get("contents")).containsEntry("age", 21);
+
+                // increment by -3
+                var inc2 = db.increment(coll, id, "/contents/age", -3, partition).toMap();
+                assertThat((Map<String, Object>) inc2.get("contents")).containsEntry("age", 18);
+            }
+
+        } finally {
+            db.delete(coll, id, partition);
+        }
 
     }
 
