@@ -6,10 +6,11 @@ import java.util.stream.Collectors;
 import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
-import io.github.thunderz99.cosmos.util.MapUtil;
 import io.github.thunderz99.cosmos.util.RetryUtil;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -227,7 +228,7 @@ public class CosmosDatabase {
      * see <a href="https://devblogs.microsoft.com/cosmosdb/partial-document-update-ga/">partial update official docs</a>
      * </p>
      * <p>
-     * If you want more complex partial update / patch features, please use patch method, which supports ADD / SET / REPLACE / DELETE / INCREMENT and etc.
+     * If you want more complex partial update / patch features, please use patch(TODO) method, which supports ADD / SET / REPLACE / DELETE / INCREMENT and etc.
      * </p>
      *
      * @param coll      collection name
@@ -240,6 +241,30 @@ public class CosmosDatabase {
     public CosmosDocument updatePartial(String coll, String id, Object data, String partition)
             throws Exception {
 
+        return updatePartial(coll, id, data, partition, new PartialUpdateOption());
+    }
+
+    /**
+     * Partial update existing data(Simple version). Input is a map, and the key/value in the map would be patched to the target document in SET mode.
+     *
+     * <p>
+     * see <a href="https://devblogs.microsoft.com/cosmosdb/partial-document-update-ga/">partial update official docs</a>
+     * </p>
+     * <p>
+     * If you want more complex partial update / patch features, please use patch(TODO) method, which supports ADD / SET / REPLACE / DELETE / INCREMENT and etc.
+     * </p>
+     *
+     * @param coll      collection name
+     * @param id        id of document
+     * @param data      data object
+     * @param partition partition name
+     * @param option    partial update option
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception. If not exist, throw Not Found Exception.
+     */
+    public CosmosDocument updatePartial(String coll, String id, Object data, String partition, PartialUpdateOption option)
+            throws Exception {
+
         Checker.checkNotBlank(id, "id");
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
@@ -247,17 +272,17 @@ public class CosmosDatabase {
 
         checkValidId(id);
 
-        var documentLink = Cosmos.getDocumentLink(db, coll, id);
-
         var patchData = JsonUtil.toMap(data);
-
 
         // Remove partition key from patchData, because it is not needed for a patch action.
         patchData.remove(Cosmos.getDefaultPartitionKey());
 
-        var flatPatchMap = MapUtil.toFlatMap(patchData);
+        if (!option.checkETag || StringUtils.isEmpty(MapUtils.getString(patchData, Cosmos.ETAG))) {
+            // if don't check etag or etag is empty, remove it.
+            patchData.remove(Cosmos.ETAG);
+        }
 
-        return updatePartialByMerge(coll, id, patchData, partition);
+        return updatePartialByMerge(coll, id, patchData, partition, option);
     }
 
     /**
@@ -271,27 +296,99 @@ public class CosmosDatabase {
      * @throws Exception Cosmos client exception. If not exist, throw Not Found Exception.
      */
     CosmosDocument updatePartialByMerge(String coll, String id, Map<String, Object> data, String partition) throws Exception {
+        return updatePartialByMerge(coll, id, data, partition, new PartialUpdateOption());
+    }
+
+    /**
+     * Update a document with read / merge / upsert method. this will be used when patch operations' size exceed the limit of 10.
+     *
+     * @param coll      collection name
+     * @param id        id of document
+     * @param data      data object
+     * @param partition partition name
+     * @param option    partial update option
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception. If not exist, throw Not Found Exception.
+     */
+    CosmosDocument updatePartialByMerge(String coll, String id, Map<String, Object> data, String partition, PartialUpdateOption option) throws Exception {
 
         var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
+        var resource = RetryUtil.executeWithRetry(() -> {
+                    // we will not retry if checkETag is true, this will result in an OCC.
+                    // if we do not checkETag, we will get the newest etag from DB and retry replaceDocument.
+                    var maxRetry = option.checkETag ? 0 : 3;
+                    return replaceDocumentWithRefreshingEtag(coll, id, data, maxRetry, partition);
+                }
+        );
+
+        log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        return new CosmosDocument(resource.toObject(JSONObject.class));
+
+    }
+
+    /**
+     * Helper function. Read original data and do a merge with partial update data, finally return the merged data.
+     *
+     * @param coll      collection name
+     * @param id        id of data
+     * @param data      partial update data
+     * @param partition partition name
+     * @return merged data
+     * @throws Exception
+     */
+    Map<String, Object> readAndMerge(String coll, String id, Map<String, Object> data, String partition) throws Exception {
         var origin = read(coll, id, partition).toMap();
 
         var newData = JsonUtil.toMap(data);
         // add partition info
         newData.put(Cosmos.getDefaultPartitionKey(), partition);
 
-        // Object.assign(origin, newData)
+        // this is like `Object.assign(origin, newData)` in JavaScript, but support nested merge.
         var merged = merge(origin, newData);
 
         checkValidId(merged);
-        var etag = merged.getOrDefault("etag", "").toString();
+        return merged;
+    }
 
-        var resource = RetryUtil.executeWithRetry(() -> client.replaceDocument(documentLink, merged, requestOptions(partition, etag)).getResource());
+    /**
+     * Helper function. Do a partial update which etag check and retry.
+     *
+     * @param coll      collection name
+     * @param id        id of data
+     * @param data      partial update data
+     * @param maxRetry  max retry count when etag not matches
+     * @param partition partition name
+     * @return Document
+     * @throws Exception
+     */
+    Document replaceDocumentWithRefreshingEtag(String coll, String id, Map<String, Object> data, int maxRetry, String partition) throws Exception {
 
-        log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
-        return new CosmosDocument(resource.toObject(JSONObject.class));
+        var retriedCount = 0;
 
+        while (true) {
+            var merged = readAndMerge(coll, id, data, partition);
+            var etag = merged.getOrDefault(Cosmos.ETAG, "").toString();
+
+            try {
+                return client.replaceDocument(documentLink, merged, requestOptions(partition, etag)).getResource();
+
+            } catch (DocumentClientException e) {
+                if (e.getStatusCode() == 412) {
+                    // etag not match, 412 Precondition Failed
+                    retriedCount++;
+                    if (retriedCount <= maxRetry) {
+                        // continue to retry if less than max retries
+                        continue;
+                    }
+                }
+
+                // throw the exception to outer, if code is not 412 or exceeds max retries
+                throw e;
+            }
+        }
     }
 
     /**

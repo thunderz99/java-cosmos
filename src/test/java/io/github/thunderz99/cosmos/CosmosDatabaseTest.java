@@ -4,11 +4,13 @@ import java.util.*;
 import java.util.stream.IntStream;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
+import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.junit.jupiter.api.AfterAll;
@@ -1012,10 +1014,12 @@ class CosmosDatabaseTest {
         try {
             var upserted = db.upsert(coll, data, partition).toMap();
 
-            assertThat(upserted).containsKeys("id", "age", formId);
+            assertThat(upserted).containsKeys("id", "age", formId, "_etag");
 
             {
                 // read by A,B, update by B and A with different field should succeed
+                // PartialUpdateOption.checkETag is false(default)
+
                 var partialMapA = Map.of("age", 25);
 
                 var partialMapB = Map.of("sort", "099", "employeeCode", "X0123");
@@ -1038,6 +1042,57 @@ class CosmosDatabaseTest {
                         .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
                         .containsEntry("_partition", partition)
                 ;
+
+                var partialMapC = Map.of("city", "Tokyo", Cosmos.ETAG, "invalid etag");
+
+                // etag will be ignored, if PartialUpdateOption.checkETag false. So the following operation should succeed.
+                var patchedC = db.updatePartial(coll, id, partialMapC, partition).toMap();
+
+                assertThat(patchedC).containsEntry("city", "Tokyo").containsEntry("age", 25).containsEntry("sort", "099");
+
+            }
+
+            {
+                // read by A,B, update by B and A with different field should succeed
+                // PartialUpdateOption.checkETag is true
+
+                var originData = db.read(coll, id, partition).toMap();
+
+                var etag = originData.getOrDefault("_etag", "").toString();
+                assertThat(etag).isNotEmpty();
+
+                Map<String, Object> partialMapA = Maps.newHashMap(Map.of("age", 30, Cosmos.ETAG, etag));
+
+                Map<String, Object> partialMapB = Map.of("sort", "199", "employeeCode", "X0456", Cosmos.ETAG, etag);
+
+                var patchedB = db.updatePartial(coll, id, partialMapB, partition, PartialUpdateOption.checkETag(true)).toMap();
+
+                // B should update sort and add employeeCode only
+                assertThat(patchedB).containsEntry("sort", "199").containsEntry("employeeCode", "X0456")
+                        .containsEntry("age", 25) // age keep not change
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition)
+                ;
+
+                // new etag should be generated
+                assertThat(patchedB.getOrDefault(Cosmos.ETAG, "").toString()).isNotEmpty().isNotEqualTo(etag);
+
+
+                assertThatThrownBy(() -> db.updatePartial(coll, id, partialMapA, partition, PartialUpdateOption.checkETag(true)).toMap())
+                        .isInstanceOfSatisfying(CosmosException.class, (e) -> {
+                            assertThat(e.getStatusCode()).isEqualTo(412);
+                        });
+
+                // empty etag will be ignored
+                partialMapA.put(Cosmos.ETAG, "");
+                var patchedA = db.updatePartial(coll, id, partialMapA, partition, PartialUpdateOption.checkETag(true)).toMap();
+
+                // the result should be correct partial updated
+                assertThat(patchedA).containsEntry("age", 30) // age updated
+                        .containsEntry("sort", "199").containsEntry("employeeCode", "X0456") // sort and employeeCode remains B's result
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition);
+
 
             }
 

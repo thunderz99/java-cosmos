@@ -12,7 +12,7 @@ public class MapUtil {
 
 
     /**
-     * get env variable as String, or return a default value.
+     * Convert a traditional java map to a "/key1/key2/key3" : value format map. Used by v4 patch method.
      *
      * <p>
      * {@code
@@ -31,10 +31,8 @@ public class MapUtil {
      *     "/contents/name": "Tom",
      *     "/contents/age": 25
      * }
-     *
-     *
-     *
      * }
+     *
      * </p>
      *
      * @param map

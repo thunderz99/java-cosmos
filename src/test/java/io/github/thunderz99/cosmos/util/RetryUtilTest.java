@@ -16,6 +16,18 @@ import static org.junit.jupiter.api.Assertions.assertTimeout;
 class RetryUtilTest {
 
     @Test
+    void executeWithRetry_should_not_retry_404() throws Exception {
+
+        { // should not retry 404
+            assertThatThrownBy(() ->
+                    RetryUtil.executeWithRetry(() -> {
+                        throw new DocumentClientException(404, new com.microsoft.azure.documentdb.Error("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "0"));
+                    })
+            ).isInstanceOf(CosmosException.class);
+        }
+    }
+
+    @Test
     void executeWithRetry_should_succeed_with_max_retries() throws Exception {
 
         { // success
@@ -25,21 +37,35 @@ class RetryUtilTest {
             assertThat(ret).isEqualTo("OK");
         }
 
-        { // success after 2 retries
+        { // success after 2 retries. for 429
             final var i = new AtomicInteger(0);
 
             // success within 1 second
             var ret = assertTimeout(ofSeconds(1), () ->
-                RetryUtil.executeWithRetry(() -> {
-                    if(i.incrementAndGet() < 2){
-                        throw new DocumentClientException(429, new com.microsoft.azure.documentdb.Error("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10"));
-                    }
-                    return "OK";
-                })
+                    RetryUtil.executeWithRetry(() -> {
+                        if (i.incrementAndGet() < 2) {
+                            throw new DocumentClientException(429, new com.microsoft.azure.documentdb.Error("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10"));
+                        }
+                        return "OK";
+                    })
             );
             assertThat(ret).isEqualTo("OK");
         }
 
+        { // success after 2 retries. for 449
+            final var i = new AtomicInteger(0);
+
+            // success within 1 second
+            var ret = assertTimeout(ofSeconds(1), () ->
+                    RetryUtil.executeWithRetry(() -> {
+                        if (i.incrementAndGet() < 2) {
+                            throw new DocumentClientException(449, new com.microsoft.azure.documentdb.Error("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10"));
+                        }
+                        return "OK";
+                    })
+            );
+            assertThat(ret).isEqualTo("OK");
+        }
     }
 
     @Test

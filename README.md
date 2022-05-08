@@ -122,16 +122,45 @@ db.delete("Collection1", user1,id, "Users");
 ### Partial Update
 
 ```java
-// When fields to update is less than or equal to 10, the official Java SDK v4's patchItem method will be used. 
-// v4 SDK will only be enabled if env variable JC_SDK_V4_ENABLE is set to true.
-// See https://devblogs.microsoft.com/cosmosdb/partial-document-update-ga/
-db.updatePartial("Collection", user1.id, Map.of("lastName", "UpdatedPartially"), "Users");
-
-// When fields to update is greater than 10 or v4 not enabled, the read / merge / upsert method will be used.
-// Because v4's patchItem has a limit of 10 operations
+// Do a partial update. This is implemented by reading the original data / merging original data and the partial data to update / updating using the merged data
 db.updatePartial("Collection", user1.id, Map.of("age", 20, "lastName", "Hanks",...), "Users")
 
-// Currently, this method only support SET operation. ADD / REPLACE / DELETE / INCREMENT will be implemented in the future.
+// Considering optimistic-concurrency-control(OCC)
+// Cosmosdb using _etag to accomplish optimistic-concurrency
+// see https://docs.microsoft.com/en-us/azure/cosmos-db/sql/database-transactions-optimistic-concurrency#optimistic-concurrency-control
+  
+// When thread1 and thread2 partially update the same user1 with different fields.
+// e.g:
+// thread1. Partially update the "age" field to 20
+db.updatePartial("Collection", user1.id, Map.of("age", 20), "Users");
+
+// thread2. Partially update the "lastName" field to "Hanks"
+db.updatePartial("Collection", user1.id, Map.of("lastName", "Hanks"), "Users");
+
+// this will not throw a 412 Precondition Failed Exception.
+// It is implemented by comparing the etag, if not match , read the original data, get the newest etag, and do merge and update again.
+
+
+```
+
+
+
+### Partial Update with Optimistic Concurrency Control (OCC)
+
+```java
+// For some reason(e.g. 2 threads may update the same field), if you want to obey the OCC rule and throw a 412 Precondition Failed Exception, you can set the following checkETag option to true and pass the previous etag.
+// The checkETag option defaults to false, because when using partial update, in most cases we do not need an OCC.
+
+// Hold the current etag.
+var originData = db.read("Collection", user1.id, "Users").toMap();
+var etag = originData.getOrDefault("_etag", "").toString();
+
+// thread1. Partially update the "age" field to 20, "status" to "enabled", and add "_etag" for OCC.
+db.updatePartial("Collection", user1.id, Map.of("age", 20, "status", "enabled", "_etag", etag), "Users", PartialUpdateOption.checkETag(true));
+
+// thread2. Partially update the "lastName" field to "Hanks", "status" to "disabled", and add "_etag" for OCC.
+// if thread2 is executed after thread1, a CosmosException with statusCode 412(Precondition Failed Exception) will be thrown.
+db.updatePartial("Collection", user1.id, Map.of("lastName", "Hanks", "status", "disabled", "_etag", etag), "Users", PartialUpdateOption.checkETag(true));
 
 ```
 
