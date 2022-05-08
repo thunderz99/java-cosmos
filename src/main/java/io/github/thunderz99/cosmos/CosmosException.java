@@ -1,5 +1,6 @@
 package io.github.thunderz99.cosmos;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microsoft.azure.documentdb.DocumentClientException;
 
 /**
@@ -9,19 +10,67 @@ public class CosmosException extends RuntimeException {
 
     static final long serialVersionUID = 1L;
 
+    @JsonIgnore
     private DocumentClientException dce;
 
+    /**
+     * http status code
+     */
+    int statusCode;
+
+    /**
+     * String error code. e.g. Unauthorized / NotFound / etc
+     */
+    String code;
+
+    /**
+     * T time to retry suggested by the 429 exception in milliseconds. 0 if not 429 exception.
+     */
+    long retryAfterInMilliseconds;
+
+
+    /**
+     * Constructor using DocumentClientException;
+     *
+     * @param dce document client exception
+     */
     public CosmosException(DocumentClientException dce) {
         super(dce.getMessage(), dce);
         this.dce = dce;
+        this.statusCode = dce.getStatusCode();
+        dce.getError();
+        this.retryAfterInMilliseconds = dce.getRetryAfterInMilliseconds();
+    }
+
+    /**
+     * Constructor using statusCode and message
+     *
+     * @param statusCode cosmos exception's httpStatusCode
+     * @param code       string error code
+     * @param message    detail message
+     */
+    public CosmosException(int statusCode, String code, String message) {
+        super(message);
+        this.statusCode = statusCode;
+        this.code = code;
     }
 
     /**
      * Get the exception's status code. e.g. 404 / 429 / 403
+     *
      * @return status code of exception.
      */
-    public int getStatusCode(){
-        return dce.getStatusCode();
+    public int getStatusCode() {
+        return statusCode;
+    }
+
+    /**
+     * Get the string code e.g. Unauthorized / NotFound / etc
+     *
+     * @return
+     */
+    public String getCode() {
+        return code;
     }
 
     /**
@@ -29,8 +78,8 @@ public class CosmosException extends RuntimeException {
      *
      * @return time to retry in milliseconds
      */
-    public long getRetryAfterInMilliseconds(){
-        return dce.getRetryAfterInMilliseconds();
+    public long getRetryAfterInMilliseconds() {
+        return retryAfterInMilliseconds;
     }
 
 

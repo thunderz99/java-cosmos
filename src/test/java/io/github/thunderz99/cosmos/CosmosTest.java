@@ -16,21 +16,6 @@ public class CosmosTest {
     static String coll = "UnitTest";
 
     @Test
-    void parse_connection_string_should_work() {
-        {
-            var pair = Cosmos.parseConnectionString("AccountEndpoint=https://example-dev.documents.azure.com:443/;AccountKey=abcd==;");
-            assertThat(pair.getLeft()).isEqualTo("https://example-dev.documents.azure.com:443/");
-            assertThat(pair.getRight()).isEqualTo("abcd==");
-        }
-        {
-            var pair = Cosmos.parseConnectionString("AccountEndpoint=https://10.211.55.4:8081/;AccountKey=cdef/R+1234/Jw==");
-            assertThat(pair.getLeft()).isEqualTo("https://10.211.55.4:8081/");
-            assertThat(pair.getRight()).isEqualTo("cdef/R+1234/Jw==");
-
-        }
-    }
-
-    @Test
     void testCreateAndDeleteCollection() throws Exception {
         var cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
         String coll2 = "UnitTest2";

@@ -10,7 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Deal with the 429(too many requests) and 408(request timeout) error code by retry after a certain period
+ * Deal with the 429(too many requests) and 449(retry with) error code by retry after a certain period
  *
  * <p>
  * inspired by official documents: <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/sql/bulk-executor-java">Perform bulk operations on Azure Cosmos DB data</a>
@@ -21,7 +21,11 @@ public class RetryUtil {
     private static final Logger log = LoggerFactory.getLogger(RetryUtil.class);
 
     /**
-     * Codes should be retries. see <a href="https://docs.microsoft.com/en-us/rest/api/cosmos-db/http-status-codes-for-cosmosdb">http-status-codes-for-cosmosdb</a>
+     * Codes should be retried. see <a href="https://docs.microsoft.com/en-us/rest/api/cosmos-db/http-status-codes-for-cosmosdb">http-status-codes-for-cosmosdb</a>
+     *
+     * <p>
+     * TODO, consider 408(request timeout) should be retried or not
+     * </p>
      */
     static final Set<Integer> codesShouldRetry = Sets.newHashSet(429, 449);
 
