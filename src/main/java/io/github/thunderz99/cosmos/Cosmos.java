@@ -31,12 +31,14 @@ public class Cosmos {
     private static Logger log = LoggerFactory.getLogger(Cosmos.class);
 
     DocumentClient client;
-    
+
     String account;
 
     static Pattern connectionStringPattern = Pattern.compile("AccountEndpoint=(?<endpoint>.+);AccountKey=(?<key>[^;]+);?");
 
     public static final String JC_SDK_V4_ENABLE = "JC_SDK_V4_ENABLE";
+
+    public static final String ETAG = "_etag";
 
     public Cosmos(String connectionString) {
         this(connectionString, null);

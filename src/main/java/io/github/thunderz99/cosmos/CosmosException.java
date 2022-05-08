@@ -2,6 +2,9 @@ package io.github.thunderz99.cosmos;
 
 import com.microsoft.azure.documentdb.DocumentClientException;
 
+/**
+ * Original Exception thrown by java-cosmos. Wrapping v2 DocumentClientException and v4 CosmosException.
+ */
 public class CosmosException extends RuntimeException {
 
     static final long serialVersionUID = 1L;
