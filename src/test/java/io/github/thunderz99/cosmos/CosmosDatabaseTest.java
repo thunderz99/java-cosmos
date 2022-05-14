@@ -1235,9 +1235,6 @@ class CosmosDatabaseTest {
                 });
             }
 
-            db.increment(coll, id, "score", 5, partition);
-
-
         } finally {
             db.delete(coll, id, partition);
         }
