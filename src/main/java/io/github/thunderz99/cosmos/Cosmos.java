@@ -55,7 +55,8 @@ public class Cosmos {
 
         this.client = new DocumentClient(endpoint, key, ConnectionPolicy.GetDefault(), ConsistencyLevel.Session);
 
-        var v4Enable = Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.COSMOS_SDK_V4_ENABLE, "false"));
+        // default to true
+        var v4Enable = Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.COSMOS_SDK_V4_ENABLE, "true"));
 
         if (v4Enable) {
             log.info("COSMOS_SDK_V4_ENABLE is enabled for endpoint:{}", endpoint);

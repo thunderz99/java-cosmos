@@ -227,6 +227,23 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "Hanks", "status", "
     */
 ```
 
+### Increment
+
+```java
+    // support incrementing a number field 
+    // see https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update-getting-started?tabs=java
+
+    // increment age by 1
+    var result = db.increment("Collection1", "id1", "/age", 1, "Users");
+
+    // increment age by -5
+    var result = db.increment("Collection1", "id1", "/age", -5, "Users");
+
+    // 400 Bad Request Exception will be throw if the field is not an integer
+    var result = db.increment("Collection1", "id1", "/name", 1, "Users");
+    
+```
+
 ### Cross-partition queries
 
 ```java

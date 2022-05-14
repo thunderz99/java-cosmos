@@ -798,14 +798,14 @@ public class CosmosDatabase {
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
-        var response = container.patchItem(
+        var response = RetryUtil.executeWithRetry(() -> container.patchItem(
                 id,
                 new com.azure.cosmos.models.PartitionKey(partition),
                 CosmosPatchOperations
                         .create()
                         .increment(path, value),
                 LinkedHashMap.class
-        );
+        ));
 
         var item = response.getItem();
         log.info("increment Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());

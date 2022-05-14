@@ -107,13 +107,6 @@
             <version>31.0.1-jre</version>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/com.konghq/unirest-objectmapper-jackson -->
-        <dependency>
-            <groupId>com.konghq</groupId>
-            <artifactId>unirest-objectmapper-jackson</artifactId>
-            <version>3.11.09</version>
-        </dependency>
-
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>

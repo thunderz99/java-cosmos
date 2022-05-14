@@ -1203,7 +1203,7 @@ class CosmosDatabaseTest {
 
 
         try {
-            var data1 = Map.of("id", id, "contents", Map.of("age", 20));
+            var data1 = Map.of("id", id, "name", "John", "contents", Map.of("age", 20), "score", 85.5);
             db.upsert(coll, data1, partition).toMap();
             {
                 // increment by 1
@@ -1214,6 +1214,29 @@ class CosmosDatabaseTest {
                 var inc2 = db.increment(coll, id, "/contents/age", -3, partition).toMap();
                 assertThat((Map<String, Object>) inc2.get("contents")).containsEntry("age", 18);
             }
+
+            {
+                // failed when incrementing a string field
+                assertThatThrownBy(() -> {
+                    db.increment(coll, id, "name", 5, partition);
+                }).isInstanceOfSatisfying(CosmosException.class, (e) -> {
+                    assertThat(e.getStatusCode()).isEqualTo(400);
+                    assertThat(e.getMessage()).contains("inputs is invalid");
+                });
+            }
+
+            {
+                // failed when incrementing a double field
+                assertThatThrownBy(() -> {
+                    db.increment(coll, id, "score", 5, partition);
+                }).isInstanceOfSatisfying(CosmosException.class, (e) -> {
+                    assertThat(e.getStatusCode()).isEqualTo(400);
+                    assertThat(e.getMessage()).contains("inputs is invalid");
+                });
+            }
+
+            db.increment(coll, id, "score", 5, partition);
+
 
         } finally {
             db.delete(coll, id, partition);
