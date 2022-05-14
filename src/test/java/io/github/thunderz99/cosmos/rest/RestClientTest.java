@@ -30,7 +30,6 @@ public class RestClientTest {
 
     @Test
     void getDatabase_should_work() throws Exception {
-
         var result = client.getDatabase(dbName);
         assertThat(result).isNotNull().containsEntry("id", dbName);
 
@@ -48,7 +47,7 @@ public class RestClientTest {
             assertThat(result).isNotNull();
             var data = result.toMap();
 
-            assertThat(MapUtils.getInteger(data, "count")).isEqualTo(24);
+            assertThat(MapUtils.getInteger(data, "count")).isEqualTo(1);
 
         } finally {
             db.delete(coll, id, partition);

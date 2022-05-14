@@ -56,6 +56,21 @@ public class CosmosException extends RuntimeException {
     }
 
     /**
+     * Constructor using statusCode and message
+     *
+     * @param statusCode               cosmos exception's httpStatusCode
+     * @param code                     string error code
+     * @param message                  detail message
+     * @param retryAfterInMilliseconds amount of time should retry after in milliseconds
+     */
+    public CosmosException(int statusCode, String code, String message, long retryAfterInMilliseconds) {
+        super(message);
+        this.statusCode = statusCode;
+        this.code = code;
+        this.retryAfterInMilliseconds = retryAfterInMilliseconds;
+    }
+
+    /**
      * Get the exception's status code. e.g. 404 / 429 / 403
      *
      * @return status code of exception.

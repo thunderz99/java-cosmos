@@ -66,6 +66,21 @@ class RetryUtilTest {
             );
             assertThat(ret).isEqualTo("OK");
         }
+
+        { // success after 1 retries. for 408 and CosmosException
+            final var i = new AtomicInteger(0);
+
+            // success within 1 second
+            var ret = assertTimeout(ofSeconds(1), () ->
+                    RetryUtil.executeWithRetry(() -> {
+                        if (i.incrementAndGet() < 2) {
+                            throw new CosmosException(408, "REQUEST_TIMEOUT", "Request Timeout", 5);
+                        }
+                        return "OK";
+                    })
+            );
+            assertThat(ret).isEqualTo("OK");
+        }
     }
 
     @Test

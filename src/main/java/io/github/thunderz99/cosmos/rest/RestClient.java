@@ -1,5 +1,6 @@
 package io.github.thunderz99.cosmos.rest;
 
+import java.net.URLEncoder;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.ZoneId;
@@ -19,6 +20,7 @@ import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.ConnectionStringUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import io.github.thunderz99.cosmos.util.RetryUtil;
 import kong.unirest.HttpResponse;
 import kong.unirest.JsonNode;
 import kong.unirest.Unirest;
@@ -30,20 +32,17 @@ import org.apache.commons.lang3.StringUtils;
  * A client using rest api to provider methods accessing cosmos db, which v2 sdk cannot provide(e.g. patch methods)
  *
  * <p>
- *   In the future, this client will be replaced by v4 sdk, when v4 is stable.
+ * In the future, this client will be replaced by v4 sdk, when v4 is stable.
  * </p>
  */
 public class RestClient {
 
+    public static final String COSMOS_VERSION = "2018-12-31";
+    public static final String ALGORITHM = "HmacSHA256";
     /**
      * cosmos account endpoint uri
      */
     String endpoint;
-
-    /**
-     * cosmos account master key
-     */
-    private String key;
 
     /**
      * Message Authentication Code
@@ -62,7 +61,7 @@ public class RestClient {
         contentTypeMap.put("POST", "application/json");
         contentTypeMap.put("PUT", "application/json");
         contentTypeMap.put("DELETE", "application/json");
-        contentTypeMap.put("PATCH", "application/query+json");
+        contentTypeMap.put("PATCH", "application/json_patch+json");
 
         // To close unirest gracefully when jvm shutdown
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -71,18 +70,18 @@ public class RestClient {
     }
 
 
-    public RestClient(String connectionString){
+    public RestClient(String connectionString) {
         var pair = ConnectionStringUtil.parseConnectionString(connectionString);
         this.endpoint = StringUtils.removeEnd(pair.getLeft(), "/");
-        this.key = pair.getRight();
+        var key = pair.getRight();
 
-        Checker.checkNotBlank(this.key, "connectionString key");
+        Checker.checkNotBlank(key, "connectionString key");
 
-        byte[] masterKeyDecodedBytes = Base64.decodeBase64(this.key.getBytes());
-        SecretKeySpec signingKey = new SecretKeySpec(masterKeyDecodedBytes, "HMACSHA256");
+        byte[] masterKeyDecodedBytes = Base64.decodeBase64(key.getBytes());
+        SecretKeySpec signingKey = new SecretKeySpec(masterKeyDecodedBytes, ALGORITHM);
 
         try {
-            this.macInstance = Mac.getInstance("HMACSHA256");
+            this.macInstance = Mac.getInstance(ALGORITHM);
             this.macInstance.init(signingKey);
         } catch (InvalidKeyException | NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
@@ -97,20 +96,26 @@ public class RestClient {
 
         var contentType = buildContentType(verb);
         var partitionHeaders = buildPartitionHeader(partition);
-        var authHeaders = buildAuthHeaders(key, verb, "docs", resourceLink);
+        var authHeaders = buildAuthHeaders(verb, "docs", resourceLink);
 
         var url = endpoint + "/" + resourceLink;
 
-        var body = PatchBody.operation(new Operation("Increment", path, 1 ));
+        var body = PatchBody.operation(new Operation("increment", path, 1));
 
-        var result = Unirest.patch(url)
-                .headers(contentType) // content type
-                .headers(partitionHeaders) // partition
-                .headers(authHeaders) // auth header
-                .body(JsonUtil.toJson(body)) // body in json
-                .asJson();
+        var bodyJson = JsonUtil.toJson(body);
 
-        var data = checkAndGetData(result);
+        var data = RetryUtil.executeWithRetry(() -> {
+
+            var result = Unirest.patch(url)
+                    .headers(contentType) // content type
+                    .headers(partitionHeaders) // partition
+                    .headers(authHeaders) // auth header
+                    .body(bodyJson) // body in json
+                    .asJson();
+
+            return checkAndGetData(result);
+        });
+
         return new CosmosDocument(data);
     }
 
@@ -124,7 +129,7 @@ public class RestClient {
 
         var resourceLink = StringUtils.removeStart(Cosmos.getDatabaseLink(db), "/");
 
-        Map<String, String> authHeaders = buildAuthHeaders(key, "GET", "dbs", resourceLink);
+        Map<String, String> authHeaders = buildAuthHeaders("GET", "dbs", resourceLink);
 
         var url = endpoint + "/" + resourceLink;
 
@@ -170,21 +175,19 @@ public class RestClient {
     /**
      * build http headers for rest api auth
      *
-     * @param key          master key
      * @param verb         GET/POST/PUT/DELETE/PATCH
      * @param resourceType dbs/colls/docs
      * @param resourceLink dbs/{databaseId}/colls/{containerId}/docs/{docId}
      * @return auth headers map
      */
-    Map<String, String> buildAuthHeaders(String key, String verb, String resourceType, String resourceLink) throws Exception {
+    Map<String, String> buildAuthHeaders(String verb, String resourceType, String resourceLink) throws Exception {
 
         Map<String, String> headers = Maps.newHashMap();
-        headers.put("Accept", "application/json");
         headers.put("Cache-Control", "no-cache");
-        headers.put("x-ms-version", "2018-12-31");
+        headers.put("x-ms-version", COSMOS_VERSION);
         var date = getCurrentDatetimeGMT();
         headers.put("x-ms-date", date);
-        headers.put("Authorization", buildAuthToken(key, verb, resourceType, resourceLink, date));
+        headers.put("Authorization", buildAuthToken(verb, resourceType, resourceLink, date));
 
         return headers;
     }
@@ -194,15 +197,16 @@ public class RestClient {
      * <p>
      * @see <a href="https://docs.microsoft.com/en-us/rest/api/cosmos-db/access-control-on-cosmosdb-resources#authorization-header">auth header</a>
      * </p>
-     * @param key masterKey
      * @param verb GET/POST/PUT/DELETE/PATCH
      * @param resourceType dbs/colls/docs
      * @param resourceLink dbs/{databaseId}/colls/{containerId}/docs/{docId}
      * @param date  RFC 7231 Date/Time Formats), e.g. "Tue, 01 Nov 1994 08:12:31 GMT".
      * @return authToken. e.g. "type=master&ver=1.0&sig={hashSignature}"
      */
-    String buildAuthToken(String key, String verb, String resourceType, String resourceLink, String date) throws Exception {
+    String buildAuthToken(String verb, String resourceType, String resourceLink, String date) throws Exception {
         String stringToSign = String.format("%s\n%s\n%s\n%s\n\n", verb.toLowerCase(), resourceType, resourceLink, date.toLowerCase());
+
+        System.out.println(String.format("Client used the following to sign:'%s'", stringToSign));
         Mac mac = null;
 
         try {
@@ -211,9 +215,11 @@ public class RestClient {
             throw new IllegalStateException(e);
         }
 
-        byte[] digest = mac.doFinal(stringToSign.getBytes("UTF-8"));
+        byte[] digest = mac.doFinal(stringToSign.getBytes());
         String hashSignature = Utils.encodeBase64String(digest);
-        return "type=master&ver=1.0&sig=" + hashSignature;
+
+        // url encode the final string to be ready to put in http headers
+        return URLEncoder.encode("type=master&ver=1.0&sig=" + hashSignature, "UTF-8");
     }
 
     /**
@@ -224,7 +230,7 @@ public class RestClient {
     static String getCurrentDatetimeGMT() {
         var formatter = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz").withLocale(Locale.US);
         // to obtain a time slightly before now, to avoid a future time
-        var datetime = ZonedDateTime.now(ZoneId.of("Etc/GMT")).minusSeconds(5);
+        var datetime = ZonedDateTime.now(ZoneId.of("Etc/GMT"));
         return datetime.format(formatter);
     }
 }

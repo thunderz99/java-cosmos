@@ -22,12 +22,8 @@ public class RetryUtil {
 
     /**
      * Codes should be retried. see <a href="https://docs.microsoft.com/en-us/rest/api/cosmos-db/http-status-codes-for-cosmosdb">http-status-codes-for-cosmosdb</a>
-     *
-     * <p>
-     * TODO, consider 408(request timeout) should be retried or not
-     * </p>
      */
-    static final Set<Integer> codesShouldRetry = Sets.newHashSet(429, 449);
+    static final Set<Integer> codesShouldRetry = Sets.newHashSet(429, 449, 408);
 
     RetryUtil() {
     }
@@ -46,7 +42,11 @@ public class RetryUtil {
                 i++;
                 return func.call();
             } catch (DocumentClientException dce) {
+                // deal with document client exception
                 cosmosException = new CosmosException(dce);
+            } catch (CosmosException ce) {
+                // deal with cosmos exception
+                cosmosException = ce;
             }
 
             if (shouldRetry(cosmosException)) {
@@ -57,7 +57,7 @@ public class RetryUtil {
                 if (wait == 0) {
                     wait = defaultWaitTime;
                 }
-                log.info("Code:{}, 429 Too Many Requests / 449 Retry with. Wait:{} ms", cosmosException.getStatusCode(), wait);
+                log.info("Code:{}, 429 Too Many Requests / 449 Retry with / 408 Request Timeout. Wait:{} ms", cosmosException.getStatusCode(), wait);
                 Thread.sleep(wait);
             } else {
                 throw cosmosException;
