@@ -1,8 +1,11 @@
 package io.github.thunderz99.cosmos;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.azure.cosmos.CosmosClient;
+import com.azure.cosmos.models.CosmosPatchOperations;
 import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
@@ -33,12 +36,15 @@ public class CosmosDatabase {
 
     DocumentClient client;
 
+    CosmosClient clientV4;
+
     Cosmos cosmosAccount;
 
     CosmosDatabase(Cosmos cosmosAccount, String db) {
         this.cosmosAccount = cosmosAccount;
         this.db = db;
         this.client = cosmosAccount.client;
+        this.clientV4 = cosmosAccount.clientV4;
     }
 
 
@@ -765,6 +771,46 @@ public class CosmosDatabase {
 
         return docs.get(0).getInt("$1");
 
+    }
+
+    /**
+     * Increment a number field of a document using json path format(e.g. "/count")
+     *
+     * <p>
+     * see json patch format: <a href="http://jsonpatch.com/">json path</a>
+     * <br>
+     * see details of increment: <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update#supported-operations">supported operations: increment</a>
+     * </p>
+     *
+     * @param coll
+     * @param id
+     * @param path
+     * @param value
+     * @param partition
+     * @return
+     * @throws Exception
+     */
+    public CosmosDocument increment(String coll, String id, String path, int value, String partition) throws Exception {
+
+        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+
+        Checker.checkNotNull(this.clientV4, String.format("SDK v4 must be enabled to use increment method. docLink:%s", documentLink));
+
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+        var response = RetryUtil.executeWithRetry(() -> container.patchItem(
+                id,
+                new com.azure.cosmos.models.PartitionKey(partition),
+                CosmosPatchOperations
+                        .create()
+                        .increment(path, value),
+                LinkedHashMap.class
+        ));
+
+        var item = response.getItem();
+        log.info("increment Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+
+        return new CosmosDocument(item);
     }
 
     RequestOptions requestOptions(String partition) {

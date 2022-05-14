@@ -3,6 +3,7 @@ package io.github.thunderz99.cosmos.util;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.azure.cosmos.implementation.CosmosError;
 import com.microsoft.azure.documentdb.DocumentClientException;
 import io.github.thunderz99.cosmos.CosmosException;
 import org.junit.jupiter.api.Test;
@@ -52,14 +53,30 @@ class RetryUtilTest {
             assertThat(ret).isEqualTo("OK");
         }
 
-        { // success after 2 retries. for 449
+        { // success after 2 retries. for 449 and com.azure.CosmosException
             final var i = new AtomicInteger(0);
 
             // success within 1 second
             var ret = assertTimeout(ofSeconds(1), () ->
                     RetryUtil.executeWithRetry(() -> {
                         if (i.incrementAndGet() < 2) {
-                            throw new DocumentClientException(449, new com.microsoft.azure.documentdb.Error("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10"));
+                            throw new com.azure.cosmos.CosmosException(449, new CosmosError("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10")) {
+                            };
+                        }
+                        return "OK";
+                    })
+            );
+            assertThat(ret).isEqualTo("OK");
+        }
+
+        { // success after 1 retries. for 408 and CosmosException
+            final var i = new AtomicInteger(0);
+
+            // success within 1 second
+            var ret = assertTimeout(ofSeconds(1), () ->
+                    RetryUtil.executeWithRetry(() -> {
+                        if (i.incrementAndGet() < 2) {
+                            throw new CosmosException(408, "REQUEST_TIMEOUT", "Request Timeout", 5);
                         }
                         return "OK";
                     })
