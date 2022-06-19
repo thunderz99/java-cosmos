@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.5.8</version>
+  <version>0.5.11</version>
 </dependency>
 ```
 
@@ -233,11 +233,15 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "Hanks", "status", "
     // support incrementing a number field 
     // see https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update-getting-started?tabs=java
 
-    // increment age by 1
+    // increment age by 1. Supports int / long / double.
     var result = db.increment("Collection1", "id1", "/age", 1, "Users");
 
     // increment age by -5
     var result = db.increment("Collection1", "id1", "/age", -5, "Users");
+
+
+		// 404 Not Found Exception will be throw if the id does not exist
+    var result = db.increment("Collection1", "not exist id", "/name", 1, "Users");
 
     // 400 Bad Request Exception will be throw if the field is not an integer
     var result = db.increment("Collection1", "id1", "/name", 1, "Users");
