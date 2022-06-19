@@ -1203,22 +1203,41 @@ class CosmosDatabaseTest {
 
 
         try {
-            var data1 = Map.of("id", id, "name", "John", "contents", Map.of("age", 20), "score", 85.5);
+            var data1 = Map.of("id", id, "name", "John", "contents", Map.of("age", 20), "score", 85.5, "number", 3_147_483_647L);
             db.upsert(coll, data1, partition).toMap();
             {
-                // increment by 1
+                // increment by 1, integer field
                 var inc1 = db.increment(coll, id, "/contents/age", 1, partition).toMap();
                 assertThat((Map<String, Object>) inc1.get("contents")).containsEntry("age", 21);
 
-                // increment by -3
+                // increment by -3, integer field
                 var inc2 = db.increment(coll, id, "/contents/age", -3, partition).toMap();
                 assertThat((Map<String, Object>) inc2.get("contents")).containsEntry("age", 18);
+
+                // increment by 1, long field
+                var inc3 = db.increment(coll, id, "/number", 1, partition).toMap();
+                assertThat(inc3).containsEntry("number", 3_147_483_648L);
+
+                // increment by 5, double field
+                var inc4 = db.increment(coll, id, "/score", 5, partition).toMap();
+                assertThat(inc4).containsEntry("score", 90.5);
+
             }
 
             {
                 // failed when incrementing a string field
                 assertThatThrownBy(() -> {
-                    db.increment(coll, id, "name", 5, partition);
+                    db.increment(coll, id, "/name", 5, partition);
+                }).isInstanceOfSatisfying(CosmosException.class, (e) -> {
+                    assertThat(e.getStatusCode()).isEqualTo(400);
+                    assertThat(e.getMessage()).contains("is not a number");
+                });
+            }
+
+            {
+                // 400 will be thrown when path is not correct
+                assertThatThrownBy(() -> {
+                    db.increment(coll, id, "score", 5, partition);
                 }).isInstanceOfSatisfying(CosmosException.class, (e) -> {
                     assertThat(e.getStatusCode()).isEqualTo(400);
                     assertThat(e.getMessage()).contains("inputs is invalid");
@@ -1226,12 +1245,12 @@ class CosmosDatabaseTest {
             }
 
             {
-                // failed when incrementing a double field
+                // 404 will be thrown when incrementing a not existing item
                 assertThatThrownBy(() -> {
-                    db.increment(coll, id, "score", 5, partition);
+                    db.increment(coll, "not exist", "/number", 1, partition);
                 }).isInstanceOfSatisfying(CosmosException.class, (e) -> {
-                    assertThat(e.getStatusCode()).isEqualTo(400);
-                    assertThat(e.getMessage()).contains("inputs is invalid");
+                    assertThat(e.getStatusCode()).isEqualTo(404);
+                    assertThat(e.getMessage()).contains("Not Found");
                 });
             }
 
