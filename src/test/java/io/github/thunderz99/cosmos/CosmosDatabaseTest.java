@@ -3,6 +3,7 @@ package io.github.thunderz99.cosmos;
 import java.util.*;
 import java.util.stream.IntStream;
 
+import com.azure.cosmos.models.CosmosPatchOperations;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.microsoft.azure.documentdb.SqlParameter;
@@ -1253,6 +1254,131 @@ class CosmosDatabaseTest {
                     assertThat(e.getMessage()).contains("Not Found");
                 });
             }
+
+        } finally {
+            db.delete(coll, id, partition);
+        }
+
+    }
+
+    @Test
+    void patch_should_work() throws Exception {
+        var partition = "PatchTests";
+        var id = "patch_should_work";
+
+
+        try {
+            var data1 = Map.of("id", id, "name", "John", "contents", Map.of("age", 20),
+                    "score", 85.5, "skills", List.of("Java", "Kotlin", "TypeScript"));
+            db.upsert(coll, data1, partition).toMap();
+            {
+                // Add should work
+
+                var operations = CosmosPatchOperations.create()
+                        .add("/skills/1", "Golang") // insert Golang at index 1
+                        .add("/contents/sex", "Male"); // add a new field
+                var item = db.patch(coll, id, operations, partition).toMap();
+                assertThat((List<String>) item.get("skills")).hasSize(4);
+                assertThat(((List<String>) item.get("skills")).get(1)).isEqualTo("Golang");
+                assertThat((Map<String, Object>) item.get("contents")).containsEntry("sex", "Male");
+
+            }
+
+            {
+                // Set should work
+
+                var operations = CosmosPatchOperations.create()
+                        .set("/contents", Map.of("age", 19)) // reset contents to a new map
+                        .set("/skills/2", "Rust"); // replace index 2 from Kotlin to Rust
+                var item = db.patch(coll, id, operations, partition).toMap();
+                assertThat((List<String>) item.get("skills")).hasSize(4);
+                assertThat(((List<String>) item.get("skills")).get(2)).isEqualTo("Rust");
+                assertThat((Map<String, Object>) item.get("contents")).hasSize(1).containsEntry("age", 19);
+
+            }
+
+            {
+                // Replace should work
+                {
+                    // replace an existing field
+                    var operations = CosmosPatchOperations.create()
+                            .replace("/contents", Map.of("age", 20)); // replace contents to a new map
+                    var item = db.patch(coll, id, operations, partition).toMap();
+                    assertThat((Map<String, Object>) item.get("contents")).hasSize(1).containsEntry("age", 20);
+                }
+                {
+                    // replace a not existing field should fail
+                    var operations = CosmosPatchOperations.create()
+                            .replace("/notExistField", Map.of("age", 20)); // try to replace a not existing field
+                    assertThatThrownBy(() ->
+                            db.patch(coll, id, operations, partition).toMap()).isInstanceOfSatisfying(CosmosException.class, (e) -> {
+                        assertThat(e.getStatusCode()).isEqualTo(400);
+                        assertThat(e.getMessage()).contains("notExistField", "absent");
+                    });
+
+                }
+
+            }
+
+            {
+                // Remove should work
+                {
+                    // remove an existing field
+                    var operations = CosmosPatchOperations.create()
+                            .remove("/score") // remove an existing field
+                            .remove("/skills/2") // remove an array item at index 2
+                            ;
+                    var item = db.patch(coll, id, operations, partition).toMap();
+                    assertThat(item.get("score")).isNull();
+                    assertThat(((List<String>) item.get("skills"))).hasSize(3);
+                    assertThat(((List<String>) item.get("skills")).get(2)).isEqualTo("TypeScript");
+
+                }
+                {
+                    // remove a not existing field should fail
+                    var operations = CosmosPatchOperations.create()
+                            .remove("/notExistField"); // try to replace a not existing field
+                    assertThatThrownBy(() ->
+                            db.patch(coll, id, operations, partition).toMap()).isInstanceOfSatisfying(CosmosException.class, (e) -> {
+                        assertThat(e.getStatusCode()).isEqualTo(400);
+                        assertThat(e.getMessage()).contains("notExistField", "absent");
+                    });
+
+                }
+
+                {
+                    // increment should work
+                    var operations = CosmosPatchOperations.create()
+                            .increment("/contents/age", 2) // increment a number field
+                            ;
+                    var item = db.patch(coll, id, operations, partition).toMap();
+                    assertThat((Map<String, Object>) item.get("contents")).containsEntry("age", 22);
+                }
+
+                {
+                    // operations exceeding 10 ops should fail
+                    var operations = CosmosPatchOperations.create()
+                            .add("/testField1", 1) //
+                            .set("/testField2", 2) //
+                            .replace("/name", "3") //
+                            .set("/testField", 4) //
+                            .set("/testField", 5) //
+                            .set("/testField", 6) //
+                            .set("/testField", 7) //
+                            .set("/testField", 8) //
+                            .set("/testField", 9) //
+                            .set("/testField", 10) //
+                            .set("/testField", 11) //
+                            ;
+                    assertThatThrownBy(() ->
+                            db.patch(coll, id, operations, partition).toMap())
+                            .isInstanceOfSatisfying(CosmosException.class, (e) -> {
+                                assertThat(e.getStatusCode()).isEqualTo(400);
+                                assertThat(e.getMessage()).contains("exceed", "10");
+                            });
+                }
+            }
+
 
         } finally {
             db.delete(coll, id, partition);

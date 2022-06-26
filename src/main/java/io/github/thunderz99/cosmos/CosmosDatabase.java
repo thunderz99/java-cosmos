@@ -813,6 +813,28 @@ public class CosmosDatabase {
         return new CosmosDocument(item);
     }
 
+
+    public CosmosDocument patch(String coll, String id, CosmosPatchOperations operations, String partition) throws Exception {
+
+        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+
+        Checker.checkNotNull(this.clientV4, String.format("SDK v4 must be enabled to use patch method. docLink:%s", documentLink));
+        
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+        var response = RetryUtil.executeWithRetry(() -> container.patchItem(
+                id,
+                new com.azure.cosmos.models.PartitionKey(partition),
+                operations,
+                LinkedHashMap.class
+        ));
+
+        var item = response.getItem();
+        log.info("patch Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+
+        return new CosmosDocument(item);
+    }
+
     RequestOptions requestOptions(String partition) {
         var options = new RequestOptions();
         options.setPartitionKey(new PartitionKey(partition));
@@ -895,7 +917,7 @@ public class CosmosDatabase {
      * @return database name
      */
     public String getDatabaseName() {
-		return this.db;
-	}
+        return this.db;
+    }
 
 }
