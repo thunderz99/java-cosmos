@@ -275,6 +275,26 @@ public class Cosmos {
         return readCollection(client, db, coll);
     }
 
+
+    /**
+     * Get Official cosmos db sdk(v2)'s DocumentClient instance
+     *
+     * @return official cosmosdb sdk client(v2)
+     */
+    public DocumentClient getClient() {
+        return this.client;
+    }
+
+    /**
+     * Get Official cosmos db sdk(v4)'s CosmosClient instance
+     *
+     * @return official cosmosdb sdk client(v4)
+     */
+    public CosmosClient getClientV4() {
+        return this.clientV4;
+    }
+    
+
     static DocumentCollection readCollection(DocumentClient client, String db, String coll)
             throws DocumentClientException {
         try {

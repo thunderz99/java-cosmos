@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.microsoft.azure.documentdb.DocumentClientException;
+import com.microsoft.azure.documentdb.FeedOptions;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import org.junit.jupiter.api.Test;
 
@@ -95,6 +96,26 @@ public class CosmosTest {
     void cosmos_account_should_be_get() throws DocumentClientException {
         var cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
         assertThat(cosmos.getAccount()).isEqualTo("rapid-cosmos-japaneast");
+    }
+
+    @Test
+    void getClient_should_work() throws DocumentClientException {
+        var cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
+        assertThat(cosmos.getClient()).isNotNull();
+
+        var dbs = cosmos.getClient().readDatabases(new FeedOptions());
+        assertThat(dbs.getQueryIterator().hasNext()).isTrue();
+
+    }
+
+    @Test
+    void getClientV4_should_work() throws DocumentClientException {
+        var cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
+        assertThat(cosmos.getClientV4()).isNotNull();
+
+        var dbs = cosmos.getClientV4().readAllDatabases();
+        assertThat(dbs).isNotEmpty();
+
     }
 
 }

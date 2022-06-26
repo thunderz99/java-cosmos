@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.5.12</version>
+  <version>0.5.13</version>
 </dependency>
 ```
 
@@ -164,7 +164,23 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "Hanks", "status", "
 
 ```
 
+### Patch (Similar to JSON Patch)
 
+For details please refer to official SDK's [document](https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update#supported-operations)
+
+```java 
+    var operations = CosmosPatchOperations.create()
+                        // insert Golang at index 1
+                        .add("/skills/1", "Golang") 
+                        // set a new field
+                        .set("/contents/sex", "Male"); 
+    db.patch("Collection", id, operations, "Users");
+```
+
+The main difference between Partial update and Patch is that:
+
+* Partial update is focused at insert/replace fields' values. And is able to support updating 10 more fields in one call.
+* Patch is focused to implementing a method similar to JSON Patch, which supports more complicated ops like "Add, Set, Replace, Remove, Increment". And is not able to support ops exceeding 10 in one patch call.
 
 ### Complex queries
 
