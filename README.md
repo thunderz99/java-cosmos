@@ -169,7 +169,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "Hanks", "status", "
 For details please refer to official SDK's [document](https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update#supported-operations)
 
 ```java 
-    var operations = CosmosPatchOperations.create()
+    var operations = PatchOperations.create()
                         // insert Golang at index 1
                         .add("/skills/1", "Golang") 
                         // set a new field

@@ -13,6 +13,7 @@ import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.RetryUtil;
+import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.json.JSONObject;
@@ -814,18 +815,18 @@ public class CosmosDatabase {
     }
 
 
-    public CosmosDocument patch(String coll, String id, CosmosPatchOperations operations, String partition) throws Exception {
+    public CosmosDocument patch(String coll, String id, PatchOperations operations, String partition) throws Exception {
 
         var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
         Checker.checkNotNull(this.clientV4, String.format("SDK v4 must be enabled to use patch method. docLink:%s", documentLink));
-        
+
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
         var response = RetryUtil.executeWithRetry(() -> container.patchItem(
                 id,
                 new com.azure.cosmos.models.PartitionKey(partition),
-                operations,
+                operations.getCosmosPatchOperations(),
                 LinkedHashMap.class
         ));
 
