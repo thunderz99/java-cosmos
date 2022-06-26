@@ -1372,9 +1372,8 @@ class CosmosDatabaseTest {
                             ;
                     assertThatThrownBy(() ->
                             db.patch(coll, id, operations, partition).toMap())
-                            .isInstanceOfSatisfying(CosmosException.class, (e) -> {
-                                assertThat(e.getStatusCode()).isEqualTo(400);
-                                assertThat(e.getMessage()).contains("exceed", "10");
+                            .isInstanceOfSatisfying(IllegalArgumentException.class, (e) -> {
+                                assertThat(e.getMessage()).contains("exceed", "10", "11");
                             });
                 }
             }

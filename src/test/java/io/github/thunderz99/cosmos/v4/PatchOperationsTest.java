@@ -26,8 +26,24 @@ class PatchOperationsTest {
 
         var operations = PatchOperations.create();
         assertThatThrownBy(() -> operations.add("add", 1)).isInstanceOfSatisfying(IllegalArgumentException.class, e -> {
-            assertThat(e.getMessage().contains("add must start"));
+            assertThat(e.getMessage().contains("Json path(add) must start with /"));
         });
+        assertThatThrownBy(() -> operations.remove("add")).isInstanceOfSatisfying(IllegalArgumentException.class, e -> {
+            assertThat(e.getMessage().contains("Json path(add) must start with /"));
+        });
+        assertThatThrownBy(() -> operations.set("add", 1)).isInstanceOfSatisfying(IllegalArgumentException.class, e -> {
+            assertThat(e.getMessage().contains("Json path(add) must start with /"));
+        });
+        assertThatThrownBy(() -> operations.replace("add", 1)).isInstanceOfSatisfying(IllegalArgumentException.class, e -> {
+            assertThat(e.getMessage().contains("Json path(add) must start with /"));
+        });
+        assertThatThrownBy(() -> operations.increment("add", 1)).isInstanceOfSatisfying(IllegalArgumentException.class, e -> {
+            assertThat(e.getMessage().contains("Json path(add) must start with /"));
+        });
+        assertThatThrownBy(() -> operations.increment("add", 1.5)).isInstanceOfSatisfying(IllegalArgumentException.class, e -> {
+            assertThat(e.getMessage().contains("Json path(add) must start with /"));
+        });
+
 
     }
 

@@ -22,10 +22,22 @@ import com.google.common.collect.Lists;
  */
 public class PatchOperations {
 
+    /**
+     * Official Cosmos DB's PatchOperations' limit to be processed in one call.
+     */
+    public static int LIMIT = 10;
+
+    /**
+     * Inner cosmos patch operations
+     */
     CosmosPatchOperations cosmosPatchOperations = CosmosPatchOperations.create();
+
+    /**
+     * Operations to record PatchOperation and size
+     */
     List<PatchOperation> operations = Lists.newArrayList();
 
-    protected PatchOperations(){
+    protected PatchOperations() {
 
     }
 
@@ -53,8 +65,13 @@ public class PatchOperations {
         return this;
     }
 
+    /**
+     * Check if path starts with "/"
+     *
+     * @param path
+     */
     static void checkPath(String path) {
-        Preconditions.checkArgument(path.startsWith("/"), "Path(%s) must start with /", path);
+        Preconditions.checkArgument(path.startsWith("/"), "Json path(%s) must start with /", path);
     }
 
     /**
@@ -67,6 +84,7 @@ public class PatchOperations {
     public PatchOperations remove(String path) {
         this.operations.add(new PatchOperationCore(PatchOperationType.REMOVE, path, (Object)null));
         this.cosmosPatchOperations.remove(path);
+        checkPath(path);
         return this;
     }
 
@@ -82,6 +100,7 @@ public class PatchOperations {
     public <T> PatchOperations replace(String path, T value) {
         this.operations.add(new PatchOperationCore(PatchOperationType.REPLACE, path, value));
         this.cosmosPatchOperations.replace(path, value);
+        checkPath(path);
         return this;
     }
 
@@ -97,6 +116,7 @@ public class PatchOperations {
     public <T> PatchOperations set(String path, T value) {
         this.operations.add(new PatchOperationCore(PatchOperationType.SET, path, value));
         this.cosmosPatchOperations.set(path, value);
+        checkPath(path);
         return this;
     }
 
@@ -111,6 +131,7 @@ public class PatchOperations {
     public PatchOperations increment(String path, long value) {
         this.operations.add(new PatchOperationCore(PatchOperationType.INCREMENT, path, value));
         this.cosmosPatchOperations.increment(path, value);
+        checkPath(path);
         return this;
     }
 
@@ -125,6 +146,7 @@ public class PatchOperations {
     public PatchOperations increment(String path, double value) {
         this.operations.add(new PatchOperationCore(PatchOperationType.INCREMENT, path, value));
         this.cosmosPatchOperations.increment(path, value);
+        checkPath(path);
         return this;
     }
 
