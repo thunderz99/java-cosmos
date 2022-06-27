@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.models.CosmosPatchOperations;
+import com.google.common.base.Preconditions;
 import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
@@ -13,6 +14,7 @@ import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.RetryUtil;
+import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.json.JSONObject;
@@ -814,18 +816,46 @@ public class CosmosDatabase {
     }
 
 
-    public CosmosDocument patch(String coll, String id, CosmosPatchOperations operations, String partition) throws Exception {
+    /**
+     * Patch data using JSON-Patch format. (max operations is 10)
+     *
+     * <p>
+     * {@code
+     * //例：
+     * var operations = CosmosPatchOperations.create()
+     * // set or replace a new field
+     * .set("/contents/sex", "Male");
+     * // insert an item at index 1 for a field of array type
+     * .add("/skills/1", "TypeScript")
+     * var data = service.patch(host, id, operations);
+     * }
+     *
+     * <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update#supported-operations">supported operations</a>
+     * </p>
+     *
+     * @param coll       collection
+     * @param id         id of item
+     * @param operations operation list of JSON Patch
+     * @param partition  partition
+     * @return CosmosDocument after patch
+     * @throws Exception CosmosException or other
+     */
+    public CosmosDocument patch(String coll, String id, PatchOperations operations, String partition) throws Exception {
 
         var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
         Checker.checkNotNull(this.clientV4, String.format("SDK v4 must be enabled to use patch method. docLink:%s", documentLink));
-        
+        Checker.checkNotEmpty("id", "id");
+        Checker.checkNotNull(operations, "operations");
+
+        Preconditions.checkArgument(operations.size() <= PatchOperations.LIMIT, "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10", operations.size());
+
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
         var response = RetryUtil.executeWithRetry(() -> container.patchItem(
                 id,
                 new com.azure.cosmos.models.PartitionKey(partition),
-                operations,
+                operations.getCosmosPatchOperations(),
                 LinkedHashMap.class
         ));
 

@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.5.13</version>
+  <version>0.5.15</version>
 </dependency>
 ```
 
@@ -169,7 +169,7 @@ db.updatePartial("Collection", user1.id, Map.of("lastName", "Hanks", "status", "
 For details please refer to official SDK's [document](https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update#supported-operations)
 
 ```java 
-    var operations = CosmosPatchOperations.create()
+    var operations = PatchOperations.create()
                         // insert Golang at index 1
                         .add("/skills/1", "Golang") 
                         // set a new field

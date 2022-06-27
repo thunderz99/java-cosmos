@@ -3,7 +3,6 @@ package io.github.thunderz99.cosmos;
 import java.util.*;
 import java.util.stream.IntStream;
 
-import com.azure.cosmos.models.CosmosPatchOperations;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.microsoft.azure.documentdb.SqlParameter;
@@ -14,6 +13,7 @@ import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -1274,7 +1274,7 @@ class CosmosDatabaseTest {
             {
                 // Add should work
 
-                var operations = CosmosPatchOperations.create()
+                var operations = PatchOperations.create()
                         .add("/skills/1", "Golang") // insert Golang at index 1
                         .add("/contents/sex", "Male"); // add a new field
                 var item = db.patch(coll, id, operations, partition).toMap();
@@ -1287,7 +1287,7 @@ class CosmosDatabaseTest {
             {
                 // Set should work
 
-                var operations = CosmosPatchOperations.create()
+                var operations = PatchOperations.create()
                         .set("/contents", Map.of("age", 19)) // reset contents to a new map
                         .set("/skills/2", "Rust"); // replace index 2 from Kotlin to Rust
                 var item = db.patch(coll, id, operations, partition).toMap();
@@ -1301,14 +1301,14 @@ class CosmosDatabaseTest {
                 // Replace should work
                 {
                     // replace an existing field
-                    var operations = CosmosPatchOperations.create()
+                    var operations = PatchOperations.create()
                             .replace("/contents", Map.of("age", 20)); // replace contents to a new map
                     var item = db.patch(coll, id, operations, partition).toMap();
                     assertThat((Map<String, Object>) item.get("contents")).hasSize(1).containsEntry("age", 20);
                 }
                 {
                     // replace a not existing field should fail
-                    var operations = CosmosPatchOperations.create()
+                    var operations = PatchOperations.create()
                             .replace("/notExistField", Map.of("age", 20)); // try to replace a not existing field
                     assertThatThrownBy(() ->
                             db.patch(coll, id, operations, partition).toMap()).isInstanceOfSatisfying(CosmosException.class, (e) -> {
@@ -1324,7 +1324,7 @@ class CosmosDatabaseTest {
                 // Remove should work
                 {
                     // remove an existing field
-                    var operations = CosmosPatchOperations.create()
+                    var operations = PatchOperations.create()
                             .remove("/score") // remove an existing field
                             .remove("/skills/2") // remove an array item at index 2
                             ;
@@ -1336,7 +1336,7 @@ class CosmosDatabaseTest {
                 }
                 {
                     // remove a not existing field should fail
-                    var operations = CosmosPatchOperations.create()
+                    var operations = PatchOperations.create()
                             .remove("/notExistField"); // try to replace a not existing field
                     assertThatThrownBy(() ->
                             db.patch(coll, id, operations, partition).toMap()).isInstanceOfSatisfying(CosmosException.class, (e) -> {
@@ -1348,7 +1348,7 @@ class CosmosDatabaseTest {
 
                 {
                     // increment should work
-                    var operations = CosmosPatchOperations.create()
+                    var operations = PatchOperations.create()
                             .increment("/contents/age", 2) // increment a number field
                             ;
                     var item = db.patch(coll, id, operations, partition).toMap();
@@ -1357,7 +1357,7 @@ class CosmosDatabaseTest {
 
                 {
                     // operations exceeding 10 ops should fail
-                    var operations = CosmosPatchOperations.create()
+                    var operations = PatchOperations.create()
                             .add("/testField1", 1) //
                             .set("/testField2", 2) //
                             .replace("/name", "3") //
@@ -1372,9 +1372,8 @@ class CosmosDatabaseTest {
                             ;
                     assertThatThrownBy(() ->
                             db.patch(coll, id, operations, partition).toMap())
-                            .isInstanceOfSatisfying(CosmosException.class, (e) -> {
-                                assertThat(e.getStatusCode()).isEqualTo(400);
-                                assertThat(e.getMessage()).contains("exceed", "10");
+                            .isInstanceOfSatisfying(IllegalArgumentException.class, (e) -> {
+                                assertThat(e.getMessage()).contains("exceed", "10", "11");
                             });
                 }
             }
