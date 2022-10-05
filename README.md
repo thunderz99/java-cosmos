@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.5.15</version>
+  <version>0.5.16</version>
 </dependency>
 ```
 
@@ -32,36 +32,57 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 ```java
 import io.github.thunderz99.cosmos.Cosmos
 
-public static void main(String[] args) {
-    var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1")
-    db.upsert("Collection1", new User("id011", "Tom", "Banks"))
+import java.util.ArrayList;
 
-    var cond = Condition.filter(
-      "id", "id010", // id equal to 'id010'
-      "lastName", "Banks", // last name equal to Banks
-      "firstName !=", "Andy", // not equal
-    )
-    .sort("lastName", "ASC") //optional order
-    .offset(0) //optional offset
-    .limit(100); //optional limit
+public static void main(String[]args){
+        var db=new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1")
+        db.upsert("Collection1",new User("id011","Tom","Banks"))
 
-    var users = db.find("Collection1", cond).toList(User.class)
+        var cond=Condition.filter(
+        "id","id010", // id equal to 'id010'
+        "lastName","Banks", // last name equal to Banks
+        "firstName !=","Andy", // not equal
+        )
+        .sort("lastName","ASC") //optional order
+        .offset(0) //optional offset
+        .limit(100); //optional limit
+
+        var users=db.find("Collection1",cond).toList(User.class)
+        }
+
+class User {
+
+    public String id;
+    public String firstName;
+    public String lastName;
+    public String location;
+    public int age;
+    public List<Parent> parents = new ArrayList<>();
+
+    public User(String id, String firstName, String lastName) {
+        this.id = id;
+        this.firstName = firstName;
+        this.lastName = lastName;
+    }
+
+    public User(String id, String firstName, String lastName,List<Parent> parents) {
+        this.id = id;
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.parents=parents;
+    }
 }
 
-class User{
+class Parent{
+    public String firstName;
+    public String lastName;
 
-  public String id;
-  public String firstName;
-  public String lastName;
-  public String location;
-  public int age;
-
-  public User(String id, String firstName, String lastName){
-    this.id = id;
-    this.firstName = firstName;
-    this.lastName = lastName;
-  }
+    public Parent(String firstName, String lastName){
+        this.firstName = firstName;
+        this.lastName = lastName;
+    }
 }
+
 ```
 
 ## More examples
@@ -72,13 +93,14 @@ class User{
 // Save user into Coll:Collection1, partition:Users.
 // If you do not specify the partition. It will default to coll name.
 var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1");
-db.upsert("Collection1", new User("id011", "Tom", "Banks"), "Users");
+db.upsert("Collection1", new User("id011", "Tom", "Banks",List.of(new Parent("Tom","John"),new Parent("Jerry":"Jones"))), "Users");
 
 // The default partition key is "_partition", so we'll get a json like this:
 // {
 //    "id": "id011",
 //    "firstName": "Tom",
 //    "lastName": "Banks",
+//    "parents": [{"firstName": "Tom","lastName": "John"},{"firstName": "Tom","Jerry": "Jones"}],
 //    "_partition": "Users"
 // }
 ```
@@ -315,5 +337,32 @@ The main difference between Partial update and Patch is that:
      );      
 
     db.find("Collection1", cond, "Partition1");
+```
+
+### join queries
+
+```java
+    var cond = Condition.filter(
+      "id", "id010", // id equal to 'id010'
+      "lastName", "Banks", // last name equal to Banks
+      "firstName !=", "Andy", // not equal
+      "parents.firstName", "Tom", // parent is a array which will be join
+      "$OR", List.of( // add an OR sub condition
+        Condition.filter("parents.lastName", "Jones"),  // subquery's fields/order/offset/limit will be ignored
+        Condition.filter("organization.id", "executive_committee")
+      ),
+      "$AND", List.of(// add an AND sub condition
+        Condition.filter("parents.firstName", "Tom"),  
+        Condition.filter("city", "Tokyo")
+      ),
+      "$NOT", Map.of("parents.lastName CONTAINS", "Willington"), // A negative query using $NOT
+    )
+    .fields("id", "lastName", "age", "organization.name") // select certain fields
+    .join("parents") // the part which you want  to join
+    .sort("lastName", "ASC") //optional sort
+    .offset(0) //optional offset
+    .limit(100); //optional limit
+
+    var users = db.find("Collection1", cond).toList(User.class);
 ```
 

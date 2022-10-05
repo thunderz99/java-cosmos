@@ -566,6 +566,112 @@ class CosmosDatabaseTest {
 
     }
 
+    @Test
+    public void find_should_work_with_join() throws Exception {
+
+        // query with join
+        {
+            var cond = new Condition();
+            cond = Condition.filter("parents.firstName", "Thomas", "parents.firstName", "Mary Kay", "children.gender", "female", "children.grade <", 6) //
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0)
+                    .join(Set.of("parents", "children"));
+
+            var result = db.find(coll, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0)).containsEntry("_partition", "Families");
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Thomas"))).isTrue();
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Mary Kay"))).isTrue();
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("gender").toString().equals("female"))).isTrue();
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
+        }
+        // aggregate query with join
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("lastName");
+            var cond = new Condition();
+            cond = Condition.filter( "children.gender", "female", "children.grade <", 6) //
+                    .sort("lastName", "ASC") //
+                    .limit(10) //
+                    .offset(0)
+                    .join(Set.of("parents", "children"));
+            // test find
+            var result = db.aggregate(coll, aggregate, cond,"Families").toMap();
+            assertThat(result).hasSize(2);
+            assertThat(result.get(0).getOrDefault("lastName", "")).isEqualTo("");
+            assertThat(result.get(1).getOrDefault("lastName", "")).isEqualTo("Andersen");
+            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+
+        }
+
+        //Or query with join
+        {
+            var cond = Condition.filter(SubConditionType.OR, List.of( //
+                            Condition.filter("parents.firstName", "Thomas"), //
+                            Condition.filter("id", "WakefieldFamily"))) //
+                    .sort("id", "ASC")//
+                    .join(Set.of("parents", "children"))//
+                    ;
+
+            var result = db.find(coll, cond, "Families").toMap();
+            assertThat(result).hasSize(2);
+            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
+            assertThat(result.get(1).get("creationDate")).hasToString("1431620462");
+
+        }
+
+        //AND query with join
+        {
+            var cond = Condition.filter(SubConditionType.AND, List.of( //
+                            Condition.filter("parents.familyName", "Wakefield"), //
+                            Condition.filter("isRegistered", false))) //
+                    .sort("id", "ASC")//
+                    .join(Set.of("parents"))//
+                    ;
+
+            var result = db.find(coll, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
+        }
+
+        // NOT query with join
+
+        {
+            var cond=Condition
+                                    .filter("$NOT", Map.of("address.state","WA"),"$NOT 2", Map.of("parents.familyName","Thomas1"))
+                                    .sort("id", "ASC")
+                                    .join(Set.of("parents"));
+
+            var items = db.find(coll, cond, "Families").toMap();
+
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
+        }
+
+        var user=new User("joinTestArrayContainId", "firstNameJoin", "lostNameJoin");
+        var userMap=JsonUtil.toMap(user);
+        userMap.put("rooms",List.of(Map.of("no",List.of(1,2,3)),Map.of("no",List.of(1,2,4))));
+        db.upsert(coll, userMap,"Users").toObject(User.class);
+
+        {
+            var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", 2) //
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0)
+                    .join(Set.of("rooms"));
+
+            // test find
+            var items = db.find(coll, cond, "Users").toMap();
+
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
+
+            db.delete(coll, "joinTestArrayContainId","Users");
+        }
+
+    }
+
 	@Test
 	void raw_query_spec_should_work() throws Exception {
 		// test json from cosmosdb official site

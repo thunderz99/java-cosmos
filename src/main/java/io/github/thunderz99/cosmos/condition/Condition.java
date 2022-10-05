@@ -47,6 +47,8 @@ public class Condition {
 
     public Map<String, Object> filter = new LinkedHashMap<>();
 
+    public Set<String> join = new LinkedHashSet<>();
+
     public List<String> sort = List.of();
 
     public Set<String> fields = new LinkedHashSet<>();
@@ -200,6 +202,17 @@ public class Condition {
 		this.limit = limit;
 		return this;
 	}
+
+    /**
+     * set the join
+     *
+     * @param join join set
+     * @return condition
+     */
+    public Condition join(Set<String> join) {
+        this.join = join;
+        return this;
+    }
 
 	/**
 	 * set whether is cross-partition query
@@ -381,11 +394,13 @@ public class Condition {
                 // recursively generate the filterQuery with negative flag true
                 var filterQueryWithNot = subQueryWithNot.generateFilterQuery("", params, conditionIndex, paramIndex);
                 subFilterQueryToAdd = " " + removeConnectPart(filterQueryWithNot.queryText.toString());
+                subFilterQueryToAdd=toJoinQueryText( subFilterQueryToAdd,  subFilterQueryToAdd,  paramIndex);
             } else {
                 // normal expression
                 var exp = parse(entry.getKey(), entry.getValue());
                 var expQuerySpec = exp.toQuerySpec(paramIndex);
                 subFilterQueryToAdd = expQuerySpec.getQueryText();
+                subFilterQueryToAdd = toJoinQueryText(entry.getKey(), subFilterQueryToAdd,paramIndex);
                 params.addAll(expQuerySpec.getParameters());
             }
 
@@ -408,6 +423,20 @@ public class Condition {
 
 		return new FilterQuery(queryText, params, conditionIndex, paramIndex);
 	}
+
+    private String toJoinQueryText(String key, String subFilterQueryToAdd, AtomicInteger paramIndex) {
+        for (String joinPart : this.join) {
+            if(key.contains(joinPart) ||subFilterQueryToAdd.contains(getFormattedKey(joinPart))){
+                var newAlias="j"+paramIndex;
+                var newParam=subFilterQueryToAdd.replace(getFormattedKey(joinPart),newAlias);
+                var mainPart="c."+joinPart;
+                subFilterQueryToAdd=String.format(" EXISTS( SELECT VALUE %s FROM %s IN %s WHERE %s)",newAlias,newAlias,mainPart,newParam);
+                break;
+            }
+        }
+
+        return subFilterQueryToAdd;
+    }
 
 	/**
 	 * add negative NOT operator for queryText, if not empty
@@ -481,7 +510,8 @@ public class Condition {
             var subFilterQuery = subCond.generateFilterQuery("", params, conditionIndex,
                     paramIndex);
 
-            subTexts.add(removeConnectPart(subFilterQuery.queryText.toString()));
+            var originSubText=removeConnectPart(subFilterQuery.queryText.toString());
+            subTexts.add(toJoinQueryText( originSubText,  originSubText,  paramIndex));
 
             params = subFilterQuery.params;
             conditionIndex = subFilterQuery.conditionIndex;
