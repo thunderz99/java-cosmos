@@ -49,6 +49,9 @@ public class Condition {
 
     public Set<String> join = new LinkedHashSet<>();
 
+    public Map<String,List<String>> joinCondText =new HashMap<>();
+
+    public boolean isReturnAllSubArray = true;
     public List<String> sort = List.of();
 
     public Set<String> fields = new LinkedHashSet<>();
@@ -211,6 +214,17 @@ public class Condition {
      */
     public Condition join(Set<String> join) {
         this.join = join;
+        return this;
+    }
+
+    /**
+     * If it is true, return all the result in the sub array.
+     *
+     * @param isReturnAllSubArray default value is true
+     * @return condition
+     */
+    public Condition isReturnAllSubArray(boolean isReturnAllSubArray) {
+        this.isReturnAllSubArray = isReturnAllSubArray;
         return this;
     }
 
@@ -394,12 +408,14 @@ public class Condition {
                 // recursively generate the filterQuery with negative flag true
                 var filterQueryWithNot = subQueryWithNot.generateFilterQuery("", params, conditionIndex, paramIndex);
                 subFilterQueryToAdd = " " + removeConnectPart(filterQueryWithNot.queryText.toString());
+                saveOriginJoinCondition(subFilterQueryToAdd);
                 subFilterQueryToAdd=toJoinQueryText( subFilterQueryToAdd,  subFilterQueryToAdd,  paramIndex);
             } else {
                 // normal expression
                 var exp = parse(entry.getKey(), entry.getValue());
                 var expQuerySpec = exp.toQuerySpec(paramIndex);
                 subFilterQueryToAdd = expQuerySpec.getQueryText();
+                saveOriginJoinCondition(subFilterQueryToAdd);
                 subFilterQueryToAdd = toJoinQueryText(entry.getKey(), subFilterQueryToAdd,paramIndex);
                 params.addAll(expQuerySpec.getParameters());
             }
@@ -436,6 +452,18 @@ public class Condition {
         }
 
         return subFilterQueryToAdd;
+    }
+
+    private void saveOriginJoinCondition(String originJoinConditionText){
+        for (String joinPart : this.join) {
+            if(originJoinConditionText.contains(getFormattedKey(joinPart))){
+                var joinCondTextList= joinCondText.getOrDefault(joinPart,new ArrayList<>());
+                joinCondTextList.add(originJoinConditionText);
+                joinCondText.put(joinPart,joinCondTextList);
+
+                break;
+            }
+        }
     }
 
 	/**
@@ -505,6 +533,7 @@ public class Condition {
      */
     String generateFilterQuery4List(List<Condition> conds, String joiner, SqlParameterCollection params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
         List<String> subTexts = new ArrayList<>();
+        List<String> originSubTests= new ArrayList<>();
 
         for (var subCond : conds) {
             var subFilterQuery = subCond.generateFilterQuery("", params, conditionIndex,
@@ -512,7 +541,7 @@ public class Condition {
 
             var originSubText=removeConnectPart(subFilterQuery.queryText.toString());
             subTexts.add(toJoinQueryText( originSubText,  originSubText,  paramIndex));
-
+            originSubTests.add(originSubText);
             params = subFilterQuery.params;
             conditionIndex = subFilterQuery.conditionIndex;
             paramIndex = subFilterQuery.paramIndex;
@@ -520,6 +549,12 @@ public class Condition {
 
         var subFilterQuery = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
                 .collect(Collectors.joining(" " + joiner + " ", " (", ")"));
+
+        var originSubFilterQuery = originSubTests.stream().filter(t -> StringUtils.isNotBlank(t))
+                .collect(Collectors.joining(" " + joiner + " ", " (", ")"));
+
+        saveOriginJoinCondition(StringUtils.removeStart(originSubFilterQuery, " ()"));
+
         // remove empty sub queries
         return StringUtils.removeStart(subFilterQuery, " ()");
     }
@@ -752,7 +787,7 @@ public class Condition {
      * @param key filter's key
      * @return formatted filter's key c["key1"]["key2"]
      */
-    static String getFormattedKey(String key) {
+    public static String getFormattedKey(String key) {
         return getFormattedKey(key, "c");
     }
 
