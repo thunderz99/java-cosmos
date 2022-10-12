@@ -1,9 +1,5 @@
 package io.github.thunderz99.cosmos;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.stream.Collectors;
-
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.models.CosmosPatchOperations;
 import com.google.common.base.Preconditions;
@@ -21,11 +17,16 @@ import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.*;
+import java.util.stream.Collectors;
+
+import static io.github.thunderz99.cosmos.condition.Condition.getFormattedKey;
+
 /**
  * Class representing a database instance.
  *
  * <p>
- *     Can do document' CRUD and find.
+ * Can do document' CRUD and find.
  * </p>
  */
 public class CosmosDatabase {
@@ -76,123 +77,128 @@ public class CosmosDatabase {
 
         checkValidId(objectMap);
 
-		var resource = RetryUtil.executeWithRetry( () -> client.createDocument(
+        var resource = RetryUtil.executeWithRetry(() -> client.createDocument(
                 collectionLink,
                 objectMap,
                 requestOptions(partition),
                 false
-		).getResource());
+        ).getResource());
 
-		log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, resource.getId(), partition, getAccount());
+        log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, resource.getId(), partition, getAccount());
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
-	}
+        return new CosmosDocument(resource.toObject(JSONObject.class));
+    }
 
-	/**
-	 * Id cannot contain "\t", "\r", "\n", or cosmosdb will create invalid data.
-	 * @param objectMap
-	 */
-	static void checkValidId(Map<String, Object> objectMap) {
-		if(objectMap == null){
-			return;
-		}
-		var id = objectMap.getOrDefault("id", "").toString();
-		checkValidId(id);
-	}
+    /**
+     * Id cannot contain "\t", "\r", "\n", or cosmosdb will create invalid data.
+     *
+     * @param objectMap
+     */
+    static void checkValidId(Map<String, Object> objectMap) {
+        if (objectMap == null) {
+            return;
+        }
+        var id = objectMap.getOrDefault("id", "").toString();
+        checkValidId(id);
+    }
 
-	static void checkValidId(String id) {
-		if(StringUtils.containsAny(id, "\t", "\n", "\r")){
-			throw new IllegalArgumentException("id cannot contain \\t or \\n or \\r. id:" + id);
-		}
-	}
+    static void checkValidId(String id) {
+        if (StringUtils.containsAny(id, "\t", "\n", "\r")) {
+            throw new IllegalArgumentException("id cannot contain \\t or \\n or \\r. id:" + id);
+        }
+    }
 
-	/**
-	 * Create a document using default partition
-	 * @param coll collection name
-	 * @param data data Object
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument create(String coll, Object data) throws Exception {
-		return create(coll, data, coll);
-	}
+    /**
+     * Create a document using default partition
+     *
+     * @param coll collection name
+     * @param data data Object
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocument create(String coll, Object data) throws Exception {
+        return create(coll, data, coll);
+    }
 
 
-	/**
-	 *
-	 * @param coll collection name
-	 * @param id id of the document
-	 * @param partition partition name
-	 * @return CosmosDocument instance
-	 * @throws Exception Throw 404 Not Found Exception if object not exist
-	 */
-	public CosmosDocument read(String coll, String id, String partition) throws Exception {
+    /**
+     * @param coll      collection name
+     * @param id        id of the document
+     * @param partition partition name
+     * @return CosmosDocument instance
+     * @throws Exception Throw 404 Not Found Exception if object not exist
+     */
+    public CosmosDocument read(String coll, String id, String partition) throws Exception {
 
-		Checker.checkNotBlank(id, "id");
-		Checker.checkNotBlank(coll, "coll");
-		Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotBlank(id, "id");
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
 
-		var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
-		var resource = RetryUtil.executeWithRetry( () -> client.readDocument(documentLink, requestOptions(partition)).getResource());
+        var resource = RetryUtil.executeWithRetry(() -> client.readDocument(documentLink, requestOptions(partition)).getResource());
 
-		log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-		return new CosmosDocument(resource.toObject(JSONObject.class));
-	}
+        return new CosmosDocument(resource.toObject(JSONObject.class));
+    }
 
-	/**
-	 * Read a document by coll and id
-	 * @param coll collection name
-	 * @param id id of document
-	 * @return CosmosDocument instance
-	 * @throws Exception Throw 404 Not Found Exception if object not exist
-	 */
-	public CosmosDocument read(String coll, String id) throws Exception {
-		return read(coll, id, coll);
-	}
+    /**
+     * Read a document by coll and id
+     *
+     * @param coll collection name
+     * @param id   id of document
+     * @return CosmosDocument instance
+     * @throws Exception Throw 404 Not Found Exception if object not exist
+     */
+    public CosmosDocument read(String coll, String id) throws Exception {
+        return read(coll, id, coll);
+    }
 
-	/**
-	 * Read a document by coll and id. Return null if object not exist
-	 * @param coll collection name
-	 * @param id id of document
-	 * @param partition partition name
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument readSuppressing404(String coll, String id, String partition) throws Exception {
+    /**
+     * Read a document by coll and id. Return null if object not exist
+     *
+     * @param coll      collection name
+     * @param id        id of document
+     * @param partition partition name
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocument readSuppressing404(String coll, String id, String partition) throws Exception {
 
-		try {
-			return read(coll, id, partition);
-		} catch (Exception e) {
-			if (Cosmos.isResourceNotFoundException(e)) {
-				return null;
-			}
-			throw e;
-		}
-	}
+        try {
+            return read(coll, id, partition);
+        } catch (Exception e) {
+            if (Cosmos.isResourceNotFoundException(e)) {
+                return null;
+            }
+            throw e;
+        }
+    }
 
-	/**
-	 * Read a document by coll and id. Return null if object not exist
-	 * @param coll collection name
-	 * @param id id of document
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument readSuppressing404(String coll, String id) throws Exception {
+    /**
+     * Read a document by coll and id. Return null if object not exist
+     *
+     * @param coll collection name
+     * @param id   id of document
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocument readSuppressing404(String coll, String id) throws Exception {
 
-		return readSuppressing404(coll, id, coll);
-	}
+        return readSuppressing404(coll, id, coll);
+    }
 
-	/**
-	 * Update existing data. if not exist, throw Not Found Exception.
-	 * @param coll collection name
-	 * @param data data object
-	 * @param partition partition name
-	 * @return CosmosDocument instance
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocument update(String coll, Object data, String partition) throws Exception {
+    /**
+     * Update existing data. if not exist, throw Not Found Exception.
+     *
+     * @param coll      collection name
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosDocument instance
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocument update(String coll, Object data, String partition) throws Exception {
 
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
@@ -426,7 +432,7 @@ public class CosmosDatabase {
      * @throws Exception Cosmos client exception
      */
     public CosmosDocument upsert(String coll, Object data, String partition) throws Exception {
-        
+
         var map = JsonUtil.toMap(data);
         var id = map.getOrDefault("id", "").toString();
 
@@ -548,215 +554,325 @@ public class CosmosDatabase {
 
     }
 
-	/**
-	 * Delete a document by selfLink. Do nothing if object not exist
-	 * @param selfLink selfLink of a document
-	 * @param partition partition name
-	 * @return CosmosDatabase instance
-	 * @throws Exception Cosmos client exception
-	 */
+    /**
+     * Delete a document by selfLink. Do nothing if object not exist
+     *
+     * @param selfLink  selfLink of a document
+     * @param partition partition name
+     * @return CosmosDatabase instance
+     * @throws Exception Cosmos client exception
+     */
 
-	public CosmosDatabase deleteBySelfLink(String selfLink, String partition) throws Exception {
+    public CosmosDatabase deleteBySelfLink(String selfLink, String partition) throws Exception {
 
-		Checker.checkNotBlank(selfLink, "selfLink");
-		Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotBlank(selfLink, "selfLink");
+        Checker.checkNotBlank(partition, "partition");
 
-		try {
-			RetryUtil.executeWithRetry( () -> client.deleteDocument(selfLink, requestOptions(partition)).getResource());
-			log.info("deleted Document:{}, partition:{}, account:{}", selfLink, partition, getAccount());
+        try {
+            RetryUtil.executeWithRetry(() -> client.deleteDocument(selfLink, requestOptions(partition)).getResource());
+            log.info("deleted Document:{}, partition:{}, account:{}", selfLink, partition, getAccount());
 
-		} catch (Exception e) {
-			if (Cosmos.isResourceNotFoundException(e)) {
-				log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", selfLink, partition, getAccount());
-				return this;
-			}
-			throw e;
-		}
-		return this;
+        } catch (Exception e) {
+            if (Cosmos.isResourceNotFoundException(e)) {
+                log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", selfLink, partition, getAccount());
+                return this;
+            }
+            throw e;
+        }
+        return this;
 
-	}
+    }
 
-	/**
-	 * find data by condition
-	 *
-	 * {@code
-	 *  var cond = Condition.filter(
-	 *    "id>=", "id010", // id greater or equal to 'id010'
-	 *    "lastName", "Banks" // last name equal to Banks
-	 *  )
-	 *  .order("lastName", "ASC") //optional order
-	 *  .offset(0) //optional offset
-	 *  .limit(100); //optional limit
-	 *
-	 *  var users = db.find("Collection1", cond, "Users").toList(User.class);
-	 *
-	 * }
-	 *
-	 * @param coll collection name
-	 * @param cond condition to find
-	 * @param partition partition name
-	 * @throws Exception Cosmos client exception
-	 * @return CosmosDocumentList
-	 */
+    /**
+     * find data by condition
+     * <p>
+     * {@code
+     * var cond = Condition.filter(
+     * "id>=", "id010", // id greater or equal to 'id010'
+     * "lastName", "Banks" // last name equal to Banks
+     * )
+     * .order("lastName", "ASC") //optional order
+     * .offset(0) //optional offset
+     * .limit(100); //optional limit
+     * <p>
+     * var users = db.find("Collection1", cond, "Users").toList(User.class);
+     * <p>
+     * }
+     *
+     * @param coll      collection name
+     * @param cond      condition to find
+     * @param partition partition name
+     * @return CosmosDocumentList
+     * @throws Exception Cosmos client exception
+     */
 
-	public CosmosDocumentList find(String coll, Condition cond, String partition) throws Exception {
-		// do a find without aggregate
-		return find(coll, null, cond, partition);
+    public CosmosDocumentList find(String coll, Condition cond, String partition) throws Exception {
+        // do a find without aggregate
+        return find(coll, null, cond, partition);
 
-	}
+    }
 
-	/**
-	 * A helper method to do find/aggregate by condition
-	 *
-	 * @param coll      collection name
-	 * @param aggregate aggregate settings. null if no aggration needed.
-	 * @param cond      condition to find
-	 * @param partition partition name
-	 * @return CosmosDocumentList
-	 * @throws Exception Cosmos client exception
-	 */
-	CosmosDocumentList find(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
+    /**
+     * A helper method to do find/aggregate by condition
+     *
+     * @param coll      collection name
+     * @param aggregate aggregate settings. null if no aggration needed.
+     * @param cond      condition to find
+     * @param partition partition name
+     * @return CosmosDocumentList
+     * @throws Exception Cosmos client exception
+     */
+    CosmosDocumentList find(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
 
-		var collectionLink = Cosmos.getCollectionLink(db, coll);
+        var collectionLink = Cosmos.getCollectionLink(db, coll);
+        List<JSONObject> jsonObjs;
 
-		var feedOptions = new FeedOptions();
-		if (cond.crossPartition) {
-			feedOptions.setEnableCrossPartitionQuery(true);
-		} else {
-			feedOptions.setPartitionKey(new PartitionKey(partition));
-		}
+        var feedOptions = new FeedOptions();
+        if (cond.crossPartition) {
+            feedOptions.setEnableCrossPartitionQuery(true);
+        } else {
+            feedOptions.setPartitionKey(new PartitionKey(partition));
+        }
 
-		var querySpec = cond.toQuerySpec(aggregate);
+        var querySpec = cond.toQuerySpec(aggregate);
 
-		var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec, feedOptions).getQueryIterable().toList());
+        if (Objects.isNull(aggregate) && !cond.joinCondText.isEmpty() && !cond.isReturnAllSubArray) {
+            jsonObjs = mergeSubArrayToDoc(cond, collectionLink, querySpec, feedOptions);
+        } else {
+            var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec, feedOptions).getQueryIterable().toList());
+            jsonObjs = docs.stream().map(it -> it.toObject(JSONObject.class)).collect(Collectors.toList());
+        }
 
-		if (log.isInfoEnabled()) {
-			log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
-		}
+        if (log.isInfoEnabled()) {
+            log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
+        }
 
-		var jsonObjs = docs.stream().map(it -> it.toObject(JSONObject.class)).collect(Collectors.toList());
+        return new CosmosDocumentList(jsonObjs);
 
-		return new CosmosDocumentList(jsonObjs);
+    }
 
-	}
+    /**
+     * Merge the sub array to origin array
+     * This function will traverse the result of join part and replaced by new result that is found by sub query.
+     *
+     * @param cond           merge the content of the sub array to origin array
+     * @param collectionLink collection link
+     * @param querySpec      querySpec
+     * @param feedOptions    feed Options
+     * @return docs list
+     * @throws Exception error exception
+     */
+    private List<JSONObject> mergeSubArrayToDoc(Condition cond, String collectionLink, SqlQuerySpec querySpec, FeedOptions feedOptions) throws Exception {
 
-	/**
-	 * find data by condition (partition is default to the same name as the coll or ignored when crossPartition is true)
-	 * <p>
-	 * {@code
-	 * var cond = Condition.filter(
-	 * "id>=", "id010", // id greater or equal to 'id010'
-	 * "lastName", "Banks" // last name equal to Banks
-	 * )
-	 * .order("lastName", "ASC") //optional order
-	 * .offset(0) //optional offset
-	 * .limit(100); //optional limit
-	 * <p>
-	 * var users = db.find("Collection1", cond).toList(User.class);
-	 * <p>
-	 * }
-	 *
-	 * @param coll collection name
-	 * @param cond condition to find
-	 * @return CosmosDocumentList
-	 * @throws Exception Cosmos client exception
-	 */
+        Map<String, String[]> keyMap = new LinkedHashMap<>();
 
-	public CosmosDocumentList find(String coll, Condition cond) throws Exception {
-		return find(coll, cond, coll);
-	}
+        var queryText = initJoinSelectPart(cond, querySpec, keyMap);
+        var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, new SqlQuerySpec(queryText, querySpec.getParameters()), feedOptions).getQueryIterable().toList());
+        var result = mergeArrayValueToDoc(docs, keyMap);
+
+        return result.isEmpty() ? docs.stream().map(it -> it.toObject(JSONObject.class)).collect(Collectors.toList()) : result;
+    }
+
+    /**
+     * This function will traverse the result of join part and replaced by new result that is found by sub query.
+     *
+     * @param docs   docs
+     * @param keyMap join part map
+     * @return the merged sub array
+     */
+    private List<JSONObject> mergeArrayValueToDoc(List<Document> docs, Map<String, String[]> keyMap) {
+        List<JSONObject> result = new ArrayList<>();
+
+        for (Document doc : docs) {
+            var docMain = JsonUtil.toMap(doc.getHashMap().get("c"));
+
+            for (Map.Entry<String, String[]> entry : keyMap.entrySet()) {
+                if (Objects.nonNull(doc.getHashMap().get(entry.getKey()))) {
+                    Map<String, Object> docSubListItem = Map.of(entry.getKey(), doc.getHashMap().get(entry.getKey()));
+                    traverseListValueToDoc(docMain, docSubListItem, entry, 0);
+                }
+            }
+            result.add(new JSONObject(docMain));
+        }
+
+        return result;
+    }
+
+    /**
+     * Init the select part of join
+     *
+     * @param cond      condition
+     * @param querySpec query spec
+     * @param keyMap    join part map
+     * @return select part
+     */
+    private String initJoinSelectPart(Condition cond, SqlQuerySpec querySpec, Map<String, String[]> keyMap) {
+        StringBuilder queryText = new StringBuilder();
+
+        var originSelectPart = querySpec.getQueryText().substring(0, querySpec.getQueryText().indexOf("WHERE"));
+        queryText.append(String.format("SELECT DISTINCT (%s) c", originSelectPart));
+
+        int count = 0;
+
+        for (Map.Entry<String, List<String>> condText : cond.joinCondText.entrySet()) {
+            var condList = condText.getValue();
+            var joinPart = condText.getKey();
+            var aliasName = "s" + count++;
+            var condStr = condList.stream().map(item -> item.replace(getFormattedKey(joinPart), "s")).collect(Collectors.joining(" AND "));
+
+            keyMap.put(aliasName, condText.getKey().split("\\."));
+            queryText.append(String.format(", ARRAY(SELECT VALUE s FROM s IN %s WHERE %s) %s", getFormattedKey(condText.getKey()), condStr, aliasName));
+        }
+
+        int startIndex = querySpec.getQueryText().indexOf("FROM c");
+        queryText.append(querySpec.getQueryText().substring(startIndex - 1));
+
+        return queryText.toString();
+    }
+
+    /**
+     * Traverse and merge the content of the list to origin list
+     * This function will traverse the result of join part and replaced by new result that is found by sub query.
+     *
+     * @param docMap    the map of doc
+     * @param newSubMap new sub map
+     * @param entry     entry
+     * @param count     count
+     */
+    private void traverseListValueToDoc(Map<String, Object> docMap, Map<String, Object> newSubMap, Map.Entry<String, String[]> entry, int count) {
+
+        var aliasName = entry.getKey();
+        var subValue = entry.getValue();
+
+        if (count == subValue.length - 1) {
+            if (newSubMap.get(aliasName) instanceof List) {
+                docMap.put(subValue[entry.getValue().length - 1], newSubMap.get(aliasName));
+            }
+            return;
+        }
+
+        if (docMap.get(subValue[count]) instanceof Map) {
+            traverseListValueToDoc((Map) docMap.get(subValue[count++]), newSubMap, entry, count);
+        }
+    }
+
+    /**
+     * find data by condition (partition is default to the same name as the coll or ignored when crossPartition is true)
+     * <p>
+     * {@code
+     * var cond = Condition.filter(
+     * "id>=", "id010", // id greater or equal to 'id010'
+     * "lastName", "Banks" // last name equal to Banks
+     * )
+     * .order("lastName", "ASC") //optional order
+     * .offset(0) //optional offset
+     * .limit(100); //optional limit
+     * <p>
+     * var users = db.find("Collection1", cond).toList(User.class);
+     * <p>
+     * }
+     *
+     * @param coll collection name
+     * @param cond condition to find
+     * @return CosmosDocumentList
+     * @throws Exception Cosmos client exception
+     */
+
+    public CosmosDocumentList find(String coll, Condition cond) throws Exception {
+        return find(coll, cond, coll);
+    }
 
 
-	/**
-	 * do an aggregate query by Aggregate and Condition
-	 *
-	 * {@code
-	 *
-	 *  var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
-	 *  var result = db.aggregate("Collection1", aggregate, "Users").toMap();
-	 *
-	 * }
-	 *
-	 * @param coll collection name
-	 * @param aggregate Aggregate function and groupBys
-	 * @param partition partition name
-	 * @throws Exception Cosmos client exception
-	 * @return CosmosDocumentList
-	 */
-	public CosmosDocumentList aggregate(String coll, Aggregate aggregate, String partition) throws Exception {
-		return aggregate(coll, aggregate, Condition.filter(), partition);
-	}
+    /**
+     * do an aggregate query by Aggregate and Condition
+     * <p>
+     * {@code
+     * <p>
+     * var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
+     * var result = db.aggregate("Collection1", aggregate, "Users").toMap();
+     * <p>
+     * }
+     *
+     * @param coll      collection name
+     * @param aggregate Aggregate function and groupBys
+     * @param partition partition name
+     * @return CosmosDocumentList
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocumentList aggregate(String coll, Aggregate aggregate, String partition) throws Exception {
+        return aggregate(coll, aggregate, Condition.filter(), partition);
+    }
 
-	/**
-	 * do an aggregate query by Aggregate and Condition
-	 *
-	 * {@code
-	 *
-	 *  var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
-	 *  var cond = Condition.filter(
-	 *    "age>=", "20",
-	 *  );
-	 *
-	 *  var result = db.aggregate("Collection1", aggregate, cond, "Users").toMap();
-	 *
-	 * }
-	 *
-	 * @param coll collection name
-	 * @param aggregate Aggregate function and groupBys
-	 * @param cond condition to find
-	 * @param partition partition name
-	 * @throws Exception Cosmos client exception
-	 * @return CosmosDocumentList
-	 */
-	public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
-		return find(coll, aggregate, cond, partition);
-	}
+    /**
+     * do an aggregate query by Aggregate and Condition
+     * <p>
+     * {@code
+     * <p>
+     * var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
+     * var cond = Condition.filter(
+     * "age>=", "20",
+     * );
+     * <p>
+     * var result = db.aggregate("Collection1", aggregate, cond, "Users").toMap();
+     * <p>
+     * }
+     *
+     * @param coll      collection name
+     * @param aggregate Aggregate function and groupBys
+     * @param cond      condition to find
+     * @param partition partition name
+     * @return CosmosDocumentList
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
+        return find(coll, aggregate, cond, partition);
+    }
 
-	/**
-	 * do an aggregate query by Aggregate and Condition (partition default to the same as coll or ignored when crossPartition is true)
-	 * <p>
-	 * {@code
-	 * <p>
-	 * var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
-	 * var cond = Condition.filter(
-	 * "age>=", "20",
-	 * );
-	 * <p>
-	 * var result = db.aggregate("Collection1", aggregate, cond).toMap();
-	 * <p>
-	 * }
-	 *
-	 * @param coll      collection name
-	 * @param aggregate Aggregate function and groupBys
-	 * @param cond      condition to find
-	 * @return CosmosDocumentList
-	 * @throws Exception Cosmos client exception
-	 */
-	public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond) throws Exception {
-		return find(coll, aggregate, cond, coll);
-	}
+    /**
+     * do an aggregate query by Aggregate and Condition (partition default to the same as coll or ignored when crossPartition is true)
+     * <p>
+     * {@code
+     * <p>
+     * var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
+     * var cond = Condition.filter(
+     * "age>=", "20",
+     * );
+     * <p>
+     * var result = db.aggregate("Collection1", aggregate, cond).toMap();
+     * <p>
+     * }
+     *
+     * @param coll      collection name
+     * @param aggregate Aggregate function and groupBys
+     * @param cond      condition to find
+     * @return CosmosDocumentList
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond) throws Exception {
+        return find(coll, aggregate, cond, coll);
+    }
 
-	/**
-	 * count data by condition
-	 *
-	 * {@code
-	 *  var cond = Condition.filter(
-	 *    "id>=", "id010", // id greater or equal to 'id010'
-	 *    "lastName", "Banks" // last name equal to Banks
-	 *  );
-	 *
-	 *  var count = db.count("Collection1", cond, "Users");
-	 *
-	 * }
-	 *
-	 * @param coll collection name
-	 * @param cond condition to find
-	 * @param partition partition name
-	 * @throws Exception Cosmos client exception
-	 * @return count of documents
-	 */
+    /**
+     * count data by condition
+     * <p>
+     * {@code
+     * var cond = Condition.filter(
+     * "id>=", "id010", // id greater or equal to 'id010'
+     * "lastName", "Banks" // last name equal to Banks
+     * );
+     * <p>
+     * var count = db.count("Collection1", cond, "Users");
+     * <p>
+     * }
+     *
+     * @param coll      collection name
+     * @param cond      condition to find
+     * @param partition partition name
+     * @return count of documents
+     * @throws Exception Cosmos client exception
+     */
 
-	public int count(String coll, Condition cond, String partition) throws Exception {
+    public int count(String coll, Condition cond, String partition) throws Exception {
 
         var collectionLink = Cosmos.getCollectionLink(db, coll);
 

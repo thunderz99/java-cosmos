@@ -359,6 +359,7 @@ The main difference between Partial update and Patch is that:
     )
     .fields("id", "lastName", "age", "organization.name") // select certain fields
     .join("parents") // the part which you want  to join
+    .isReturnAllSubArray(false) // If select false, the result will filter the sub array which is not matched join condition. Default value is true.
     .sort("lastName", "ASC") //optional sort
     .offset(0) //optional offset
     .limit(100); //optional limit

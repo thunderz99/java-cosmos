@@ -572,16 +572,43 @@ class CosmosDatabaseTest {
         // query with join
         {
             var cond = new Condition();
+            cond = Condition.filter("area.city.street.rooms.no", "001") //
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0)
+                    .join(Set.of("area.city.street.rooms"))
+                    .isReturnAllSubArray(false);
+
+            var result = db.find(coll, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            var rooms=JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
+            assertThat(rooms).hasSize(1);
+            assertThat(rooms.get(0)).containsEntry("no","001");
+
+            cond = Condition.filter("area.city.street.rooms.no", "001") //
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0)
+                    .join(Set.of("area.city.street.rooms"));
+
+            result = db.find(coll, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            rooms=JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
+            assertThat(rooms).hasSize(2);
+            assertThat(rooms.get(0)).containsEntry("no","001");
+            assertThat(rooms.get(1)).containsEntry("no","002");
+
             cond = Condition.filter("parents.firstName", "Thomas", "parents.firstName", "Mary Kay", "children.gender", "female", "children.grade <", 6) //
                     .sort("id", "ASC") //
                     .limit(10) //
                     .offset(0)
-                    .join(Set.of("parents", "children"));
+                    .join(Set.of("parents", "children"))
+                    .isReturnAllSubArray(false);
 
-            var result = db.find(coll, cond, "Families").toMap();
+            result = db.find(coll, cond, "Families").toMap();
             assertThat(result).hasSize(1);
             assertThat(result.get(0)).containsEntry("_partition", "Families");
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Thomas"))).isTrue();
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Mary Kay"))).isTrue();
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("gender").toString().equals("female"))).isTrue();
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
@@ -602,7 +629,6 @@ class CosmosDatabaseTest {
             assertThat(result.get(1).getOrDefault("lastName", "")).isEqualTo("Andersen");
             assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
             assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
-
         }
 
         //Or query with join
@@ -611,14 +637,15 @@ class CosmosDatabaseTest {
                             Condition.filter("parents.firstName", "Thomas"), //
                             Condition.filter("id", "WakefieldFamily"))) //
                     .sort("id", "ASC")//
-                    .join(Set.of("parents", "children"))//
-                    ;
+                    .join(Set.of("parents", "children"))
+                    .isReturnAllSubArray(false);
 
             var result = db.find(coll, cond, "Families").toMap();
             assertThat(result).hasSize(2);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName","Thomas");
             assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
             assertThat(result.get(1).get("creationDate")).hasToString("1431620462");
-
         }
 
         //AND query with join
@@ -627,25 +654,29 @@ class CosmosDatabaseTest {
                             Condition.filter("parents.familyName", "Wakefield"), //
                             Condition.filter("isRegistered", false))) //
                     .sort("id", "ASC")//
-                    .join(Set.of("parents"))//
-                    ;
+                    .join(Set.of("parents"))
+                    .isReturnAllSubArray(false);
 
             var result = db.find(coll, cond, "Families").toMap();
             assertThat(result).hasSize(1);
             assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("familyName","Wakefield");
         }
 
         // NOT query with join
-
         {
             var cond=Condition
-                                    .filter("$NOT", Map.of("address.state","WA"),"$NOT 2", Map.of("parents.familyName","Thomas1"))
+                                    .filter("$NOT", Map.of("address.state","WA"),"$NOT 2", Map.of("parents.familyName","Wakefield"))
                                     .sort("id", "ASC")
-                                    .join(Set.of("parents"));
+                                    .join(Set.of("parents"))
+                                    .isReturnAllSubArray(false);
 
             var items = db.find(coll, cond, "Families").toMap();
 
             assertThat(items).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("parents")))).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("parents"))).get(0)).containsEntry("familyName","Miller");
             assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
         }
 
@@ -654,17 +685,21 @@ class CosmosDatabaseTest {
         userMap.put("rooms",List.of(Map.of("no",List.of(1,2,3)),Map.of("no",List.of(1,2,4))));
         db.upsert(coll, userMap,"Users").toObject(User.class);
 
+        // ARRAY_CONTAINS query with join
         {
-            var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", 2) //
+            var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", 3) //
                     .sort("id", "ASC") //
                     .limit(10) //
                     .offset(0)
-                    .join(Set.of("rooms"));
+                    .join(Set.of("rooms"))
+                    .isReturnAllSubArray(false);
 
             // test find
             var items = db.find(coll, cond, "Users").toMap();
 
             assertThat(items).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asList().contains(3);
             assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
 
             db.delete(coll, "joinTestArrayContainId","Users");
