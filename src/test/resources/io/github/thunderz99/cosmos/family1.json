@@ -13,6 +13,10 @@
          "pets": [{ "givenName": "Fluffy" }]
      }
   ],
+  "room*no-01": [
+    { "area": 10 },
+    { "area": 12}
+  ],
   "address": { "state": "WA", "county": "King", "city": "Seattle" },
   "creationDate": 1431620472,
   "isRegistered": true,

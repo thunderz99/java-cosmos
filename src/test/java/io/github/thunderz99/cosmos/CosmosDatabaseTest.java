@@ -572,11 +572,11 @@ class CosmosDatabaseTest {
         // query with join
         {
             var cond = new Condition();
-            cond = Condition.filter("parents.firstName", "Thomas", "parents.firstName", "Mary Kay", "children.gender", "female", "children.grade <", 6) //
+            cond = Condition.filter("parents.firstName", "Thomas", "parents.firstName", "Mary Kay", "children.gender", "female", "children.grade <", 6,"room*no-01.area",10) //
                     .sort("id", "ASC") //
                     .limit(10) //
                     .offset(0)
-                    .join(Set.of("parents", "children"));
+                    .join(Set.of("parents", "children","room*no-01"));
 
             var result = db.find(coll, cond, "Families").toMap();
             assertThat(result).hasSize(1);
@@ -585,6 +585,7 @@ class CosmosDatabaseTest {
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Mary Kay"))).isTrue();
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("gender").toString().equals("female"))).isTrue();
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("room*no-01"))).stream().anyMatch(item -> item.get("area").toString().equals("10"))).isTrue();
         }
         // aggregate query with join
         {
