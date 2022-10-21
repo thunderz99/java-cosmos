@@ -429,7 +429,7 @@ public class Condition {
             if(key.contains(joinPart) ||subFilterQueryToAdd.contains(getFormattedKey(joinPart))){
                 var newAlias="j"+paramIndex;
                 var newParam=subFilterQueryToAdd.replace(getFormattedKey(joinPart),newAlias);
-                var mainPart="c."+joinPart;
+                var mainPart=getFormattedKey(joinPart);
                 subFilterQueryToAdd=String.format(" EXISTS( SELECT VALUE %s FROM %s IN %s WHERE %s)",newAlias,newAlias,mainPart,newParam);
                 break;
             }
