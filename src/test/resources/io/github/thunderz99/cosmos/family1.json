@@ -17,6 +17,16 @@
     { "area": 10 },
     { "area": 12}
   ],
+  "area": {
+    "city": {"street": {
+                                "name": "tokyo street",
+                                "rooms":[
+                                                {"no": "001","floor": 3},
+                                                {"no": "002","floor": 1}
+                                ]
+                              }
+                }
+  },
   "address": { "state": "WA", "county": "King", "city": "Seattle" },
   "creationDate": 1431620472,
   "isRegistered": true,
