@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.5.16</version>
+  <version>0.5.18</version>
 </dependency>
 ```
 
@@ -359,7 +359,7 @@ The main difference between Partial update and Patch is that:
     )
     .fields("id", "lastName", "age", "organization.name") // select certain fields
     .join("parents") // the part which you want  to join
-    .isReturnAllSubArray(false) // If select false, the result will filter the sub array which is not matched join condition. Default value is true.
+    .returnAllSubArray(false) // If select false, the result will filter the sub array which is not matched join condition. Default value is true.
     .sort("lastName", "ASC") //optional sort
     .offset(0) //optional offset
     .limit(100); //optional limit

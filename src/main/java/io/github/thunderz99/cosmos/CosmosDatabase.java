@@ -636,7 +636,7 @@ public class CosmosDatabase {
 
         var querySpec = cond.toQuerySpec(aggregate);
 
-        if (Objects.isNull(aggregate) && !cond.joinCondText.isEmpty() && !cond.isReturnAllSubArray) {
+        if (Objects.isNull(aggregate) && !cond.joinCondText.isEmpty() && !cond.returnAllSubArray) {
             jsonObjs = mergeSubArrayToDoc(cond, collectionLink, querySpec, feedOptions);
         } else {
             var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec, feedOptions).getQueryIterable().toList());

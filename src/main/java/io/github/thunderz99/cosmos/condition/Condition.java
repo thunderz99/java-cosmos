@@ -51,7 +51,7 @@ public class Condition {
 
     public Map<String,List<String>> joinCondText =new HashMap<>();
 
-    public boolean isReturnAllSubArray = true;
+    public boolean returnAllSubArray = true;
     public List<String> sort = List.of();
 
     public Set<String> fields = new LinkedHashSet<>();
@@ -219,12 +219,12 @@ public class Condition {
 
     /**
      * If it is true, return all the result in the sub array.
-     *
-     * @param isReturnAllSubArray default value is true
+     * This function works only when join is used.
+     * @param returnAllSubArray default value is true
      * @return condition
      */
-    public Condition isReturnAllSubArray(boolean isReturnAllSubArray) {
-        this.isReturnAllSubArray = isReturnAllSubArray;
+    public Condition returnAllSubArray(boolean returnAllSubArray) {
+        this.returnAllSubArray = returnAllSubArray;
         return this;
     }
 
@@ -454,6 +454,10 @@ public class Condition {
         return subFilterQueryToAdd;
     }
 
+    /**
+     * Save the conditions of the join part to map.
+     * @param originJoinConditionText condition text
+     */
     private void saveOriginJoinCondition(String originJoinConditionText){
         for (String joinPart : this.join) {
             if(originJoinConditionText.contains(getFormattedKey(joinPart))){
@@ -533,7 +537,7 @@ public class Condition {
      */
     String generateFilterQuery4List(List<Condition> conds, String joiner, SqlParameterCollection params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
         List<String> subTexts = new ArrayList<>();
-        List<String> originSubTests= new ArrayList<>();
+        List<String> originSubTexts= new ArrayList<>();
 
         for (var subCond : conds) {
             var subFilterQuery = subCond.generateFilterQuery("", params, conditionIndex,
@@ -541,7 +545,7 @@ public class Condition {
 
             var originSubText=removeConnectPart(subFilterQuery.queryText.toString());
             subTexts.add(toJoinQueryText( originSubText,  originSubText,  paramIndex));
-            originSubTests.add(originSubText);
+            originSubTexts.add(originSubText);
             params = subFilterQuery.params;
             conditionIndex = subFilterQuery.conditionIndex;
             paramIndex = subFilterQuery.paramIndex;
@@ -550,7 +554,7 @@ public class Condition {
         var subFilterQuery = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
                 .collect(Collectors.joining(" " + joiner + " ", " (", ")"));
 
-        var originSubFilterQuery = originSubTests.stream().filter(t -> StringUtils.isNotBlank(t))
+        var originSubFilterQuery = originSubTexts.stream().filter(t -> StringUtils.isNotBlank(t))
                 .collect(Collectors.joining(" " + joiner + " ", " (", ")"));
 
         saveOriginJoinCondition(StringUtils.removeStart(originSubFilterQuery, " ()"));

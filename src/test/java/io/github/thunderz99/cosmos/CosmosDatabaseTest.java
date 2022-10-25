@@ -573,12 +573,12 @@ class CosmosDatabaseTest {
         {
             var cond = new Condition();
 
-            cond = Condition.filter("area.city.street.rooms.no", "001") //
+            cond = Condition.filter("area.city.street.rooms.no", "001","room*no-01.area",10) //
                     .sort("id", "ASC") //
                     .limit(10) //
                     .offset(0)
-                    .join(Set.of("area.city.street.rooms"))
-                    .isReturnAllSubArray(false);
+                    .join(Set.of("area.city.street.rooms","room*no-01"))
+                    .returnAllSubArray(false);
 
             var result = db.find(coll, cond, "Families").toMap();
             assertThat(result).hasSize(1);
@@ -604,7 +604,7 @@ class CosmosDatabaseTest {
                     .limit(10) //
                     .offset(0)
                     .join(Set.of("parents", "children","room*no-01"))
-                    .isReturnAllSubArray(false);
+                    .returnAllSubArray(false);
 
             result = db.find(coll, cond, "Families").toMap();
             assertThat(result).hasSize(1);
@@ -640,7 +640,7 @@ class CosmosDatabaseTest {
                             Condition.filter("id", "WakefieldFamily"))) //
                     .sort("id", "ASC")//
                     .join(Set.of("parents", "children"))
-                    .isReturnAllSubArray(false);
+                    .returnAllSubArray(false);
 
             var result = db.find(coll, cond, "Families").toMap();
             assertThat(result).hasSize(2);
@@ -657,7 +657,7 @@ class CosmosDatabaseTest {
                             Condition.filter("isRegistered", false))) //
                     .sort("id", "ASC")//
                     .join(Set.of("parents"))
-                    .isReturnAllSubArray(false);
+                    .returnAllSubArray(false);
 
             var result = db.find(coll, cond, "Families").toMap();
             assertThat(result).hasSize(1);
@@ -672,7 +672,7 @@ class CosmosDatabaseTest {
                                     .filter("$NOT", Map.of("address.state","WA"),"$NOT 2", Map.of("parents.familyName","Wakefield"))
                                     .sort("id", "ASC")
                                     .join(Set.of("parents"))
-                                    .isReturnAllSubArray(false);
+                                    .returnAllSubArray(false);
 
             var items = db.find(coll, cond, "Families").toMap();
 
@@ -694,7 +694,7 @@ class CosmosDatabaseTest {
                     .limit(10) //
                     .offset(0)
                     .join(Set.of("rooms"))
-                    .isReturnAllSubArray(false);
+                    .returnAllSubArray(false);
 
             // test find
             var items = db.find(coll, cond, "Users").toMap();
