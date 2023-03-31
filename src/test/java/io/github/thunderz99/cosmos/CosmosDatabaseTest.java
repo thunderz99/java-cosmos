@@ -1560,6 +1560,22 @@ class CosmosDatabaseTest {
 
     }
 
+    @Test
+    void sql_limit_should_not_be_exceeded() throws Exception {
+        var formId = "d674dad9-c7de-49bc-b5c2-edc42c67ca82";
+        var options = List.of("", "正社員", "時短正社員", "契約社員", "パートタイム", "インターン", "業務委託");
+        var orgs = List.of("b0800989-716c-4cd8-9c0b-7b79e1788821");
+        var cond = Condition.filter(String.format("sheetContents.%s.SingleSelect009.value", formId), options, "assignedOrgIds ARRAY_CONTAINS_ANY", orgs);
+
+        var partition = "SheetContents";
+//        var result = db.find(coll, cond, partition).toMap();
+//        assertThat(result).isEmpty();
+
+        var count = db.count(coll, cond, partition);
+        assertThat(count).isEqualTo(0);
+
+    }
+
     static void initFamiliesData() throws Exception {
         var partition = "Families";
 
