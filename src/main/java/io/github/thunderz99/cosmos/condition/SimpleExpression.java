@@ -83,29 +83,20 @@ public class SimpleExpression implements Expression {
         if (paramValue instanceof Collection<?>) {
             // collection param value
             // e.g ( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )
-
             var coll = (Collection<?>) paramValue;
 
-            if ("IN".equals(this.operator)) {
-                // use IN
+            // array equals or not
+            if (Set.of("=", "!=").contains(this.operator)) {
+                // use = or !=
+                paramIndex.getAndIncrement();
+                ret.setQueryText(String.format(" (%s %s %s)", Condition.getFormattedKey(this.key), this.operator, paramName));
+                params.add(Condition.createSqlParameter(paramName, paramValue));
+            } else {
+                //the default operator for collection
+                //ARRAY_CONTAINS
                 if (coll.isEmpty()) {
                     //if paramValue is empty, return a FALSE queryText.
-					ret.setQueryText(" (1=0)");
-				} else {
-					paramIndex.getAndIncrement();
-					ret.setQueryText(buildArray(this.key, paramName, coll, params));
-				}
-			} else if (Set.of("=", "!=").contains(this.operator)) {
-				// use = or !=
-				paramIndex.getAndIncrement();
-				ret.setQueryText(String.format(" (%s %s %s)", Condition.getFormattedKey(this.key), this.operator, paramName));
-				params.add(Condition.createSqlParameter(paramName, paramValue));
-			} else {
-				//the default operator for collection
-				//ARRAY_CONTAINS
-				if (coll.isEmpty()) {
-					//if paramValue is empty, return a FALSE queryText.
-					ret.setQueryText(" (1=0)");
+                    ret.setQueryText(" (1=0)");
 				} else {
 					// use ARRAY_CONTAINS by default to minimize the sql length
 					paramIndex.getAndIncrement();
