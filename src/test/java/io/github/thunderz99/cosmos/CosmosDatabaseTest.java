@@ -1297,7 +1297,7 @@ class CosmosDatabaseTest {
 
             {
                 // dynamic fields with ARRAY_CONTAINS
-                var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS", formId), List.of());
+                var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS", formId), "");
                 var items = db.find(coll, cond, partition).toMap();
 
                 assertThat(items).hasSize(0);
