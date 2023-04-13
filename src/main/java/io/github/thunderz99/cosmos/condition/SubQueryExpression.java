@@ -4,6 +4,7 @@ import com.microsoft.azure.documentdb.SqlParameterCollection;
 import com.microsoft.azure.documentdb.SqlQuerySpec;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
@@ -167,6 +168,9 @@ public class SubQueryExpression implements Expression {
 
 		if(paramValue instanceof Collection<?>){
 
+            if (ObjectUtils.isEmpty(paramValue)) {
+                return "(1=0)";
+            }
 			var paramCollection = (Collection<?>) paramValue;
 
 			var index = 0;
