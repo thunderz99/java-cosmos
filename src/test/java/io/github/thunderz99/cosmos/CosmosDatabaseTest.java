@@ -1296,7 +1296,7 @@ class CosmosDatabaseTest {
             }
 
             {
-                // dynamic fields with ARRAY_CONTAINS
+                // empty with ARRAY_CONTAINS
                 var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS", formId), "");
                 var items = db.find(coll, cond, partition).toMap();
 
@@ -1304,7 +1304,7 @@ class CosmosDatabaseTest {
             }
 
             {
-                // dynamic fields with ARRAY_CONTAINS_ANY
+                // empty list with ARRAY_CONTAINS_ANY
                 var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ANY", formId), List.of());
                 var items = db.find(coll, cond, partition).toMap();
 
@@ -1312,7 +1312,7 @@ class CosmosDatabaseTest {
             }
 
             {
-                // dynamic fields with ARRAY_CONTAINS_ALL
+                // empty list with ARRAY_CONTAINS_ALL
                 var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ALL", formId), List.of());
                 var items = db.find(coll, cond, partition).toMap();
 
