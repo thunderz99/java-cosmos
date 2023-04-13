@@ -1295,6 +1295,30 @@ class CosmosDatabaseTest {
                 assertThat(map).containsEntry("name", "Jerry");
             }
 
+            {
+                // dynamic fields with ARRAY_CONTAINS
+                var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS", formId), List.of());
+                var items = db.find(coll, cond, partition).toMap();
+
+                assertThat(items).hasSize(0);
+            }
+
+            {
+                // dynamic fields with ARRAY_CONTAINS_ANY
+                var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ANY", formId), List.of());
+                var items = db.find(coll, cond, partition).toMap();
+
+                assertThat(items).hasSize(0);
+            }
+
+            {
+                // dynamic fields with ARRAY_CONTAINS_ALL
+                var cond = Condition.filter("id", id, String.format("%s.value ARRAY_CONTAINS_ALL", formId), List.of());
+                var items = db.find(coll, cond, partition).toMap();
+
+                assertThat(items).hasSize(0);
+            }
+
         } finally {
             db.delete(coll, id, partition);
         }
