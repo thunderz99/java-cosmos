@@ -2,24 +2,21 @@ package io.github.thunderz99.cosmos.util;
 
 import java.io.InputStream;
 import java.io.Reader;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.*;
+import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Simple Json Converter based on jackson. Do common initialization and wrap
@@ -51,10 +48,11 @@ public class JsonUtil {
 	 * @param mapper original mapper
 	 */
 	private static void init(ObjectMapper mapper) {
-		mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false) //
-				.setSerializationInclusion(JsonInclude.Include.NON_NULL) //
-				.setVisibility(PropertyAccessor.FIELD, Visibility.ANY);
-	}
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false) //
+                .configure(DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_AS_NULL, true)
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL) //
+                .setVisibility(PropertyAccessor.FIELD, Visibility.ANY);
+    }
 
 	/**
 	 * Object to json
@@ -409,88 +407,112 @@ public class JsonUtil {
 		return null;
 	}
 
-	/**
-	 * Json to List of bean
-	 * @param is json string inputStream
-	 * @param className className for bean
-	 * @param <T> generic param for bean
-	 * @return List of bean
-	 */
-	public static <T> List<T> fromJson2List(InputStream is, String className) {
-		try {
-			JavaType javaType = constructListType(className);
-			return mapper.readValue(is, javaType);
-		} catch (Exception e) {
-			processException(is, e);
-		}
-		return List.of();
-	}
+    /**
+     * Json to List of bean
+     *
+     * @param is        json string inputStream
+     * @param className className for bean
+     * @param <T>       generic param for bean
+     * @return List of bean
+     */
+    public static <T> List<T> fromJson2List(InputStream is, String className) {
+        try {
+            JavaType javaType = constructListType(className);
+            return mapper.readValue(is, javaType);
+        } catch (Exception e) {
+            processException(is, e);
+        }
+        return List.of();
+    }
 
-	/**
-	 * Json to List of bean
-	 * @param is json string inputStream
-	 * @param classOfT class of bean
-	 * @param <T> generic param for bean
-	 * @return List of bean
-	 */
-	public static <T> List<T> fromJson2List(InputStream is, Class<T> classOfT) {
-		try {
-			JavaType javaType = constructListType(classOfT.getName());
-			return mapper.readValue(is, javaType);
-		} catch (Exception e) {
-			processException(is, e);
-		}
-		return List.of();
-	}
+    /**
+     * Json to List of bean
+     *
+     * @param is       json string inputStream
+     * @param classOfT class of bean
+     * @param <T>      generic param for bean
+     * @return List of bean
+     */
+    public static <T> List<T> fromJson2List(InputStream is, Class<T> classOfT) {
+        try {
+            JavaType javaType = constructListType(classOfT.getName());
+            return mapper.readValue(is, javaType);
+        } catch (Exception e) {
+            processException(is, e);
+        }
+        return List.of();
+    }
 
-	/**
-	 * Json string to bean object
-	 * @param is json string inputStream
-	 * @param javaType javaType for bean
-	 * @param <T> generic for bean
-	 * @return bean object
-	 */
-	public static <T> T fromJson(InputStream is, JavaType javaType) {
-		try {
-			return mapper.readValue(is, javaType);
-		} catch (Exception e) {
-			processException(is, e);
-		}
-		return null;
-	}
+    /**
+     * Json string to bean object
+     *
+     * @param is       json string inputStream
+     * @param javaType javaType for bean
+     * @param <T>      generic for bean
+     * @return bean object
+     */
+    public static <T> T fromJson(InputStream is, JavaType javaType) {
+        try {
+            return mapper.readValue(is, javaType);
+        } catch (Exception e) {
+            processException(is, e);
+        }
+        return null;
+    }
 
-	/**
-	 * map to bean object
-	 * @param map map representing json
-	 * @param classOfT class of bean
-	 * @param <T> generic param for bean
-	 * @return bean object
-	 */
-	public static <T> T fromMap(Map<String, Object> map, Class<T> classOfT) {
-		try {
-			return mapper.convertValue(map, classOfT);
-		} catch (Exception e) {
-			processException(map, e);
-		}
-		return null;
-	}
+    /**
+     * map to bean object
+     *
+     * @param map      map representing json
+     * @param classOfT class of bean
+     * @param <T>      generic param for bean
+     * @return bean object
+     */
+    public static <T> T fromMap(Map<String, Object> map, Class<T> classOfT) {
+        try {
+            return mapper.convertValue(map, classOfT);
+        } catch (Exception e) {
+            processException(map, e);
+        }
+        return null;
+    }
 
-	private static void processException(Object object, Exception e) {
-		throw new IllegalArgumentException("json process error.", e);
-	}
+    private static void processException(Object object, Exception e) {
+        log.warn("json process error. e = \n{}", exceptionToString(e));
+        if (Modifier.isFinal(object.getClass().getModifiers())) {
+            log.warn("json process error. object = {}", object);
+        } else {
+            log.warn("json process error. object = {}", ToStringBuilder.reflectionToString(object));
+        }
+        throw new IllegalArgumentException("json process error.", e);
+    }
 
-	private static ObjectMapper newObjectMapper() {
-		ObjectMapper mapper = new ObjectMapper();
-		init(mapper);
-		return mapper;
-	}
+    static String exceptionToString(Throwable throwable) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(throwable.getClass().getName());
+        if (throwable.getMessage() != null) {
+            sb.append(": ").append(throwable.getMessage());
+        }
+        sb.append("\n");
+        for (StackTraceElement stackTraceElement : throwable.getStackTrace()) {
+            sb.append("\tat ").append(stackTraceElement.toString()).append("\n");
+        }
+        return sb.toString();
+    }
 
-	/**
-	 * return an objectMapper configured the same as this JsonUtil
-	 * @return objectMapper
-	 */
-	public static ObjectMapper getObjectMapper() {
-		return newObjectMapper();
-	}
+    private static ObjectMapper newObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        init(mapper);
+        return mapper;
+    }
+
+    /**
+     * return an objectMapper configured the same as this JsonUtil
+     *
+     * @return objectMapper
+     */
+    public static ObjectMapper getObjectMapper() {
+        return newObjectMapper();
+    }
 
 }
