@@ -2,7 +2,6 @@ package io.github.thunderz99.cosmos.util;
 
 import java.io.InputStream;
 import java.io.Reader;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,7 +13,6 @@ import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -479,11 +477,8 @@ public class JsonUtil {
 
     private static void processException(Object object, Exception e) {
         log.warn("json process error. e = \n{}", exceptionToString(e));
-        if (Modifier.isFinal(object.getClass().getModifiers())) {
-            log.warn("json process error. object = {}", object);
-        } else {
-            log.warn("json process error. object = {}", ToStringBuilder.reflectionToString(object));
-        }
+        log.warn("json process error. object = {}", object);
+
         throw new IllegalArgumentException("json process error.", e);
     }
 
