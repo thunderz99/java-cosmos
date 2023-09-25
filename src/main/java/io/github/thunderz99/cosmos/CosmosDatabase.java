@@ -108,7 +108,7 @@ public class CosmosDatabase {
      * @throws Exception CosmosException
      */
     public List<CosmosDocument> batchCreate(String coll, List<?> data, String partition) throws Exception {
-        doCheckBeforeBatchOrBulk(coll, data, partition);
+        doCheckBeforeBatch(coll, data, partition);
 
         var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
         var container = this.clientV4.getDatabase(db).getContainer(coll);
@@ -133,7 +133,7 @@ public class CosmosDatabase {
      * @throws Exception CosmosException
      */
     public List<CosmosDocument> batchUpsert(String coll, List<?> data, String partition) throws Exception {
-        doCheckBeforeBatchOrBulk(coll, data, partition);
+        doCheckBeforeBatch(coll, data, partition);
 
         var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
         var container = this.clientV4.getDatabase(db).getContainer(coll);
@@ -158,7 +158,7 @@ public class CosmosDatabase {
      * @throws Exception CosmosException
      */
     public List<CosmosDocument> batchDelete(String coll, List<?> data, String partition) throws Exception {
-        doCheckBeforeBatchOrBulk(coll, data, partition);
+        doCheckBeforeBatch(coll, data, partition);
 
         var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
         var container = this.clientV4.getDatabase(db).getContainer(coll);
@@ -189,12 +189,20 @@ public class CosmosDatabase {
         return id;
     }
 
-    private static void doCheckBeforeBatchOrBulk(String coll, List<?> data, String partition) {
+    private static void doCheckBeforeBatch(String coll, List<?> data, String partition) {
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotNull(data, "create data " + coll + " " + partition);
 
         checkBatchMaxOperations(data);
+        checkValidId(data);
+    }
+
+    private static void doCheckBeforeBulk(String coll, List<?> data, String partition) {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotNull(data, "create data " + coll + " " + partition);
+
         checkValidId(data);
     }
 
@@ -222,7 +230,7 @@ public class CosmosDatabase {
      * @return CosmosBulkResult
      */
     public CosmosBulkResult bulkCreate(String coll, List<?> data, String partition) {
-        doCheckBeforeBatchOrBulk(coll, data, partition);
+        doCheckBeforeBulk(coll, data, partition);
 
         var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
         var operations = data.stream().map(it -> {
@@ -245,7 +253,7 @@ public class CosmosDatabase {
      * @return CosmosBulkResult
      */
     public CosmosBulkResult bulkUpsert(String coll, List<?> data, String partition) {
-        doCheckBeforeBatchOrBulk(coll, data, partition);
+        doCheckBeforeBulk(coll, data, partition);
 
         var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
         var operations = data.stream().map(it -> {
@@ -268,7 +276,7 @@ public class CosmosDatabase {
      * @return CosmosBulkResult
      */
     public CosmosBulkResult bulkDelete(String coll, List<?> data, String partition) {
-        doCheckBeforeBatchOrBulk(coll, data, partition);
+        doCheckBeforeBulk(coll, data, partition);
 
         var ids = new ArrayList<String>();
         var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
