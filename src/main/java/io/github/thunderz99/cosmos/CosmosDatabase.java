@@ -1,18 +1,26 @@
 package io.github.thunderz99.cosmos;
 
 import com.azure.cosmos.CosmosClient;
-import com.azure.cosmos.models.CosmosPatchOperations;
+import com.azure.cosmos.CosmosContainer;
+import com.azure.cosmos.models.*;
 import com.google.common.base.Preconditions;
 import com.microsoft.azure.documentdb.*;
+import com.microsoft.azure.documentdb.PartitionKey;
+import com.microsoft.azure.documentdb.SqlQuerySpec;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.RetryUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.NotImplementedException;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.http.HttpStatus;
+import org.jetbrains.annotations.NotNull;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,6 +95,285 @@ public class CosmosDatabase {
         log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, resource.getId(), partition, getAccount());
 
         return new CosmosDocument(resource.toObject(JSONObject.class));
+    }
+
+    /**
+     * Create batch documents in a single transaction.
+     * Note: the maximum number of operations is 100.
+     *
+     * @param coll      collection name
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosDocument instances
+     * @throws Exception CosmosException
+     */
+    public List<CosmosDocument> batchCreate(String coll, List<?> data, String partition) throws Exception {
+        doCheckBeforeBatchOrBulk(coll, data, partition);
+
+        var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+        CosmosBatch batch = CosmosBatch.createCosmosBatch(partitionKey);
+        data.forEach(it -> {
+            var map = JsonUtil.toMap(it);
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
+            batch.createItemOperation(map);
+        });
+
+        return doBatchWithRetry(container, batch);
+    }
+
+    /**
+     * Upsert batch documents in a single transaction.
+     * Note: the maximum number of operations is 100.
+     *
+     * @param coll      collection name
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosDocument instances
+     * @throws Exception CosmosException
+     */
+    public List<CosmosDocument> batchUpsert(String coll, List<?> data, String partition) throws Exception {
+        doCheckBeforeBatchOrBulk(coll, data, partition);
+
+        var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+        CosmosBatch batch = CosmosBatch.createCosmosBatch(partitionKey);
+        data.forEach(it -> {
+            var map = JsonUtil.toMap(it);
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
+            batch.upsertItemOperation(map);
+        });
+
+        return doBatchWithRetry(container, batch);
+    }
+
+    /**
+     * Delete batch documents in a single transaction.
+     * Note: the maximum number of operations is 100.
+     *
+     * @param coll      collection name
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosDocument instances (only id)
+     * @throws Exception CosmosException
+     */
+    public List<CosmosDocument> batchDelete(String coll, List<?> data, String partition) throws Exception {
+        doCheckBeforeBatchOrBulk(coll, data, partition);
+
+        var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+        CosmosBatch batch = CosmosBatch.createCosmosBatch(partitionKey);
+
+        var ids = new ArrayList<String>();
+        data.stream().map(CosmosDatabase::getId).filter(ObjectUtils::isNotEmpty).forEach(it -> {
+            ids.add(it);
+            batch.deleteItemOperation(it);
+        });
+
+        doBatchWithRetry(container, batch);
+
+        return ids.stream().map(it -> {
+            var doc = new Document(JsonUtil.toJson(Map.of("id", it)));
+            return new CosmosDocument(doc.toObject(JSONObject.class));
+        }).collect(Collectors.toList());
+    }
+
+    private static String getId(Object object) {
+        String id;
+        if (object instanceof String) {
+            id = (String) object;
+        } else {
+            var map = JsonUtil.toMap(object);
+            id = map.get("id").toString();
+        }
+        return id;
+    }
+
+    private static void doCheckBeforeBatchOrBulk(String coll, List<?> data, String partition) {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotNull(data, "create data " + coll + " " + partition);
+
+        checkBatchMaxOperations(data);
+        checkValidId(data);
+    }
+
+    private List<CosmosDocument> doBatchWithRetry(CosmosContainer container, CosmosBatch batch) throws Exception {
+        var response = RetryUtil.executeBatchWithRetry(() -> container.executeCosmosBatch(batch));
+
+        var successDocuments = new ArrayList<CosmosDocument>();
+        for (CosmosBatchOperationResult cosmosBatchOperationResult : response.getResults()) {
+            var item = cosmosBatchOperationResult.getItem(Object.class);
+            if (item == null) continue;
+            var doc = new Document(JsonUtil.toJson(item));
+            successDocuments.add(new CosmosDocument(doc.toObject(JSONObject.class)));
+        }
+
+        return successDocuments;
+    }
+
+    /**
+     * Bulk create documents.
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll      collection name
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkCreate(String coll, List<?> data, String partition) {
+        doCheckBeforeBatchOrBulk(coll, data, partition);
+
+        var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
+        var operations = data.stream().map(it -> {
+                    var map = JsonUtil.toMap(it);
+                    map.put(Cosmos.getDefaultPartitionKey(), partition);
+                    return CosmosBulkOperations.getCreateItemOperation(map, partitionKey);
+                }
+        ).collect(Collectors.toList());
+
+        return doBulkWithRetry(coll, operations);
+    }
+
+    /**
+     * Bulk upsert documents
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll      collection name
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkUpsert(String coll, List<?> data, String partition) {
+        doCheckBeforeBatchOrBulk(coll, data, partition);
+
+        var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
+        var operations = data.stream().map(it -> {
+                    var map = JsonUtil.toMap(it);
+                    map.put(Cosmos.getDefaultPartitionKey(), partition);
+                    return CosmosBulkOperations.getUpsertItemOperation(map, partitionKey);
+                }
+        ).collect(Collectors.toList());
+
+        return doBulkWithRetry(coll, operations);
+    }
+
+    /**
+     * Bulk delete documents
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll      collection name
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkDelete(String coll, List<?> data, String partition) {
+        doCheckBeforeBatchOrBulk(coll, data, partition);
+
+        var ids = new ArrayList<String>();
+        var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
+        var operations = data.stream()
+                .map(it -> {
+                    var id = getId(it);
+                    ids.add(id);
+                    return id;
+                })
+                .filter(ObjectUtils::isNotEmpty)
+                .map(it -> CosmosBulkOperations.getDeleteItemOperation(it, partitionKey))
+                .collect(Collectors.toList());
+
+        var result = doBulkWithRetry(coll, operations);
+
+        result.successList = ids.stream().map(it -> {
+            var doc = new Document(JsonUtil.toJson(Map.of("id", it)));
+            return new CosmosDocument(doc.toObject(JSONObject.class));
+        }).collect(Collectors.toList());
+
+
+        return result;
+    }
+
+    @NotNull
+    private CosmosBulkResult doBulkWithRetry(String coll, List<CosmosItemOperation> operations) {
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+        var bulkResult = new CosmosBulkResult();
+
+        int maxRetries = 10;
+        long delay = 0;
+        long maxDelay = 16000;
+
+        var successDocuments = new ArrayList<CosmosDocument>();
+
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+
+            var retryTasks = new ArrayList<CosmosItemOperation>();
+            var execResult = container.executeBulkOperations(operations);
+
+            for (CosmosBulkOperationResponse<?> result : execResult) {
+                var operation = result.getOperation();
+                var response = result.getResponse();
+                if (ObjectUtils.isEmpty(response)) {
+                    continue;
+                }
+
+                if (RetryUtil.shouldRetry(response.getStatusCode())) {
+                    delay = Math.max(delay, response.getRetryAfterDuration().toMillis());
+                    retryTasks.add(operation);
+                } else if (response.isSuccessStatusCode()) {
+                    var item = response.getItem(Object.class);
+                    if (item == null) continue;
+                    var doc = new Document(JsonUtil.toJson(item));
+                    successDocuments.add(new CosmosDocument(doc.toObject(JSONObject.class)));
+                } else {
+                    var ex = result.getException();
+                    if (HttpStatus.SC_CONFLICT == response.getStatusCode()) {
+                        Map<String, String> map = operation.getItem();
+                        bulkResult.fetalList.add(new CosmosException(response.getStatusCode(), "CONFLICT", "id already exits: " + map.get("id")));
+                    } else {
+                        if (ObjectUtils.isNotEmpty(ex)) {
+                            bulkResult.fetalList.add(new CosmosException(response.getStatusCode(), ex.getMessage(), ex.getMessage()));
+                        } else {
+                            bulkResult.fetalList.add(new CosmosException(response.getStatusCode(), "UNKNOWN", "UNKNOWN"));
+                        }
+                    }
+                }
+            }
+
+            if (retryTasks.isEmpty()) {
+                break;
+            } else {
+                operations = retryTasks;
+            }
+
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException ignored) {}
+            // Exponential Backoff
+            delay = Math.min(maxDelay, delay * 2);
+        }
+
+        bulkResult.retryList = operations;
+        bulkResult.successList = successDocuments;
+        return bulkResult;
+    }
+
+    static void checkBatchMaxOperations(List<?> data) {
+        // There's a current limit of 100 operations per TransactionalBatch to ensure the performance is as expected and within SLAs:
+        // https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/transactional-batch?tabs=dotnet#limitations
+        if (data.size() > 100) {
+            throw new IllegalArgumentException("The number of data operations should not exceed 100.");
+        }
+    }
+
+    static void checkValidId(List<?> data) {
+        for (Object datum : data) {
+            if (datum instanceof String) {
+                checkValidId((String) datum);
+            } else {
+                Map<String, Object> map = JsonUtil.toMap(datum);
+                checkValidId(map);
+            }
+        }
     }
 
     /**

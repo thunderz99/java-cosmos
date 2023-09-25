@@ -3,6 +3,7 @@ package io.github.thunderz99.cosmos.util;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
+import com.azure.cosmos.models.CosmosBatchResponse;
 import com.google.common.collect.Sets;
 import com.microsoft.azure.documentdb.DocumentClientException;
 import io.github.thunderz99.cosmos.CosmosException;
@@ -25,7 +26,36 @@ public class RetryUtil {
      */
     static final Set<Integer> codesShouldRetry = Sets.newHashSet(429, 449, 408);
 
+    static final int BATCH_MAX_RETRIES = 10;
+
     RetryUtil() {
+    }
+
+    public static CosmosBatchResponse executeBatchWithRetry(Callable<CosmosBatchResponse> func) throws Exception {
+        return executeBatchWithRetry(func, 2000);
+    }
+
+    public static CosmosBatchResponse executeBatchWithRetry(Callable<CosmosBatchResponse> func, long defaultWaitTime) throws Exception {
+        for (int attempt = 0; attempt < BATCH_MAX_RETRIES; attempt++) {
+            var response = func.call();
+
+            if (response.isSuccessStatusCode()) {
+                return response;
+            } else if (shouldRetry(response.getStatusCode())) {
+                long delay = response.getRetryAfterDuration().toMillis();
+                if (delay == 0) {
+                    delay = defaultWaitTime;
+                }
+                try {
+                    log.info("Code:{}, 429 Too Many Requests / 449 Retry with / 408 Request Timeout. Wait:{} ms", response.getStatusCode(), delay);
+                    Thread.sleep(delay);
+                } catch (InterruptedException ignored) {}
+            } else {
+               throw new CosmosException(response.getStatusCode(), "", response.getErrorMessage());
+            }
+        }
+
+        throw new CosmosException(0, "", "Max retries count reached");
     }
 
     public static <T> T executeWithRetry(Callable<T> func) throws Exception {
@@ -76,6 +106,10 @@ public class RetryUtil {
      */
     public static boolean shouldRetry(CosmosException cosmosException) {
         return codesShouldRetry.contains(cosmosException.getStatusCode()) || cosmosException.getMessage().contains("Request rate is large");
+    }
+
+    public static boolean shouldRetry(int statusCode) {
+        return codesShouldRetry.contains(statusCode);
     }
 
 }

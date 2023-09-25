@@ -2,6 +2,8 @@ package io.github.thunderz99.cosmos.util;
 
 import org.apache.commons.lang3.StringUtils;
 
+import java.util.Collection;
+
 public class Checker {
 
 	Checker(){
@@ -20,6 +22,13 @@ public class Checker {
 		if (target == null) {
 			throw new IllegalArgumentException(String.format("%s should not be null", name));
 		}
+
+        if (target instanceof Collection) {
+            var collection = (Collection<?>) target;
+            if (collection.isEmpty()) {
+                throw new IllegalArgumentException(String.format("%s should not be empty", name));
+            }
+        }
 
 	}
 

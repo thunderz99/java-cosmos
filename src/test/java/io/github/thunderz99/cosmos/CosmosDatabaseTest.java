@@ -68,6 +68,145 @@ class CosmosDatabaseTest {
         deleteData4ComplexQuery();
     }
 
+    @Test
+    void batchCreate_should_work() throws Exception {
+        int size = 100;
+        var userList = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            userList.add(new User("batchCreate_should_work_" + i, "testFirstName" + i, "testLastName" + i));
+        }
+
+        try {
+            var result = db.batchCreate(coll, userList, "Users");
+            assertThat(result).hasSize(size);
+        } finally {
+            db.batchDelete(coll, userList, "Users");
+        }
+    }
+
+    @Test
+    void batchDelete_should_work() throws Exception {
+        int size = 100;
+        var userList = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            userList.add(new User("batchDelete_should_work_" + i, "testFirstName" + i, "testLastName" + i));
+        }
+
+        try {
+            db.batchCreate(coll, userList, "Users");
+            var deleteResult = db.batchDelete(coll, userList, "Users");
+            assertThat(deleteResult).hasSize(size);
+        } finally {
+            try {
+                db.batchDelete(coll, userList, "Users");
+            } catch (Exception ignored) {}
+        }
+    }
+
+    @Test
+    void batchUpsert_should_work() throws Exception {
+        int size = 100;
+        var userList = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            userList.add(new User("batchUpsert_should_work_" + i, "testFirstName" + i, "testLastName" + i));
+        }
+
+        try {
+            var createResultList = db.batchCreate(coll, userList, "Users");
+
+            var upsertList = new ArrayList<User>(size);
+            for (CosmosDocument cosmosDocument : createResultList) {
+                var user = cosmosDocument.toObject(User.class);
+                user.firstName = user.firstName.replace("testFirstName", "modifiedFirstName");
+                upsertList.add(user);
+            }
+
+            var upsertResultList = db.batchUpsert(coll, upsertList, "Users");
+            for (CosmosDocument cosmosDocument : upsertResultList) {
+                var user = cosmosDocument.toObject(User.class);
+                assertThat(user.firstName).contains("modifiedFirstName");
+            }
+
+        } finally {
+            db.batchDelete(coll, userList, "Users");
+        }
+    }
+
+    @Test
+    void bulkCreate_should_work() throws Exception {
+        int size = 100;
+        var userList = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            userList.add(new User("bulkCreate_should_work_" + i, "testFirstName" + i, "testLastName" + i));
+        }
+
+        try {
+            var result = db.bulkCreate(coll, userList, "Users");
+            assertThat(result.fetalList).hasSize(0);
+            assertThat(result.retryList).hasSize(0);
+            assertThat(result.successList).hasSize(size);
+        } finally {
+            db.bulkCreate(coll, userList, "Users");
+        }
+    }
+
+    @Test
+    void bulkDelete_should_work() throws Exception {
+        int size = 100;
+        var userList = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            userList.add(new User("bulkDelete_should_work_" + i, "testFirstName" + i, "testLastName" + i));
+        }
+
+        try {
+            db.bulkCreate(coll, userList, "Users");
+            var deleteResult = db.bulkDelete(coll, userList, "Users");
+            assertThat(deleteResult.fetalList).hasSize(0);
+            assertThat(deleteResult.retryList).hasSize(0);
+            assertThat(deleteResult.successList).hasSize(size);
+        } finally {
+            try {
+                db.bulkDelete(coll, userList, "Users");
+            } catch (Exception ignored) {}
+        }
+    }
+
+    @Test
+    void bulkUpsert_should_work() {
+        int size = 120;
+        var userList = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            userList.add(new User("bulkUpsert_should_work_" + i, "testFirstName" + i, "testLastName" + i));
+        }
+
+        try {
+            var createResult = db.bulkCreate(coll, userList, "Users");
+            assertThat(createResult.fetalList).hasSize(0);
+            assertThat(createResult.retryList).hasSize(0);
+            assertThat(createResult.successList).hasSize(size);
+
+            var upsertList = new ArrayList<User>(size);
+            for (CosmosDocument cosmosDocument : createResult.successList) {
+                var user = cosmosDocument.toObject(User.class);
+                user.firstName = user.firstName.replace("testFirstName", "modifiedFirstName");
+                upsertList.add(user);
+            }
+
+            var upsertResult = db.bulkUpsert(coll, upsertList, "Users");
+            assertThat(upsertResult.fetalList).hasSize(0);
+            assertThat(upsertResult.retryList).hasSize(0);
+            assertThat(upsertResult.successList).hasSize(size);
+
+            for (CosmosDocument cosmosDocument : upsertResult.successList) {
+                var user = cosmosDocument.toObject(User.class);
+                assertThat(user.firstName).contains("modifiedFirstName");
+            }
+
+        } finally {
+            db.bulkDelete(coll, userList, "Users");
+        }
+    }
+
 	@Test
 	void create_and_read_should_work() throws Exception {
 
