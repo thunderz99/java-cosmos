@@ -41,9 +41,9 @@ public class Checker {
 
 	}
 
-    public static void checkNotEmpty(Collection target, String name) {
+    public static void checkNotEmpty(Collection<?> target, String name) {
 
-        if (target.isEmpty()) {
+        if (target == null || target.isEmpty()) {
             throw new IllegalArgumentException(String.format("%s should not be empty collection", name));
         }
 

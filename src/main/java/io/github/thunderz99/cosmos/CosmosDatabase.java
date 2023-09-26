@@ -193,7 +193,6 @@ public class CosmosDatabase {
     private static void doCheckBeforeBatch(String coll, List<?> data, String partition) {
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
-        Checker.checkNotNull(data, "create data " + coll + " " + partition);
         Checker.checkNotEmpty(data, "create data " + coll + " " + partition);
 
         checkBatchMaxOperations(data);
@@ -203,7 +202,6 @@ public class CosmosDatabase {
     private static void doCheckBeforeBulk(String coll, List<?> data, String partition) {
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
-        Checker.checkNotNull(data, "create data " + coll + " " + partition);
         Checker.checkNotEmpty(data, "create data " + coll + " " + partition);
 
         checkValidId(data);
