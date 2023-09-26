@@ -23,13 +23,6 @@ public class Checker {
 			throw new IllegalArgumentException(String.format("%s should not be null", name));
 		}
 
-        if (target instanceof Collection) {
-            var collection = (Collection<?>) target;
-            if (collection.isEmpty()) {
-                throw new IllegalArgumentException(String.format("%s should not be empty", name));
-            }
-        }
-
 	}
 
 	public static void checkNotBlank(String target, String name) {
@@ -47,4 +40,15 @@ public class Checker {
 		}
 
 	}
+
+    public static void checkNotEmpty(Object target, String name) {
+
+        if (target instanceof Collection) {
+            var collection = (Collection<?>) target;
+            if (collection.isEmpty()) {
+                throw new IllegalArgumentException(String.format("%s should not be empty collection", name));
+            }
+        }
+
+    }
 }

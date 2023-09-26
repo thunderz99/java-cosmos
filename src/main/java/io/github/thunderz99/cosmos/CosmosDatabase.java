@@ -16,7 +16,6 @@ import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.RetryUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.MapUtils;
-import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpStatus;
@@ -40,6 +39,8 @@ import static io.github.thunderz99.cosmos.condition.Condition.getFormattedKey;
 public class CosmosDatabase {
 
     private static Logger log = LoggerFactory.getLogger(CosmosDatabase.class);
+
+    static final int MAX_BATCH_NUMBER_OF_OPERATION = 100;
 
     String db;
 
@@ -193,6 +194,7 @@ public class CosmosDatabase {
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotNull(data, "create data " + coll + " " + partition);
+        Checker.checkNotEmpty(data, "create data " + coll + " " + partition);
 
         checkBatchMaxOperations(data);
         checkValidId(data);
@@ -202,6 +204,7 @@ public class CosmosDatabase {
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotNull(data, "create data " + coll + " " + partition);
+        Checker.checkNotEmpty(data, "create data " + coll + " " + partition);
 
         checkValidId(data);
     }
@@ -369,7 +372,7 @@ public class CosmosDatabase {
     static void checkBatchMaxOperations(List<?> data) {
         // There's a current limit of 100 operations per TransactionalBatch to ensure the performance is as expected and within SLAs:
         // https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/transactional-batch?tabs=dotnet#limitations
-        if (data.size() > 100) {
+        if (data.size() > MAX_BATCH_NUMBER_OF_OPERATION) {
             throw new IllegalArgumentException("The number of data operations should not exceed 100.");
         }
     }
