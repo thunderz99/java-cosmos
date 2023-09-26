@@ -140,6 +140,8 @@ db.delete("Collection1", user1,id, "Users");
 ```
 
 ### Batch Operation
+> Note: Batch operation is transactional. The maximum number of operations is 100.
+> https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/transactional-batch?tabs=java
 ```java
 var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1");
 
@@ -157,6 +159,8 @@ db.batchDelete("Collection1", List.of(user1.id), "Users");
 ```
 
 ### Bulk Operation
+> Note: Bulk operation is NOT transactional. Have no number limit in theoretically.
+> https://learn.microsoft.com/en-us/azure/cosmos-db/bulk-executor-overview
 ```java
 var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1");
 

@@ -134,7 +134,7 @@ class CosmosDatabaseTest {
 
     @Test
     void bulkCreate_should_work() throws Exception {
-        int size = 100;
+        int size = 120;
         var userList = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             userList.add(new User("bulkCreate_should_work_" + i, "testFirstName" + i, "testLastName" + i));
@@ -146,13 +146,13 @@ class CosmosDatabaseTest {
             assertThat(result.retryList).hasSize(0);
             assertThat(result.successList).hasSize(size);
         } finally {
-            db.bulkCreate(coll, userList, "Users");
+            db.bulkDelete(coll, userList, "Users");
         }
     }
 
     @Test
     void bulkDelete_should_work() throws Exception {
-        int size = 100;
+        int size = 120;
         var userList = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             userList.add(new User("bulkDelete_should_work_" + i, "testFirstName" + i, "testLastName" + i));

@@ -348,6 +348,7 @@ public class CosmosDatabase {
             }
 
             if (retryTasks.isEmpty()) {
+                operations.clear();
                 break;
             } else {
                 operations = retryTasks;
