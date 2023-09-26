@@ -337,12 +337,12 @@ public class CosmosDatabase {
                     var ex = result.getException();
                     if (HttpStatus.SC_CONFLICT == response.getStatusCode()) {
                         Map<String, String> map = operation.getItem();
-                        bulkResult.fetalList.add(new CosmosException(response.getStatusCode(), "CONFLICT", "id already exits: " + map.get("id")));
+                        bulkResult.fatalList.add(new CosmosException(response.getStatusCode(), "CONFLICT", "id already exits: " + map.get("id")));
                     } else {
                         if (ObjectUtils.isNotEmpty(ex)) {
-                            bulkResult.fetalList.add(new CosmosException(response.getStatusCode(), ex.getMessage(), ex.getMessage()));
+                            bulkResult.fatalList.add(new CosmosException(response.getStatusCode(), ex.getMessage(), ex.getMessage()));
                         } else {
-                            bulkResult.fetalList.add(new CosmosException(response.getStatusCode(), "UNKNOWN", "UNKNOWN"));
+                            bulkResult.fatalList.add(new CosmosException(response.getStatusCode(), "UNKNOWN", "UNKNOWN"));
                         }
                     }
                 }

@@ -142,7 +142,7 @@ class CosmosDatabaseTest {
 
         try {
             var result = db.bulkCreate(coll, userList, "Users");
-            assertThat(result.fetalList).hasSize(0);
+            assertThat(result.fatalList).hasSize(0);
             assertThat(result.retryList).hasSize(0);
             assertThat(result.successList).hasSize(size);
         } finally {
@@ -161,7 +161,7 @@ class CosmosDatabaseTest {
         try {
             db.bulkCreate(coll, userList, "Users");
             var deleteResult = db.bulkDelete(coll, userList, "Users");
-            assertThat(deleteResult.fetalList).hasSize(0);
+            assertThat(deleteResult.fatalList).hasSize(0);
             assertThat(deleteResult.retryList).hasSize(0);
             assertThat(deleteResult.successList).hasSize(size);
         } finally {
@@ -181,7 +181,7 @@ class CosmosDatabaseTest {
 
         try {
             var createResult = db.bulkCreate(coll, userList, "Users");
-            assertThat(createResult.fetalList).hasSize(0);
+            assertThat(createResult.fatalList).hasSize(0);
             assertThat(createResult.retryList).hasSize(0);
             assertThat(createResult.successList).hasSize(size);
 
@@ -193,7 +193,7 @@ class CosmosDatabaseTest {
             }
 
             var upsertResult = db.bulkUpsert(coll, upsertList, "Users");
-            assertThat(upsertResult.fetalList).hasSize(0);
+            assertThat(upsertResult.fatalList).hasSize(0);
             assertThat(upsertResult.retryList).hasSize(0);
             assertThat(upsertResult.successList).hasSize(size);
 

@@ -22,7 +22,7 @@ public class CosmosBulkResult {
     public List<?> retryList = new ArrayList<>();
 
     /**
-     * The result of fetal operations. e.g. 409 Conflict
+     * The result of fatal operations. e.g. 409 Conflict
      */
-    public List<CosmosException> fetalList = new ArrayList<>();
+    public List<CosmosException> fatalList = new ArrayList<>();
 }
