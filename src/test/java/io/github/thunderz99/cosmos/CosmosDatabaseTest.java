@@ -228,6 +228,183 @@ class CosmosDatabaseTest {
 
 	}
 
+    @Test
+    void getId_should_work() {
+        String testId = "getId_should_work_id";
+        var user = new User(testId, "firstName", "lastName");
+        var id = CosmosDatabase.getId(user);
+        assertThat(id).isEqualTo(testId);
+
+        id = CosmosDatabase.getId(testId);
+        assertThat(id).isEqualTo(testId);
+    }
+
+    @Test
+    void doCheckBeforeBatch_should_work() {
+        // normal check
+        {
+            String testColl = "testColl";
+            String testPartition = "testPartition";
+            List<User> testData = List.of(new User("doCheckBeforeBatch_should_work_id", "first01", "last01"));
+
+            CosmosDatabase.doCheckBeforeBatch(testColl, testData, testPartition);
+        }
+
+        // boundary checks
+        {
+            // blank coll should raise exception
+            String testColl = "";
+            String testPartition = "testPartition";
+            List<User> testData = List.of(new User("doCheckBeforeBatch_should_work_id", "first01", "last01"));
+
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBatch(testColl, testData, testPartition)).hasMessageContaining("coll should be non-blank");
+        }
+
+        {
+            // blank partition should raise exception
+            String testColl = "testColl";
+            String testPartition = "";
+            List<User> testData = List.of(new User("doCheckBeforeBatch_should_work_id", "first01", "last01"));
+
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBatch(testColl, testData, testPartition)).hasMessageContaining("partition should be non-blank");
+        }
+
+        {
+            // empty data should raise exception
+            String testColl = "testColl";
+            String testPartition = "testPartition";
+
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBatch(testColl, List.of(), testPartition)).hasMessageContaining("should not be empty collection");
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBatch(testColl, null, testPartition)).hasMessageContaining("should not be empty collection");
+        }
+
+        {
+            // number of operations exceed the limit should raise exception
+            String testColl = "testColl";
+            String testPartition = "testPartition";
+            List<User> testData = new ArrayList<>();
+            for (int i = 0; i < 101; i++) {
+                testData.add(new User());
+            }
+
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBatch(testColl, testData, testPartition)).hasMessageContaining("The number of data operations should not exceed 100.");
+        }
+
+        {
+            // invalid id should raise exception
+            String testColl = "testColl";
+            String testPartition = "testPartition";
+            List<User> testData = new ArrayList<>();
+            for (int i = 0; i < 100; i++) {
+                testData.add(new User("invalid_id\n", "", ""));
+            }
+
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBatch(testColl, testData, testPartition)).hasMessageContaining("id cannot contain \\t or \\n or \\r.");
+        }
+    }
+
+    @Test
+    void doCheckBeforeBulk_should_work() {
+        // normal check
+        {
+            String testColl = "testColl";
+            String testPartition = "testPartition";
+            List<User> testData = List.of(new User("doCheckBeforeBulk_should_work_id", "first01", "last01"));
+
+            CosmosDatabase.doCheckBeforeBulk(testColl, testData, testPartition);
+        }
+
+        // boundary checks
+        {
+            // blank coll should raise exception
+            String testColl = "";
+            String testPartition = "testPartition";
+            List<User> testData = List.of(new User("doCheckBeforeBulk_should_work_id", "first01", "last01"));
+
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBulk(testColl, testData, testPartition)).hasMessageContaining("coll should be non-blank");
+        }
+
+        {
+            // blank partition should raise exception
+            String testColl = "testColl";
+            String testPartition = "";
+            List<User> testData = List.of(new User("doCheckBeforeBulk_should_work_id", "first01", "last01"));
+
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBulk(testColl, testData, testPartition)).hasMessageContaining("partition should be non-blank");
+        }
+
+        {
+            // empty data should raise exception
+            String testColl = "testColl";
+            String testPartition = "testPartition";
+
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBulk(testColl, List.of(), testPartition)).hasMessageContaining("should not be empty collection");
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBulk(testColl, null, testPartition)).hasMessageContaining("should not be empty collection");
+        }
+
+        {
+            // invalid id should raise exception
+            String testColl = "testColl";
+            String testPartition = "testPartition";
+            List<User> testData = new ArrayList<>();
+            for (int i = 0; i < 100; i++) {
+                testData.add(new User("invalid_id\n", "", ""));
+            }
+
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBulk(testColl, testData, testPartition)).hasMessageContaining("id cannot contain \\t or \\n or \\r.");
+        }
+    }
+
+    @Test
+    void checkValidId_should_work() {
+        // normal check
+        {
+            List<User> testData = new ArrayList<>();
+            for (int i = 0; i < 100; i++) {
+                testData.add(new User("valid_id", "", ""));
+            }
+
+            CosmosDatabase.checkValidId(testData);
+        }
+
+        {
+            List<String> testData = new ArrayList<>();
+            for (int i = 0; i < 100; i++) {
+                testData.add("valid_id");
+            }
+
+            CosmosDatabase.checkValidId(testData);
+        }
+
+        // boundary checks
+        {
+            List<User> testData = new ArrayList<>();
+            for (int i = 0; i < 100; i++) {
+                testData.add(new User("invalid_id\t", "", ""));
+            }
+
+            assertThatThrownBy(() -> CosmosDatabase.checkValidId(testData)).hasMessageContaining("id cannot contain \\t or \\n or \\r.");
+        }
+
+        {
+            List<User> testData = new ArrayList<>();
+            for (int i = 0; i < 100; i++) {
+                testData.add(new User("invalid_id\n", "", ""));
+            }
+
+            assertThatThrownBy(() -> CosmosDatabase.checkValidId(testData)).hasMessageContaining("id cannot contain \\t or \\n or \\r.");
+        }
+
+        {
+            List<User> testData = new ArrayList<>();
+            for (int i = 0; i < 100; i++) {
+                testData.add(new User("invalid_id\r", "", ""));
+            }
+
+            assertThatThrownBy(() -> CosmosDatabase.checkValidId(testData)).hasMessageContaining("id cannot contain \\t or \\n or \\r.");
+        }
+    }
+
 	@Test
 	void create_should_throw_when_data_is_null() throws Exception {
 		User user = null;

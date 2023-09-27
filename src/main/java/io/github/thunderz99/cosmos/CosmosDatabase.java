@@ -179,7 +179,7 @@ public class CosmosDatabase {
         }).collect(Collectors.toList());
     }
 
-    private static String getId(Object object) {
+    static String getId(Object object) {
         String id;
         if (object instanceof String) {
             id = (String) object;
@@ -190,7 +190,7 @@ public class CosmosDatabase {
         return id;
     }
 
-    private static void doCheckBeforeBatch(String coll, List<?> data, String partition) {
+    static void doCheckBeforeBatch(String coll, List<?> data, String partition) {
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotEmpty(data, "create data " + coll + " " + partition);
@@ -199,7 +199,7 @@ public class CosmosDatabase {
         checkValidId(data);
     }
 
-    private static void doCheckBeforeBulk(String coll, List<?> data, String partition) {
+    static void doCheckBeforeBulk(String coll, List<?> data, String partition) {
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotEmpty(data, "create data " + coll + " " + partition);
