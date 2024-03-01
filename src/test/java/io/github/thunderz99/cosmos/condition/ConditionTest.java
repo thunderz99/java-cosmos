@@ -206,11 +206,11 @@ class ConditionTest {
         {
             //multiple SUB_COND_OR s
             var q = Condition.filter(
-                    SubConditionType.OR,
-                    Condition.filter("position", "leader"),
-                    SubConditionType.OR + " 2",
-                    Condition.filter("address", "London")
-            )
+                            SubConditionType.OR,
+                            Condition.filter("position", "leader"),
+                            SubConditionType.OR + " 2",
+                            Condition.filter("address", "London")
+                    )
                     .toQuerySpec();
             assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE ((c[\"position\"] = @param000_position)) AND ((c[\"address\"] = @param001_address)) OFFSET 0 LIMIT 100");
             var params = List.copyOf(q.getParameters());
@@ -219,13 +219,26 @@ class ConditionTest {
         }
     }
 
-	@Test
-	public void buildQuerySpec_should_work_for_sub_cond_or_from_the_beginning() {
+    @Test
+    public void buildQuerySpec_should_work_for_and_nested_with_or() {
+
+        var q = Condition.filter("isChecked", true,
+                        "$OR or_first ",
+                        List.of(Condition.filter("id_A", "value_A"),
+                                Condition.filter("id_B", "value_B", "id_C", "value_C")))
+                .toQuerySpec();
+
+
+        assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE (c[\"isChecked\"] = @param000_isChecked) AND ((c[\"id_A\"] = @param001_id_A) OR (c[\"id_B\"] = @param002_id_B) AND (c[\"id_C\"] = @param003_id_C)) OFFSET 0 LIMIT 100");
+    }
+
+    @Test
+    public void buildQuerySpec_should_work_for_sub_cond_or_from_the_beginning() {
 
         var q = Condition.filter( //
-                SubConditionType.OR,
-                List.of(Condition.filter("position", "leader"), Condition.filter("organization", "executive")) //
-        ) //
+                        SubConditionType.OR,
+                        List.of(Condition.filter("position", "leader"), Condition.filter("organization", "executive")) //
+                ) //
                 .sort("_ts", "DESC") //
                 .offset(10) //
                 .limit(20) //

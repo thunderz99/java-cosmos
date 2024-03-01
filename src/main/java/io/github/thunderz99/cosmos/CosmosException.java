@@ -52,7 +52,6 @@ public class CosmosException extends RuntimeException {
         // can not get CosmosException's code yet.
         this.code = "";
         this.retryAfterInMilliseconds = ce.getRetryAfterDuration().toMillis();
-
     }
 
     /**

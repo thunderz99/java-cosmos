@@ -43,8 +43,11 @@ public class RetryUtil {
                 return response;
             } else if (shouldRetry(response.getStatusCode())) {
                 long delay = response.getRetryAfterDuration().toMillis();
-                if (delay == 0) {
+                if (delay <= 0) {
                     delay = defaultWaitTime;
+                    if (delay < 0) {
+                        log.warn("retryAfterInMilliseconds {} is minus. Will retry by defaultWaitTime(2000ms). error:{}", delay, response.getErrorMessage());
+                    }
                 }
                 try {
                     log.info("Code:{}, 429 Too Many Requests / 449 Retry with / 408 Request Timeout. Wait:{} ms", response.getStatusCode(), delay);
@@ -87,8 +90,12 @@ public class RetryUtil {
                     throw cosmosException;
                 }
                 var wait = cosmosException.getRetryAfterInMilliseconds();
-                if (wait == 0) {
+                if (wait <= 0) {
                     wait = defaultWaitTime;
+
+                    if (wait < 0) {
+                        log.warn("retryAfterInMilliseconds {} is minus. Will retry by defaultWaitTime(2000ms)", wait, cosmosException);
+                    }
                 }
                 log.info("Code:{}, 429 Too Many Requests / 449 Retry with / 408 Request Timeout. Wait:{} ms", cosmosException.getStatusCode(), wait);
                 Thread.sleep(wait);

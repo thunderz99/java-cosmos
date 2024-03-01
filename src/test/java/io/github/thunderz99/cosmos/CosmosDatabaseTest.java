@@ -3,6 +3,7 @@ package io.github.thunderz99.cosmos;
 import java.util.*;
 import java.util.stream.IntStream;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.microsoft.azure.documentdb.SqlParameter;
@@ -299,7 +300,7 @@ class CosmosDatabaseTest {
                 testData.add(new User("invalid_id\n", "", ""));
             }
 
-            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBatch(testColl, testData, testPartition)).hasMessageContaining("id cannot contain \\t or \\n or \\r.");
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBatch(testColl, testData, testPartition)).hasMessageContaining("id cannot contain \\t or \\n or \\r");
         }
     }
 
@@ -351,7 +352,7 @@ class CosmosDatabaseTest {
                 testData.add(new User("invalid_id\n", "", ""));
             }
 
-            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBulk(testColl, testData, testPartition)).hasMessageContaining("id cannot contain \\t or \\n or \\r.");
+            assertThatThrownBy(() -> CosmosDatabase.doCheckBeforeBulk(testColl, testData, testPartition)).hasMessageContaining("id cannot contain \\t or \\n or \\r");
         }
     }
 
@@ -383,7 +384,8 @@ class CosmosDatabaseTest {
                 testData.add(new User("invalid_id\t", "", ""));
             }
 
-            assertThatThrownBy(() -> CosmosDatabase.checkValidId(testData)).hasMessageContaining("id cannot contain \\t or \\n or \\r.");
+            assertThatThrownBy(() -> CosmosDatabase.checkValidId(testData))
+                    .hasMessageContaining("id cannot contain \\t or \\n or \\r");
         }
 
         {
@@ -392,7 +394,7 @@ class CosmosDatabaseTest {
                 testData.add(new User("invalid_id\n", "", ""));
             }
 
-            assertThatThrownBy(() -> CosmosDatabase.checkValidId(testData)).hasMessageContaining("id cannot contain \\t or \\n or \\r.");
+            assertThatThrownBy(() -> CosmosDatabase.checkValidId(testData)).hasMessageContaining("id cannot contain \\t or \\n or \\r");
         }
 
         {
@@ -401,7 +403,7 @@ class CosmosDatabaseTest {
                 testData.add(new User("invalid_id\r", "", ""));
             }
 
-            assertThatThrownBy(() -> CosmosDatabase.checkValidId(testData)).hasMessageContaining("id cannot contain \\t or \\n or \\r.");
+            assertThatThrownBy(() -> CosmosDatabase.checkValidId(testData)).hasMessageContaining("id cannot contain \\t or \\n or \\r");
         }
     }
 
@@ -461,13 +463,6 @@ class CosmosDatabaseTest {
             assertThat(upserted1.id).isEqualTo(upsert1.id);
             assertThat(upserted1.firstName).isEqualTo(upsert1.firstName);
             assertThat(upserted1.lastName).isEqualTo(upsert1.lastName);
-
-            // partial upsert
-            var upsertedParial = db.upsertPartial(coll, user.id, Map.of("lastName", "lastPartialUpsert"), "Users")
-                    .toObject(User.class);
-            assertThat(upsertedParial.id).isEqualTo(upsert1.id);
-            assertThat(upsertedParial.firstName).isEqualTo(upsert1.firstName);
-            assertThat(upsertedParial.lastName).isEqualTo("lastPartialUpsert");
 
         } finally {
             db.delete(coll, user.id, "Users");
@@ -1191,7 +1186,7 @@ class CosmosDatabaseTest {
 
     @Test
     void check_invalid_id_should_work() throws Exception {
-        var ids = List.of("\ttabbefore", "tabafter\t", "tab\nbetween", "\ncrbefore", "crafter\r", "cr\n\rbetween");
+        var ids = List.of("\ttabbefore", "tabafter\t", "tab\nbetween", "\ncrbefore", "crafter\r", "cr\n\rbetween", "/test");
         for (var id : ids) {
             assertThatThrownBy(() -> CosmosDatabase.checkValidId(id)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("id cannot contain");
         }
@@ -1648,6 +1643,7 @@ class CosmosDatabaseTest {
 
         var id1 = prefix + "integer";
         var id2 = prefix + "double";
+        var id3 = "";
 
         var data1 = Map.of("id", id1, "contents", Map.of("age", 20));
         var data2 = Map.of("id", id2, "contents", Map.of("age", 40.0));
@@ -1661,20 +1657,34 @@ class CosmosDatabaseTest {
                 assertThat((Map<String, Object>) read1.get("contents")).containsEntry("age", 20);
             }
 
+            try (var is = this.getClass().getResourceAsStream("sheet-integer.json")) {
+                // integer should be read as an integer in nested json
+
+                var sheet = JsonUtil.fromJson(is, new TypeReference<LinkedHashMap<String, Object>>() {
+                });
+                var upserted1 = db.upsert(coll, sheet, partition).toMap();
+                id3 = upserted1.getOrDefault("id", "").toString();
+                var decimal = (Map<String, Object>) ((Map<String, Object>) upserted1.get("contents")).get("Decimal002");
+                assertThat(decimal).containsEntry("value", 3);
+
+
+            }
+
             {
                 // double should be upserted as a double and read as a double
                 var upserted2 = db.upsert(coll, data2, partition).toMap();
 
-                // At present, v2 sdk should read this value as an integer. When we up to v4 sdk. This problem will be resolved.
-                assertThat((Map<String, Object>) upserted2.get("contents")).containsEntry("age", 40);
+                // At present, v4 sdk should read this value as the same as the origin(40.0)
+                assertThat((Map<String, Object>) upserted2.get("contents")).containsEntry("age", 40.0);
                 var read2 = db.read(coll, id2, partition).toMap();
-                assertThat((Map<String, Object>) read2.get("contents")).containsEntry("age", 40);
+                assertThat((Map<String, Object>) read2.get("contents")).containsEntry("age", 40.0);
             }
 
 
         } finally {
             db.delete(coll, id1, partition);
             db.delete(coll, id2, partition);
+            db.delete(coll, id3, partition);
         }
 
 

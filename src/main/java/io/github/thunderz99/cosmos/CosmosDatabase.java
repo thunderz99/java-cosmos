@@ -1,12 +1,15 @@
 package io.github.thunderz99.cosmos;
 
+import java.util.*;
+import java.util.stream.Collectors;
+
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosContainer;
 import com.azure.cosmos.models.*;
 import com.google.common.base.Preconditions;
-import com.microsoft.azure.documentdb.*;
 import com.microsoft.azure.documentdb.PartitionKey;
 import com.microsoft.azure.documentdb.SqlQuerySpec;
+import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
@@ -23,9 +26,6 @@ import org.jetbrains.annotations.NotNull;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.*;
-import java.util.stream.Collectors;
 
 import static io.github.thunderz99.cosmos.condition.Condition.getFormattedKey;
 
@@ -59,6 +59,11 @@ public class CosmosDatabase {
         this.clientV4 = cosmosAccount.clientV4;
     }
 
+    /**
+     * An instance of LinkedHashMap<String, Object>, used to get the class instance in a convenience way.
+     */
+    static final LinkedHashMap<String, Object> mapInstance = new LinkedHashMap<>();
+
 
     /**
      * Create a document
@@ -86,16 +91,18 @@ public class CosmosDatabase {
 
         checkValidId(objectMap);
 
-        var resource = RetryUtil.executeWithRetry(() -> client.createDocument(
-                collectionLink,
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+        var response = RetryUtil.executeWithRetry(() -> container.createItem(
                 objectMap,
-                requestOptions(partition),
-                false
-        ).getResource());
+                new com.azure.cosmos.models.PartitionKey(partition),
+                new CosmosItemRequestOptions()
+        ));
 
-        log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, resource.getId(), partition, getAccount());
+        var item = response.getItem();
 
-        return new CosmosDocument(resource.toObject(JSONObject.class));
+        log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, getId(item), partition, getAccount());
+
+        return new CosmosDocument(item);
     }
 
     /**
@@ -185,7 +192,7 @@ public class CosmosDatabase {
             id = (String) object;
         } else {
             var map = JsonUtil.toMap(object);
-            id = map.get("id").toString();
+            id = map.getOrDefault("id", "").toString();
         }
         return id;
     }
@@ -395,13 +402,13 @@ public class CosmosDatabase {
         if (objectMap == null) {
             return;
         }
-        var id = objectMap.getOrDefault("id", "").toString();
+        var id = getId(objectMap);
         checkValidId(id);
     }
 
     static void checkValidId(String id) {
-        if (StringUtils.containsAny(id, "\t", "\n", "\r")) {
-            throw new IllegalArgumentException("id cannot contain \\t or \\n or \\r. id:" + id);
+        if (StringUtils.containsAny(id, "\t", "\n", "\r", "/")) {
+            throw new IllegalArgumentException("id cannot contain \\t or \\n or \\r or /. id:" + id);
         }
     }
 
@@ -433,11 +440,17 @@ public class CosmosDatabase {
 
         var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
-        var resource = RetryUtil.executeWithRetry(() -> client.readDocument(documentLink, requestOptions(partition)).getResource());
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+        var response = RetryUtil.executeWithRetry(() -> container.readItem(
+                id,
+                new com.azure.cosmos.models.PartitionKey(partition),
+                mapInstance.getClass()
+        ));
 
         log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-        return new CosmosDocument(resource.toObject(JSONObject.class));
+        return new CosmosDocument(response.getItem());
     }
 
     /**
@@ -502,7 +515,7 @@ public class CosmosDatabase {
         Checker.checkNotNull(data, "update data " + coll + " " + partition);
 
         var map = JsonUtil.toMap(data);
-        var id = map.getOrDefault("id", "").toString();
+        var id = getId(map);
 
         Checker.checkNotBlank(id, "id");
         checkValidId(id);
@@ -512,11 +525,18 @@ public class CosmosDatabase {
         // add partition info
         map.put(Cosmos.getDefaultPartitionKey(), partition);
 
-        var resource = RetryUtil.executeWithRetry(() -> client.replaceDocument(documentLink, map, requestOptions(partition)).getResource());
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+        var response = RetryUtil.executeWithRetry(() -> container.replaceItem(
+                map, id,
+                new com.azure.cosmos.models.PartitionKey(partition),
+                new CosmosItemRequestOptions()
+        ));
+
 
         log.info("updated Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
-        return new CosmosDocument(resource.toObject(JSONObject.class));
+        return new CosmosDocument(response.getItem());
     }
 
 
@@ -625,7 +645,7 @@ public class CosmosDatabase {
 
         var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
-        var resource = RetryUtil.executeWithRetry(() -> {
+        var map = RetryUtil.executeWithRetry(() -> {
                     // we will not retry if checkETag is true, this will result in an OCC.
                     // if we do not checkETag, we will get the newest etag from DB and retry replaceDocument.
                     var maxRetry = option.checkETag ? 0 : 3;
@@ -634,7 +654,7 @@ public class CosmosDatabase {
         );
 
         log.info("updatePartial Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
-        return new CosmosDocument(resource.toObject(JSONObject.class));
+        return new CosmosDocument(map);
 
     }
 
@@ -673,20 +693,26 @@ public class CosmosDatabase {
      * @return Document
      * @throws Exception
      */
-    Document replaceDocumentWithRefreshingEtag(String coll, String id, Map<String, Object> data, int maxRetry, String partition) throws Exception {
+    Map<String, Object> replaceDocumentWithRefreshingEtag(String coll, String id, Map<String, Object> data, int maxRetry, String partition) throws Exception {
 
         var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
         var retriedCount = 0;
+
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
 
         while (true) {
             var merged = readAndMerge(coll, id, data, partition);
             var etag = merged.getOrDefault(Cosmos.ETAG, "").toString();
 
             try {
-                return client.replaceDocument(documentLink, merged, requestOptions(partition, etag)).getResource();
+                return container.replaceItem(
+                        merged, id,
+                        new com.azure.cosmos.models.PartitionKey(partition),
+                        new CosmosItemRequestOptions().setIfMatchETag(etag)
+                ).getItem();
 
-            } catch (DocumentClientException e) {
+            } catch (com.azure.cosmos.CosmosException e) {
                 if (e.getStatusCode() == 412) {
                     // etag not match, 412 Precondition Failed
                     retriedCount++;
@@ -744,11 +770,17 @@ public class CosmosDatabase {
         // add partition info
         map.put(Cosmos.getDefaultPartitionKey(), partition);
 
-        var resource = RetryUtil.executeWithRetry(() -> client.upsertDocument(collectionLink, map, requestOptions(partition), true).getResource());
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+        var response = RetryUtil.executeWithRetry(() -> container.upsertItem(
+                map,
+                new com.azure.cosmos.models.PartitionKey(partition),
+                new CosmosItemRequestOptions()
+        ));
 
         log.info("upsert Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
 
-        return new CosmosDocument(resource.toObject(JSONObject.class));
+        return new CosmosDocument(response.getItem());
     }
 
     /**
@@ -761,62 +793,6 @@ public class CosmosDatabase {
      */
     public CosmosDocument upsert(String coll, Object data) throws Exception {
         return upsert(coll, data, coll);
-    }
-
-    /**
-     * Deprecated. Please use updatePartial instead. Upsert data (Partial upsert supported. Only the 1st json hierarchy). if not
-     * exist, create the data. if already exist, update the data. "id" field must be
-     * contained in data.
-     *
-     * @param coll      collection name
-     * @param id        id of document
-     * @param data      data object
-     * @param partition partition name
-     * @return CosmosDocument instance
-     * @throws Exception Cosmos client exception
-     */
-    @Deprecated
-    public CosmosDocument upsertPartial(String coll, String id, Object data, String partition)
-            throws Exception {
-
-        Checker.checkNotBlank(id, "id");
-        Checker.checkNotBlank(coll, "coll");
-        Checker.checkNotBlank(partition, "partition");
-        Checker.checkNotNull(data, "upsertPartial data " + coll + " " + partition);
-
-        var collectionLink = Cosmos.getCollectionLink(db, coll);
-
-        var originResource = readSuppressing404(coll, id, partition);
-        var origin = originResource == null ? null : originResource.toMap();
-
-        var newData = JsonUtil.toMap(data);
-        // add partition info
-        newData.put(Cosmos.getDefaultPartitionKey(), partition);
-
-        var merged = origin == null ? newData : merge(origin, newData);
-
-        checkValidId(merged);
-        var resource = RetryUtil.executeWithRetry(() -> client.upsertDocument(collectionLink, merged, requestOptions(partition), true).getResource());
-
-        log.info("upsertPartial Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
-
-        return new CosmosDocument(resource.toObject(JSONObject.class));
-    }
-
-    /**
-     * Deprecated. Please use updatePartial instead. Upsert data (Partial upsert supported. Only the 1st json hierarchy). if not
-     * exist, create the data. if already exist, update the data. "id" field must be
-     * contained in data.
-     *
-     * @param coll collection name
-     * @param id   id of document
-     * @param data data object
-     * @return CosmosDocument instance
-     * @throws Exception Cosmos client exception
-     */
-    @Deprecated
-    public CosmosDocument upsertPartial(String coll, String id, Object data) throws Exception {
-        return upsertPartial(coll, id, data, coll);
     }
 
     /**
@@ -837,7 +813,15 @@ public class CosmosDatabase {
         var documentLink = Cosmos.getDocumentLink(db, coll, id);
 
         try {
-            RetryUtil.executeWithRetry(() -> client.deleteDocument(documentLink, requestOptions(partition)).getResource());
+
+            var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+            var response = RetryUtil.executeWithRetry(() -> container.deleteItem(
+                    id,
+                    new com.azure.cosmos.models.PartitionKey(partition),
+                    new CosmosItemRequestOptions()
+            ));
+
             log.info("deleted Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
         } catch (Exception e) {

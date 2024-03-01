@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
   <artifactId>java-cosmos</artifactId>
-  <version>0.5.20</version>
+  <version>0.6.1</version>
 </dependency>
 ```
 
@@ -403,3 +403,8 @@ The main difference between Partial update and Patch is that:
     var users = db.find("Collection1", cond).toList(User.class);
 ```
 
+
+## Reference
+
+This library is built based on the official Azure Cosmos DB Java SDK v4.
+https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/sdk-java-v4
