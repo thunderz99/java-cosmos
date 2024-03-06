@@ -1,0 +1,51 @@
+
+{
+  "id": "sheet-integer01",
+  "contents": {
+    "SingleLineText001" : {
+      "itemId" : "SingleLineText001",
+      "type" : "SingleLineText",
+      "value" : "ss",
+      "show" : true,
+      "required" : false,
+      "empty" : false,
+      "userEdited" : true
+    },
+    "Date003" : {
+      "itemId" : "Date003",
+      "type" : "Date",
+      "value" : "2019-09-09",
+      "show" : true,
+      "required" : false,
+      "empty" : false,
+      "userEdited" : true
+    },
+    "Decimal002" : {
+      "itemId" : "Decimal002",
+      "type" : "Decimal",
+      "value" : 3,
+      "show" : true,
+      "required" : false,
+      "empty" : false,
+      "userEdited" : true
+    },
+    "SingleLineText004" : {
+      "itemId" : "SingleLineText004",
+      "type" : "SingleLineText",
+      "value" : "fff3",
+      "show" : true,
+      "required" : false,
+      "empty" : false,
+      "userEdited" : true
+    },
+    "MultipleLineText005" : {
+      "itemId" : "MultipleLineText005",
+      "type" : "MultipleLineText",
+      "value" : "dfdf",
+      "show" : true,
+      "required" : false,
+      "empty" : false,
+      "userEdited" : true
+    }
+  }
+}

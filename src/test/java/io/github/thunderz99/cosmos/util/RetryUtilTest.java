@@ -104,4 +104,23 @@ class RetryUtilTest {
         });
 
     }
+
+    @Test
+    void executeWithRetry_should_work_when_delay_time_is_minus() throws Exception {
+
+        { // even is delay time < 0, we will work as default delay time, and do not throw exception.
+            final var i = new AtomicInteger(0);
+
+            // success within 3 second(because default wait time is 2000 ms)
+            var ret = assertTimeout(ofSeconds(3), () ->
+                    RetryUtil.executeWithRetry(() -> {
+                        if (i.incrementAndGet() < 2) {
+                            throw new DocumentClientException(429, new com.microsoft.azure.documentdb.Error("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "-1"));
+                        }
+                        return "OK";
+                    })
+            );
+            assertThat(ret).isEqualTo("OK");
+        }
+    }
 }
