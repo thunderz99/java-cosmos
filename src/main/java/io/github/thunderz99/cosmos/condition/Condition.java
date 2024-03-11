@@ -5,13 +5,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.annotation.JsonGetter;
-import com.fasterxml.jackson.annotation.JsonSetter;
 import com.google.common.collect.Maps;
 import com.google.common.primitives.Primitives;
-import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
+import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
+import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
@@ -78,7 +76,7 @@ public class Condition {
     /**
      * a raw query spec which can use raw sql
      */
-    public SqlQuerySpec rawQuerySpec = null;
+    public CosmosSqlQuerySpec rawQuerySpec = null;
 
     public static final String COND_SQL_TRUE = "1=1";
     public static final String COND_SQL_FALSE = "1=0";
@@ -228,161 +226,164 @@ public class Condition {
         return this;
     }
 
-	/**
-	 * set whether is cross-partition query
-	 *
-	 * @param crossPartition
-	 * @return condition
-	 */
-	public Condition crossPartition(boolean crossPartition) {
-		this.crossPartition = crossPartition;
-		return this;
-	}
+    /**
+     * set whether is cross-partition query
+     *
+     * @param crossPartition
+     * @return condition
+     */
+    public Condition crossPartition(boolean crossPartition) {
+        this.crossPartition = crossPartition;
+        return this;
+    }
 
-	/**
-	 * set the query to a NOT query
-	 *
-	 * <p>
-	 * this is a toggle function. if you do twice not(), the result is the same as no not().
-	 * </p>
-	 *
-	 * @return condition
-	 */
-	public Condition not() {
-		this.negative = !this.negative;
-		return this;
-	}
+    /**
+     * set the query to a NOT query
+     *
+     * <p>
+     * this is a toggle function. if you do twice not(), the result is the same as no not().
+     * </p>
+     *
+     * @return condition
+     */
+    public Condition not() {
+        this.negative = !this.negative;
+        return this;
+    }
 
-	/**
-	 * Generate a query spec from condition.
-	 *
-	 * @return query spec which can be used in official DocumentClient
-	 */
-	public SqlQuerySpec toQuerySpec() {
-		return toQuerySpec(null);
-	}
+    /**
+     * Generate a query spec from condition.
+     *
+     * @return query spec which can be used in official DocumentClient
+     */
+    public CosmosSqlQuerySpec toQuerySpec() {
+        return toQuerySpec(null);
+    }
 
-	/**
-	 * Generate a query spec for count from condition.
-	 * @return query spec which can be used in official DocumentClient
-	 */
-	public SqlQuerySpec toQuerySpecForCount() {
-		var agg = Aggregate.function("COUNT(1)");
-		return toQuerySpec(agg);
-	}
+    /**
+     * Generate a query spec for count from condition.
+     *
+     * @return query spec which can be used in official DocumentClient
+     */
+    public CosmosSqlQuerySpec toQuerySpecForCount() {
+        var agg = Aggregate.function("COUNT(1)");
+        return toQuerySpec(agg);
+    }
 
-	public SqlQuerySpec toQuerySpec(Aggregate aggregate) {
 
-		// When rawSql is set, other filter / limit / offset / sort will be ignored.
-		if (rawQuerySpec != null) {
-			return rawQuerySpec;
-		}
+    public CosmosSqlQuerySpec toQuerySpec(Aggregate aggregate) {
 
-		var select = aggregate != null ? generateAggregateSelect(aggregate) : generateSelect();
+        // When rawSql is set, other filter / limit / offset / sort will be ignored.
+        if (rawQuerySpec != null) {
+            return rawQuerySpec;
+        }
 
-		var initialText = String.format("SELECT %s FROM c", select);
-		var initialParams = new SqlParameterCollection();
-		var initialConditionIndex = new AtomicInteger(0);
-		var initialParamIndex = new AtomicInteger(0);
+        var select = aggregate != null ? generateAggregateSelect(aggregate) : generateSelect();
 
-		var filterQuery = generateFilterQuery(initialText, initialParams, initialConditionIndex, initialParamIndex);
+        var initialText = String.format("SELECT %s FROM c", select);
+        var initialParams = new ArrayList<CosmosSqlParameter>();
+        var initialConditionIndex = new AtomicInteger(0);
+        var initialParamIndex = new AtomicInteger(0);
 
-		var queryText = filterQuery.queryText;
-		var params = filterQuery.params;
+        var filterQuery = generateFilterQuery(initialText, initialParams, initialConditionIndex, initialParamIndex);
 
-		// group by
-		if (aggregate != null && !CollectionUtils.isEmpty(aggregate.groupBy)) {
-			var groupBy = aggregate.groupBy.stream().map(g -> getFormattedKey(g)).collect(Collectors.joining(", "));
-			queryText.append(" GROUP BY ").append(groupBy);
-		}
+        var queryText = filterQuery.queryText;
+        var params = filterQuery.params;
 
-		// special logic for aggregate with cross-partition=true and sort is empty
-		// We have to add a default sort to overcome a bug. 
-		// see https://social.msdn.microsoft.com/Forums/en-US/535c7e4a-f5cb-4aa3-90f5-39a2c8024191/group-by-fails-for-crosspartition-queries?forum=azurecosmosdb
+        // group by
+        if (aggregate != null && !CollectionUtils.isEmpty(aggregate.groupBy)) {
+            var groupBy = aggregate.groupBy.stream().map(g -> getFormattedKey(g)).collect(Collectors.joining(", "));
+            queryText.append(" GROUP BY ").append(groupBy);
+        }
 
-		if (this.crossPartition && CollectionUtils.isEmpty(sort) && aggregate != null && CollectionUtils.isNotEmpty(aggregate.groupBy)) {
-			// use the groupBy's first field to sort
-			sort = new ArrayList<String>();
-			sort.add(aggregate.groupBy.stream().collect(Collectors.toList()).get(0));
-			sort.add("ASC");
-		}
+        // special logic for aggregate with cross-partition=true and sort is empty
+        // We have to add a default sort to overcome a bug.
+        // see https://social.msdn.microsoft.com/Forums/en-US/535c7e4a-f5cb-4aa3-90f5-39a2c8024191/group-by-fails-for-crosspartition-queries?forum=azurecosmosdb
 
-		// sort
-		if (!CollectionUtils.isEmpty(sort) && sort.size() > 1) {
+        if (this.crossPartition && CollectionUtils.isEmpty(sort) && aggregate != null && CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+            // use the groupBy's first field to sort
+            sort = new ArrayList<String>();
+            sort.add(aggregate.groupBy.stream().collect(Collectors.toList()).get(0));
+            sort.add("ASC");
+        }
 
-			var sortMap = new LinkedHashMap<String, String>();
+        // sort
+        if (!CollectionUtils.isEmpty(sort) && sort.size() > 1) {
 
-			for (int i = 0; i < sort.size(); i++) {
-				if (i % 2 == 0) {
-					sortMap.put(sort.get(i), sort.get(i + 1));
-				}
-			}
+            var sortMap = new LinkedHashMap<String, String>();
 
-			var sorts = "";
+            for (int i = 0; i < sort.size(); i++) {
+                if (i % 2 == 0) {
+                    sortMap.put(sort.get(i), sort.get(i + 1));
+                }
+            }
 
-			if(aggregate == null){
-				sorts = sortMap.entrySet().stream()
-				.map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
-				.collect(Collectors.joining(",", " ORDER BY", ""));
+            var sorts = "";
 
-			} else if(!CollectionUtils.isEmpty(aggregate.groupBy)){
-				//when GROUP BY, the ORDER BY must be added as an outer query
-				/** e.g
-				 *  SELECT * FROM (SELECT COUNT(1) AS facetCount, c.status, c.createdBy FROM c
-				 *  WHERE c._partition = "Accounts" AND c.name LIKE "%Tom%" GROUP BY c.status, c.createdBy) agg ORDER BY agg.status
-				 */
-				queryText.insert(0, "SELECT * FROM (");
-				//use "agg" as outer select clause's collection alias
-				queryText.append(") agg");
+            if (aggregate == null) {
+                sorts = sortMap.entrySet().stream()
+                        .map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
+                        .collect(Collectors.joining(",", " ORDER BY", ""));
 
-				sorts = sortMap.entrySet().stream()
-						.map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey(), "agg"), entry.getValue().toUpperCase()))
-						.collect(Collectors.joining(",", " ORDER BY", ""));
-			} else {
-				//we have aggregate but without groupBy, so just ignore sort
-			}
+            } else if (!CollectionUtils.isEmpty(aggregate.groupBy)) {
+                //when GROUP BY, the ORDER BY must be added as an outer query
+                /** e.g
+                 *  SELECT * FROM (SELECT COUNT(1) AS facetCount, c.status, c.createdBy FROM c
+                 *  WHERE c._partition = "Accounts" AND c.name LIKE "%Tom%" GROUP BY c.status, c.createdBy) agg ORDER BY agg.status
+                 */
+                queryText.insert(0, "SELECT * FROM (");
+                //use "agg" as outer select clause's collection alias
+                queryText.append(") agg");
 
-			queryText.append(sorts);
-		}
+                sorts = sortMap.entrySet().stream()
+                        .map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey(), "agg"), entry.getValue().toUpperCase()))
+                        .collect(Collectors.joining(",", " ORDER BY", ""));
+            } else {
+                //we have aggregate but without groupBy, so just ignore sort
+            }
 
-		// offset and limit
-		if(aggregate == null || !CollectionUtils.isEmpty(aggregate.groupBy)) {
-			//if not aggregate or not having group by, we do not need offset and  limit. Because the items will be only 1.
-			queryText.append(String.format(" OFFSET %d LIMIT %d", offset, limit));
-		}
+            queryText.append(sorts);
+        }
 
-		log.info("queryText:{}", queryText);
+        // offset and limit
+        if (aggregate == null || !CollectionUtils.isEmpty(aggregate.groupBy)) {
+            //if not aggregate or not having group by, we do not need offset and  limit. Because the items will be only 1.
+            queryText.append(String.format(" OFFSET %d LIMIT %d", offset, limit));
+        }
 
-		return new SqlQuerySpec(queryText.toString(), params);
+        log.info("queryText:{}", queryText);
 
-	}
+        return new CosmosSqlQuerySpec(queryText.toString(), params);
 
-	/**
-	 * filter parts
-	 *
-	 * @param selectPart queryText
-	 * @param params     params
-	 */
-	FilterQuery generateFilterQuery(String selectPart, SqlParameterCollection params,
-									AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+    }
 
-		// process raw sql
-		if (this.rawQuerySpec != null) {
-			conditionIndex.getAndIncrement();
-			params.addAll(this.rawQuerySpec.getParameters());
-			String rawQueryText = processNegativeQuery(this.rawQuerySpec.getQueryText(), this.negative);
-			return new FilterQuery(rawQueryText,
-					params, conditionIndex, paramIndex);
-		}
 
-		// process filters
+    /**
+     * filter parts
+     *
+     * @param selectPart queryText
+     * @param params     params
+     */
+    FilterQuery generateFilterQuery(String selectPart, List<CosmosSqlParameter> params,
+                                    AtomicInteger conditionIndex, AtomicInteger paramIndex) {
 
-		var queryTexts = new ArrayList<String>();
+        // process raw sql
+        if (this.rawQuerySpec != null) {
+            conditionIndex.getAndIncrement();
+            params.addAll(this.rawQuerySpec.getParameters());
+            String rawQueryText = processNegativeQuery(this.rawQuerySpec.getQueryText(), this.negative);
+            return new FilterQuery(rawQueryText,
+                    params, conditionIndex, paramIndex);
+        }
 
-		// filter parts
-		var connectPart = getConnectPart(conditionIndex);
+        // process filters
 
-		for (var entry : this.filter.entrySet()) {
+        var queryTexts = new ArrayList<String>();
+
+        // filter parts
+        var connectPart = getConnectPart(conditionIndex);
+
+        for (var entry : this.filter.entrySet()) {
 
             if (StringUtils.isEmpty(entry.getKey())) {
                 // ignore when key is empty
@@ -535,16 +536,16 @@ public class Condition {
      * @param paramIndex     increment index for params (for uniqueness of param names)
      * @return query text
      */
-    String generateFilterQuery4List(List<Condition> conds, String joiner, SqlParameterCollection params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+    String generateFilterQuery4List(List<Condition> conds, String joiner, List<CosmosSqlParameter> params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
         List<String> subTexts = new ArrayList<>();
-        List<String> originSubTexts= new ArrayList<>();
+        List<String> originSubTexts = new ArrayList<>();
 
         for (var subCond : conds) {
             var subFilterQuery = subCond.generateFilterQuery("", params, conditionIndex,
                     paramIndex);
 
-            var originSubText=removeConnectPart(subFilterQuery.queryText.toString());
-            subTexts.add(toJoinQueryText( originSubText,  originSubText,  paramIndex));
+            var originSubText = removeConnectPart(subFilterQuery.queryText.toString());
+            subTexts.add(toJoinQueryText(originSubText, originSubText, paramIndex));
             originSubTexts.add(originSubText);
             params = subFilterQuery.params;
             conditionIndex = subFilterQuery.conditionIndex;
@@ -768,7 +769,7 @@ public class Condition {
      */
     public static Condition rawSql(String queryText, SqlParameterCollection params) {
         var cond = new Condition();
-        cond.rawQuerySpec = new SqlQuerySpec(queryText, params);
+        cond.rawQuerySpec = new CosmosSqlQuerySpec(queryText, params);
         return cond;
     }
 
@@ -781,7 +782,7 @@ public class Condition {
      */
     public static Condition rawSql(String queryText) {
         var cond = new Condition();
-        cond.rawQuerySpec = new SqlQuerySpec(queryText);
+        cond.rawQuerySpec = new CosmosSqlQuerySpec(queryText);
         return cond;
     }
 
@@ -843,21 +844,22 @@ public class Condition {
 	 */
 	public Condition copy() {
 
-		var cond = new Condition();
-		cond.filter = copyFilter(this.filter);
+        var cond = new Condition();
+        cond.filter = copyFilter(this.filter);
 
-		cond.offset = this.offset;
-		cond.limit = this.limit;
-		cond.sort = new ArrayList<>(this.sort);
-		cond.fields = new LinkedHashSet<>(this.fields);
-		cond.crossPartition = this.crossPartition;
-		cond.negative = this.negative;
+        cond.offset = this.offset;
+        cond.limit = this.limit;
+        cond.sort = new ArrayList<>(this.sort);
+        cond.fields = new LinkedHashSet<>(this.fields);
+        cond.crossPartition = this.crossPartition;
+        cond.negative = this.negative;
 
-		// copy rawQuerySpec using json serialize and deserialize
-		cond.setRawQuerySpecJson(this.getRawQuerySpecJson());
+        if (this.rawQuerySpec != null) {
+            cond.rawQuerySpec = this.rawQuerySpec.copy();
+        }
 
-		return cond;
-	}
+        return cond;
+    }
 
 	Map<String, Object> copyFilter(Map<String, Object> filter) {
 
@@ -898,76 +900,65 @@ public class Condition {
 			return coll.stream().map(item -> copyValue(item)).collect(Collectors.toList());
 		}
 
-		// primitive type
-		if (value instanceof String || Primitives.isWrapperType(value.getClass()) || value.getClass().isPrimitive() || value.getClass().isEnum()) {
-			return value;
-		}
+        // primitive type
+        if (value instanceof String || Primitives.isWrapperType(value.getClass()) || value.getClass().isPrimitive() || value.getClass().isEnum()) {
+            return value;
+        }
 
-		return JsonUtil.toMap(value);
+        return JsonUtil.toMap(value);
 
-	}
+    }
 
-	/**
-	 * fix enum exception in documentdb sdk
-	 *
-	 * @param key   key of param
-	 * @param value value of param (enum will automatically convert to string by .name())
-	 * @return a SqlParameter instance created
-	 */
-	public static SqlParameter createSqlParameter(String key, Object value) {
-		if (value instanceof Enum<?>) {
-			value = ((Enum<?>) value).name();
-		}
+    /**
+     * fix enum exception in documentdb sdk
+     *
+     * @param key   key of param
+     * @param value value of param (enum will automatically convert to string by .name())
+     * @return a SqlParameter instance created
+     */
+    public static CosmosSqlParameter createSqlParameter(String key, Object value) {
+        if (value instanceof Enum<?>) {
+            value = ((Enum<?>) value).name();
+        }
 
-		return new SqlParameter(key, value);
+        return new CosmosSqlParameter(key, value);
 
-	}
+    }
 
-	/**
-	 * judge whether the condition is a trueCondition
-	 *
-	 * @param cond condition to judge
-	 * @return true/false
-	 */
-	public static boolean isTrueCondition(Condition cond) {
-		return cond.rawQuerySpec != null && COND_SQL_TRUE.equals(cond.rawQuerySpec.getQueryText());
-	}
+    /**
+     * judge whether the condition is a trueCondition
+     *
+     * @param cond condition to judge
+     * @return true/false
+     */
+    public static boolean isTrueCondition(Condition cond) {
+        return cond.rawQuerySpec != null && COND_SQL_TRUE.equals(cond.rawQuerySpec.getQueryText());
+    }
 
-	/**
-	 * judge whether the condition is a falseCondition
-	 *
-	 * @param cond condition to judge
-	 * @return true/false
-	 */
-	public static boolean isFalseCondition(Condition cond) {
-		return cond.rawQuerySpec != null && COND_SQL_FALSE.equals(cond.rawQuerySpec.getQueryText());
-	}
+    /**
+     * judge whether the condition is a falseCondition
+     *
+     * @param cond condition to judge
+     * @return true/false
+     */
+    public static boolean isFalseCondition(Condition cond) {
+        return cond.rawQuerySpec != null && COND_SQL_FALSE.equals(cond.rawQuerySpec.getQueryText());
+    }
 
-
-	/**
-	 * A JsonGetter in order to serialize rawQuerySpecToJson to json string
-	 *
-	 * @return
-	 */
-	@JsonGetter("rawQuerySpec")
-	public String getRawQuerySpecJson() {
-		if (rawQuerySpec == null) {
-			return null;
-		}
-		return JsonUtil.toJson(new SqlQuerySpec4Json(rawQuerySpec));
-	}
-
-	/**
-	 * A JsonSetter in order to deserialize rawQuerySpecToJson from json string
-	 */
-	@JsonSetter("rawQuerySpec")
-	public void setRawQuerySpecJson(String jsonString) {
-		if (StringUtils.isEmpty(jsonString)) {
-			this.rawQuerySpec = null;
-		} else {
-			var rawQuerySpec4Json = JsonUtil.fromJson(jsonString, SqlQuerySpec4Json.class);
-			this.rawQuerySpec = rawQuerySpec4Json.toSqlQuerySpec();
-		}
-	}
+    /**
+     * A getter in order to serialize rawQuerySpec to json string
+     *
+     * <p>
+     * if rawQuerySpec is null, returns null
+     * </p>
+     *
+     * @return a json string representing rawQuerySpec
+     */
+    public String getRawQuerySpecJson() {
+        if (rawQuerySpec == null) {
+            return null;
+        }
+        return JsonUtil.toJson(this.rawQuerySpec);
+    }
 
 }
