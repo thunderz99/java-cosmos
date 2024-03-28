@@ -4,9 +4,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.json.JSONObject;
-
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import org.apache.commons.collections4.CollectionUtils;
+import org.json.JSONObject;
 
 /**
  * Represent a list of CosmosDB document.
@@ -18,38 +20,77 @@ import io.github.thunderz99.cosmos.util.JsonUtil;
  */
 public class CosmosDocumentList {
 
-	List<JSONObject> jsonObjs;
+    List<JSONObject> jsonObjs;
 
-	public CosmosDocumentList(List<JSONObject> jsonObjs) {
-		this.jsonObjs = jsonObjs;
-	}
+    List<Map<String, Object>> maps;
 
-	public <T> List<T> toList(Class<T> classOfT) {
+    public CosmosDocumentList() {
+    }
 
-		if (jsonObjs == null) {
-			return List.of();
-		}
+    public CosmosDocumentList(List<?> objs) {
 
-		return jsonObjs.stream().map(obj -> JsonUtil.fromJson(obj.toString(), classOfT)).collect(Collectors.toList());
-	}
+        if (CollectionUtils.isEmpty(objs)) {
+            return;
+        }
 
-	public List<Map<String, Object>> toMap() {
-		if (jsonObjs == null) {
-			return List.of();
-		}
-		return jsonObjs.stream().map(obj -> JsonUtil.toMap(obj.toString())).collect(Collectors.toList());
-	}
+        var obj = objs.get(0);
 
-	public int size() {
-		return jsonObjs.size();
-	}
+        if (obj instanceof Map) {
+            this.maps = (List<Map<String, Object>>) objs;
+        } else if (obj instanceof JSONObject) {
+            this.jsonObjs = (List<JSONObject>) objs;
+        }
+    }
 
-	public String toJson() {
-		return JsonUtil.toJson(jsonObjs);
-	}
+    public <T> List<T> toList(Class<T> classOfT) {
 
-	public String toString() {
-		return toJson();
-	}
+        if (maps != null) {
+            return maps.stream().map(obj -> JsonUtil.fromMap(obj, classOfT)).collect(Collectors.toList());
+        }
+        if (jsonObjs != null) {
+            return jsonObjs.stream().map(obj -> JsonUtil.fromJson(obj.toString(), classOfT)).collect(Collectors.toList());
+        }
+
+        return Lists.newArrayList();
+    }
+
+    public List<Map<String, Object>> toMap() {
+
+        if (maps != null) {
+            return maps.stream().map(obj -> Maps.newLinkedHashMap(obj)).collect(Collectors.toList());
+        }
+
+        if (jsonObjs != null) {
+            return jsonObjs.stream().map(obj -> JsonUtil.toMap(obj.toString())).collect(Collectors.toList());
+        }
+
+        return Lists.newArrayList();
+    }
+
+    public int size() {
+        if (maps != null) {
+            return maps.size();
+        }
+
+        if (jsonObjs != null) {
+            return jsonObjs.size();
+        }
+        return 0;
+    }
+
+    public String toJson() {
+        if (maps != null) {
+            return JsonUtil.toJson(maps);
+        }
+
+        if (jsonObjs != null) {
+            return JsonUtil.toJson(jsonObjs);
+        }
+        return "[]";
+    }
+
+    public String toString() {
+        return toJson();
+    }
 
 }

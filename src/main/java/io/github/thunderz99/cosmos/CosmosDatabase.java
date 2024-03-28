@@ -5,19 +5,22 @@ import java.util.stream.Collectors;
 
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosContainer;
+import com.azure.cosmos.models.SqlQuerySpec;
 import com.azure.cosmos.models.*;
 import com.google.common.base.Preconditions;
 import com.microsoft.azure.documentdb.PartitionKey;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
 import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
+import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import io.github.thunderz99.cosmos.util.NumberUtil;
 import io.github.thunderz99.cosmos.util.RetryUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -897,7 +900,7 @@ public class CosmosDatabase {
      * A helper method to do find/aggregate by condition
      *
      * @param coll      collection name
-     * @param aggregate aggregate settings. null if no aggration needed.
+     * @param aggregate aggregate settings. null if no aggregation needed.
      * @param cond      condition to find
      * @param partition partition name
      * @return CosmosDocumentList
@@ -906,52 +909,103 @@ public class CosmosDatabase {
     CosmosDocumentList find(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
 
         var collectionLink = Cosmos.getCollectionLink(db, coll);
-        List<JSONObject> jsonObjs;
 
-        var feedOptions = new FeedOptions();
+        var queryRequestOptions = new CosmosQueryRequestOptions();
+
         if (cond.crossPartition) {
-            feedOptions.setEnableCrossPartitionQuery(true);
+            // In v4, do not set the partitionKey to do a cross partition query
         } else {
-            feedOptions.setPartitionKey(new PartitionKey(partition));
+            queryRequestOptions.setPartitionKey(new com.azure.cosmos.models.PartitionKey(partition));
         }
 
         var querySpec = cond.toQuerySpec(aggregate);
 
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+        var ret = new CosmosDocumentList();
         if (Objects.isNull(aggregate) && !cond.joinCondText.isEmpty() && !cond.returnAllSubArray) {
-            jsonObjs = mergeSubArrayToDoc(cond, collectionLink, querySpec, feedOptions);
+            // process query with join
+            var jsonObjs = mergeSubArrayToDoc(coll, cond, querySpec, queryRequestOptions);
+            ret = new CosmosDocumentList(jsonObjs);
         } else {
-            var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec, feedOptions).getQueryIterable().toList());
-            jsonObjs = docs.stream().map(it -> it.toObject(JSONObject.class)).collect(Collectors.toList());
+            // process query without join
+            var docs = RetryUtil.executeWithRetry(() ->
+                    container.queryItems(querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass()));
+            List maps = docs.stream().collect(Collectors.toList());
+
+            if (aggregate != null) {
+                // Process result of aggregate. convert Long value to Integer if possible.
+                // Because "itemsCount: 1L" is not acceptable by some users. They prefer "itemsCount: 1" more.
+                maps = convertAggregateResultsToInteger(maps);
+            }
+
+            ret = new CosmosDocumentList(maps);
         }
+
 
         if (log.isInfoEnabled()) {
             log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
         }
 
-        return new CosmosDocumentList(jsonObjs);
+        return ret;
 
+    }
+
+    /**
+     * Process result of aggregate. convert Long value to Integer if possible.
+     * <p>
+     * Because "itemsCount: 1L" is not acceptable by some users. They prefer "itemsCount: 1" more.
+     * </p>
+     *
+     * @param maps
+     * @return
+     */
+    static List<? extends LinkedHashMap> convertAggregateResultsToInteger(List<? extends LinkedHashMap> maps) {
+
+        if (CollectionUtils.isEmpty(maps)) {
+            return maps;
+        }
+
+        for (var map : maps) {
+            map.replaceAll((key, value) -> {
+                // Check if the value is an instance of Long
+                if (value instanceof Number) {
+                    var numberValue = (Number) value;
+                    return NumberUtil.convertNumberToIntIfCompatible(numberValue);
+                }
+                return value; // Return the original value if no conversion is needed
+            });
+        }
+
+        return maps;
     }
 
     /**
      * Merge the sub array to origin array
      * This function will traverse the result of join part and replaced by new result that is found by sub query.
      *
+     * @param coll           collection name
      * @param cond           merge the content of the sub array to origin array
-     * @param collectionLink collection link
      * @param querySpec      querySpec
-     * @param feedOptions    feed Options
+     * @param requestOptions request options
      * @return docs list
      * @throws Exception error exception
      */
-    private List<JSONObject> mergeSubArrayToDoc(Condition cond, String collectionLink, SqlQuerySpec querySpec, FeedOptions feedOptions) throws Exception {
+    List<Map<String, Object>> mergeSubArrayToDoc(String coll, Condition cond, CosmosSqlQuerySpec querySpec, CosmosQueryRequestOptions requestOptions) throws Exception {
 
         Map<String, String[]> keyMap = new LinkedHashMap<>();
 
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
         var queryText = initJoinSelectPart(cond, querySpec, keyMap);
-        var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, new SqlQuerySpec(queryText, querySpec.getParameters()), feedOptions).getQueryIterable().toList());
+        var pagedDocs = RetryUtil.executeWithRetry(
+                () -> container.queryItems(new SqlQuerySpec(queryText, querySpec.getParametersv4()),  // use new querySpec with join
+                        requestOptions, mapInstance.getClass()));
+        // cast the docs to Map<String, Object> type (want to do this more elegantly in the future)
+        var docs = pagedDocs.stream().map(x -> (Map<String, Object>) x).collect(Collectors.toList());
         var result = mergeArrayValueToDoc(docs, keyMap);
 
-        return result.isEmpty() ? docs.stream().map(it -> it.toObject(JSONObject.class)).collect(Collectors.toList()) : result;
+        return result.isEmpty() ? docs : result;
     }
 
     /**
@@ -961,19 +1015,19 @@ public class CosmosDatabase {
      * @param keyMap join part map
      * @return the merged sub array
      */
-    private List<JSONObject> mergeArrayValueToDoc(List<Document> docs, Map<String, String[]> keyMap) {
-        List<JSONObject> result = new ArrayList<>();
+    List<Map<String, Object>> mergeArrayValueToDoc(List<Map<String, Object>> docs, Map<String, String[]> keyMap) {
+        List<Map<String, Object>> result = new ArrayList<>();
 
-        for (Document doc : docs) {
-            var docMain = JsonUtil.toMap(doc.getHashMap().get("c"));
+        for (var doc : docs) {
+            var docMain = JsonUtil.toMap(doc.get("c"));
 
             for (Map.Entry<String, String[]> entry : keyMap.entrySet()) {
-                if (Objects.nonNull(doc.getHashMap().get(entry.getKey()))) {
-                    Map<String, Object> docSubListItem = Map.of(entry.getKey(), doc.getHashMap().get(entry.getKey()));
+                if (Objects.nonNull(doc.get(entry.getKey()))) {
+                    Map<String, Object> docSubListItem = Map.of(entry.getKey(), doc.get(entry.getKey()));
                     traverseListValueToDoc(docMain, docSubListItem, entry, 0);
                 }
             }
-            result.add(new JSONObject(docMain));
+            result.add(docMain);
         }
 
         return result;
@@ -987,7 +1041,7 @@ public class CosmosDatabase {
      * @param keyMap    join part map
      * @return select part
      */
-    private String initJoinSelectPart(Condition cond, SqlQuerySpec querySpec, Map<String, String[]> keyMap) {
+    private String initJoinSelectPart(Condition cond, CosmosSqlQuerySpec querySpec, Map<String, String[]> keyMap) {
         StringBuilder queryText = new StringBuilder();
 
         var originSelectPart = querySpec.getQueryText().substring(0, querySpec.getQueryText().indexOf("WHERE"));
@@ -1020,7 +1074,7 @@ public class CosmosDatabase {
      * @param entry     entry
      * @param count     count
      */
-    private void traverseListValueToDoc(Map<String, Object> docMap, Map<String, Object> newSubMap, Map.Entry<String, String[]> entry, int count) {
+    void traverseListValueToDoc(Map<String, Object> docMap, Map<String, Object> newSubMap, Map.Entry<String, String[]> entry, int count) {
 
         var aliasName = entry.getKey();
         var subValue = entry.getValue();
@@ -1162,7 +1216,7 @@ public class CosmosDatabase {
 
         var querySpec = cond.toQuerySpecForCount();
 
-        var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec, options).getQueryIterable().toList());
+        var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec.toSqlQuerySpecV2(), options).getQueryIterable().toList());
 
         if (log.isInfoEnabled()) {
             log.info("count Document:{}, cond:{}, partition:{}, account:{}", coll, cond, partition, getAccount());
@@ -1181,13 +1235,13 @@ public class CosmosDatabase {
      * see details of increment: <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update#supported-operations">supported operations: increment</a>
      * </p>
      *
-     * @param coll
-     * @param id
-     * @param path
-     * @param value
-     * @param partition
-     * @return
-     * @throws Exception
+     * @param coll      collection
+     * @param id        item id
+     * @param path      json path
+     * @param value     amount of increment
+     * @param partition partition for item
+     * @return result item
+     * @throws Exception CosmosException doing increment
      */
     public CosmosDocument increment(String coll, String id, String path, int value, String partition) throws Exception {
 

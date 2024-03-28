@@ -94,7 +94,7 @@ public class CosmosException extends RuntimeException {
     /**
      * Get the string code e.g. Unauthorized / NotFound / etc
      *
-     * @return
+     * @return code for exception (http status)
      */
     public String getCode() {
         return code;

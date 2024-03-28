@@ -9,9 +9,9 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
 import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
+import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
+import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -43,29 +43,29 @@ public class SimpleExpression implements Expression {
 	 *       <li>{@code {"status =": ["A", "B"]} means status equals ["A", "B"] } </li>
 	 *     </ul>
 	 */
-	public String operator = "";
+    public String operator = "";
 
-	public SimpleExpression() {
-	}
+    public SimpleExpression() {
+    }
 
-	public SimpleExpression(String key, Object value) {
-		this.key = key;
-		this.value = value;
-	}
+    public SimpleExpression(String key, Object value) {
+        this.key = key;
+        this.value = value;
+    }
 
-	public SimpleExpression(String key, Object value, String operator) {
-		this.key = key;
-		this.value = value;
-		this.operator = operator;
-		this.type = binaryOperatorPattern.asPredicate().test(operator) ? OperatorType.BINARY_OPERATOR
-				: OperatorType.BINARY_FUNCTION;
-	}
+    public SimpleExpression(String key, Object value, String operator) {
+        this.key = key;
+        this.value = value;
+        this.operator = operator;
+        this.type = binaryOperatorPattern.asPredicate().test(operator) ? OperatorType.BINARY_OPERATOR
+                : OperatorType.BINARY_FUNCTION;
+    }
 
-	@Override
-	public SqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
+    @Override
+    public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
 
-        var ret = new SqlQuerySpec();
-        var params = new SqlParameterCollection();
+        var ret = new CosmosSqlQuerySpec();
+        var params = new ArrayList<CosmosSqlParameter>();
 
         // fullName.last -> @param001_fullName__last
         // or
@@ -157,53 +157,53 @@ public class SimpleExpression implements Expression {
 			} else {
 				return RandomStringUtils.randomAlphanumeric(7);
 			}
-		}).collect(Collectors.joining("__"));
+        }).collect(Collectors.joining("__"));
 
-		return String.format("@param%03d_%s", index, sanitizedKey);
-	}
+        return String.format("@param%03d_%s", index, sanitizedKey);
+    }
 
-	@Override
-	public String toString() {
-		return JsonUtil.toJson(this);
-	}
+    @Override
+    public String toString() {
+        return JsonUtil.toJson(this);
+    }
 
-	/**
-	 * A helper function to generate c.foo IN (...) queryText
-	 *
-	 * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
-	 * "( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )", and add
-	 * paramsValue into params
-	 */
-	static String buildArray(String key, String paramName, Collection<?> paramValue, SqlParameterCollection params) {
-		var ret = new StringBuilder(String.format(" (%s IN (", Condition.getFormattedKey(key)));
+    /**
+     * A helper function to generate c.foo IN (...) queryText
+     * <p>
+     * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
+     * "( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )", and add
+     * paramsValue into params
+     */
+    static String buildArray(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params) {
+        var ret = new StringBuilder(String.format(" (%s IN (", Condition.getFormattedKey(key)));
 
-		int index = 0;
+        int index = 0;
 
-		var paramNameList = new ArrayList<String>();
-		for (var v : paramValue) {
-			var paramNameIdx = String.format("%s__%d", paramName, index);
-			paramNameList.add(paramNameIdx);
-			params.add(Condition.createSqlParameter(paramNameIdx, v));
-			index++;
-		}
-		ret.append(paramNameList.stream().collect(Collectors.joining(", ")));
+        var paramNameList = new ArrayList<String>();
+        for (var v : paramValue) {
+            var paramNameIdx = String.format("%s__%d", paramName, index);
+            paramNameList.add(paramNameIdx);
+            params.add(Condition.createSqlParameter(paramNameIdx, v));
+            index++;
+        }
+        ret.append(paramNameList.stream().collect(Collectors.joining(", ")));
 
-		ret.append("))");
+        ret.append("))");
 
-		return ret.toString();
-	}
+        return ret.toString();
+    }
 
-	/**
-	 * A helper function to generate c.foo ARRAY_CONTAINS (...) queryText
-	 *
-	 * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
-	 * "(ARRAY_CONTAINS("@parentId", c["parentId"]))", and add
-	 * paramsValue into params
-	 */
-	static String buildArrayContains(String key, String paramName, Collection<?> paramValue, SqlParameterCollection params) {
-		var ret = String.format(" (ARRAY_CONTAINS(%s, %s))", paramName, Condition.getFormattedKey(key));
-		params.add(Condition.createSqlParameter(paramName, paramValue));
-		return ret;
-	}
+    /**
+     * A helper function to generate c.foo ARRAY_CONTAINS (...) queryText
+     * <p>
+     * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
+     * "(ARRAY_CONTAINS("@parentId", c["parentId"]))", and add
+     * paramsValue into params
+     */
+    static String buildArrayContains(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params) {
+        var ret = String.format(" (ARRAY_CONTAINS(%s, %s))", paramName, Condition.getFormattedKey(key));
+        params.add(Condition.createSqlParameter(paramName, paramValue));
+        return ret;
+    }
 
 }

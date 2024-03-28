@@ -269,7 +269,7 @@ public class Cosmos {
      * @param db   dbName
      * @param coll collName
      * @return documentCollection obj
-     * @throws DocumentClientException
+     * @throws DocumentClientException when client exception occurs
      */
     public DocumentCollection readCollection(String db, String coll) throws DocumentClientException {
         return readCollection(client, db, coll);
@@ -344,6 +344,7 @@ public class Cosmos {
      * key starts with "/".  e.g.  "/users/title"
      * </p>
      *
+     * @param keys fields to generate uniqueKeyPolicy
      * @return unique key policy
      */
     public static UniqueKeyPolicy getUniqueKeyPolicy(Set<String> keys) {

@@ -1,6 +1,7 @@
 package io.github.thunderz99.cosmos;
 
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -15,6 +16,7 @@ import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
+import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -791,65 +793,6 @@ class CosmosDatabaseTest {
             assertThat(users.get(0).id).isEqualTo(user3.id);
         }
 
-        // test aggregate(simple)
-        {
-            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
-
-            // test find
-            var result = db.aggregate(coll, aggregate, "Users").toMap();
-            assertThat(result).hasSize(2);
-
-            var expect = Map.of("Hanks", 2, "Henry", 1);
-
-            var last1 = result.get(0).getOrDefault("last", "").toString();
-            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(expect.get(last1));
-
-            var last2 = result.get(1).getOrDefault("last", "").toString();
-            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(expect.get(last2));
-
-        }
-
-        // test aggregate(max)
-        {
-            var aggregate = Aggregate.function("MAX(c.age) AS maxAge, COUNT(1) AS facetCount").groupBy("fullName.last");
-
-            // test find
-            var result = db.aggregate(coll, aggregate, "Users").toMap();
-            assertThat(result).hasSize(2);
-
-            var expectAge = Map.of("Hanks", 30, "Henry", 45);
-            var expectCount = Map.of("Hanks", 2, "Henry", 1);
-
-            var last1 = result.get(0).getOrDefault("last", "").toString();
-            assertThat(Integer.parseInt(result.get(0).getOrDefault("maxAge", "-1").toString())).isEqualTo(expectAge.get(last1));
-            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(expectCount.get(last1));
-
-            var last2 = result.get(1).getOrDefault("last", "").toString();
-            assertThat(Integer.parseInt(result.get(1).getOrDefault("maxAge", "-1").toString())).isEqualTo(expectAge.get(last2));
-            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(expectCount.get(last2));
-
-        }
-
-        // test aggregate(with order by)
-        {
-            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
-
-            var cond = Condition.filter("age <", 100).sort("last", "DESC");
-
-            // test find
-            var result = db.aggregate(coll, aggregate, cond, "Users").toMap();
-            assertThat(result).hasSize(2);
-
-            var last1 = result.get(0).getOrDefault("last", "").toString();
-            assertThat(last1).isEqualTo("Henry");
-            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
-
-            var last2 = result.get(1).getOrDefault("last", "").toString();
-            assertThat(last2).isEqualTo("Hanks");
-            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(2);
-
-        }
-
         // test query cross-partition
         {
             // simple query
@@ -878,17 +821,178 @@ class CosmosDatabaseTest {
     }
 
     @Test
+    void aggregate_should_work() throws Exception {
+        // test aggregate(simple)
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
+
+            // test find
+            var result = db.aggregate(coll, aggregate, "Users").toMap();
+            assertThat(result).hasSize(2);
+
+            var expect = Map.of("Hanks", 2, "Henry", 1);
+
+            var lastName1 = result.get(0).getOrDefault("last", "").toString();
+            // the result of count should be integer
+            assertThat(result.get(0).get("facetCount")).isInstanceOf(Integer.class).isEqualTo(expect.get(lastName1));
+
+            var lastName2 = result.get(1).getOrDefault("last", "").toString();
+            assertThat(result.get(1).get("facetCount")).isEqualTo(expect.get(lastName2));
+
+        }
+
+        // test aggregate(max)
+        {
+            var aggregate = Aggregate.function("MAX(c.age) AS maxAge, COUNT(1) AS facetCount").groupBy("fullName.last");
+
+            // test find
+            var result = db.aggregate(coll, aggregate, "Users").toMap();
+            assertThat(result).hasSize(2);
+
+            var expectAge = Map.of("Hanks", 30, "Henry", 45);
+            var expectCount = Map.of("Hanks", 2, "Henry", 1);
+
+            var lastName1 = result.get(0).get("last");
+            assertThat(result.get(0).get("maxAge")).isEqualTo(expectAge.get(lastName1));
+            assertThat(result.get(0).get("facetCount")).isEqualTo(expectCount.get(lastName1));
+
+            var lastName2 = result.get(1).get("last");
+            assertThat(result.get(1).get("maxAge")).isEqualTo(expectAge.get(lastName2));
+            assertThat(result.get(1).get("facetCount")).isEqualTo(expectCount.get(lastName2));
+
+        }
+
+        // test aggregate(with order by)
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
+
+            var cond = Condition.filter("age <", 100).sort("last", "DESC");
+
+            // test find
+            var result = db.aggregate(coll, aggregate, cond, "Users").toMap();
+            assertThat(result).hasSize(2);
+
+            var last1 = result.get(0).getOrDefault("last", "").toString();
+            assertThat(last1).isEqualTo("Henry");
+            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+
+            var last2 = result.get(1).getOrDefault("last", "").toString();
+            assertThat(last2).isEqualTo("Hanks");
+            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(2);
+
+        }
+
+        // test aggregate(sum)
+        {
+            var aggregate = Aggregate.function("SUM(c.age) AS ageSum").groupBy("fullName.last");
+
+            // test find
+            var result = db.aggregate(coll, aggregate, "Users").toMap();
+            assertThat(result).hasSize(2);
+
+            var expect = Map.of("Hanks", 42, "Henry", 45);
+
+            var lastName1 = result.get(0).getOrDefault("last", "").toString();
+            // the result of count should be integer
+            assertThat(result.get(0).get("ageSum")).isInstanceOf(Integer.class).isEqualTo(expect.get(lastName1));
+
+            var lastName2 = result.get(1).getOrDefault("last", "").toString();
+            assertThat(result.get(1).get("ageSum")).isEqualTo(expect.get(lastName2));
+
+        }
+    }
+
+    @Test
+    void convertAggregateResultsToInteger_should_work() {
+        // Setup
+
+        // Test data setup
+        List<LinkedHashMap<String, Object>> testMaps = new ArrayList<>();
+        LinkedHashMap<String, Object> map1 = new LinkedHashMap<>();
+        map1.put("itemsCount", 1L);
+        map1.put("name", "TestName1");
+        LinkedHashMap<String, Object> map2 = new LinkedHashMap<>();
+        map2.put("itemsCount", Long.MAX_VALUE);
+        map2.put("name", "TestName2");
+        LinkedHashMap<String, Object> map3 = new LinkedHashMap<>();
+        map3.put("itemsCount", 100L);
+        map3.put("itemsWithinRange", Integer.MAX_VALUE);
+        testMaps.add(map1);
+        testMaps.add(map2);
+        testMaps.add(map3);
+
+        // Call the method under test
+        List<? extends LinkedHashMap> resultMaps = CosmosDatabase.convertAggregateResultsToInteger(testMaps);
+
+        // Assertions
+        assertThat(resultMaps).isNotNull();
+        assertThat(resultMaps.size()).isEqualTo(3);
+
+        assertThat(resultMaps.get(0).get("itemsCount")).isInstanceOf(Integer.class).isEqualTo(1);
+        assertThat(resultMaps.get(1).get("itemsCount")).isInstanceOf(Long.class).isEqualTo(Long.MAX_VALUE); // Should remain Long because it's out of Integer range
+        assertThat(resultMaps.get(2).get("itemsCount")).isInstanceOf(Integer.class).isEqualTo(100);
+        assertThat(resultMaps.get(2).get("itemsWithinRange")).isInstanceOf(Integer.class).isEqualTo(Integer.MAX_VALUE); // Should remain Integer
+    }
+
+    /**
+     * remove keys like "_ts", "_rid" in a map, in order to do a clean comparision.
+     *
+     * @param map
+     * @return
+     */
+    Map<String, Object> removeSystemKeys(Map<String, Object> map) {
+        var keys = map.keySet().stream().collect(Collectors.toList());
+
+        for (var key : keys) {
+            if (StringUtils.startsWith(key, "_")) {
+                map.remove(key);
+            }
+        }
+        return map;
+    }
+
+    @Test
+    public void find_and_to_map_should_retain_order_of_key() throws Exception {
+
+        var id = "find_and_to_map_should_retain_order_of_key";
+        var partition = "FindTests";
+        try {
+            var doc = new LinkedHashMap<String, Object>();
+            doc.put("id", id);
+            doc.put("b", 1);
+            doc.put("c", 2);
+            doc.put("d", 3);
+            doc.put("a", 4);
+
+            var upserted = removeSystemKeys(db.upsert(coll, doc, partition).toMap());
+
+            assertThat(upserted.keySet().stream().collect(Collectors.toList())).containsExactly("id", "b", "c", "d", "a");
+
+            var readRaw = removeSystemKeys(db.read(coll, id, partition).toMap());
+
+            var findRaw = removeSystemKeys(db.find(coll, Condition.filter("id", id), partition).toMap().get(0));
+
+            assertThat(JsonUtil.toJson(readRaw)).isEqualTo(JsonUtil.toJson(findRaw));
+
+
+        } finally {
+            db.delete(coll, id, partition);
+        }
+
+    }
+
+    @Test
     public void find_should_work_with_join() throws Exception {
 
         // query with join
         {
             var cond = new Condition();
 
-            cond = Condition.filter("area.city.street.rooms.no", "001","room*no-01.area",10) //
+            cond = Condition.filter("area.city.street.rooms.no", "001", "room*no-01.area", 10) //
                     .sort("id", "ASC") //
                     .limit(10) //
                     .offset(0)
-                    .join(Set.of("area.city.street.rooms","room*no-01"))
+                    .join(Set.of("area.city.street.rooms", "room*no-01"))
                     .returnAllSubArray(false);
 
             var result = db.find(coll, cond, "Families").toMap();

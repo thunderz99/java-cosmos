@@ -9,6 +9,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.google.common.collect.Lists;
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
+import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
+import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,24 +21,24 @@ class ConditionTest {
 	@Test
 	public void buildQuerySpec_should_get_correct_SQL() {
 
-		var q = Condition.filter("fullName.last", "Hanks", //
+        var q = Condition.filter("fullName.last", "Hanks", //
 
-				"id", List.of("id001", "id002", "id005"), //
-				"age", 30) //
-				.sort("_ts", "DESC") //
-				.offset(10) //
-				.limit(20) //
-				.toQuerySpec();
+                        "id", List.of("id001", "id002", "id005"), //
+                        "age", 30) //
+                .sort("_ts", "DESC") //
+                .offset(10) //
+                .limit(20) //
+                .toQuerySpec();
 
-		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (ARRAY_CONTAINS(@param001_id, c[\"id\"])) AND (c[\"age\"] = @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+        assertThat(q.getQueryText().trim()).isEqualTo(
+                "SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (ARRAY_CONTAINS(@param001_id, c[\"id\"])) AND (c[\"age\"] = @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
-		var params = List.copyOf(q.getParameters());
+        var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id", List.of("id001", "id002", "id005")).toJson());
-		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_age", 30).toJson());
-	}
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_id", List.of("id001", "id002", "id005")).toJson());
+        assertThat(params.get(2).toJson()).isEqualTo(new CosmosSqlParameter("@param002_age", 30).toJson());
+    }
 
 	@Test
 	public void buildQuerySpec_should_get_correct_SQL_for_Count() {
@@ -54,9 +56,9 @@ class ConditionTest {
 
         var params = List.copyOf(q.getParameters());
 
-        assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-        assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id", List.of("id001", "id002", "id005")).toJson());
-        assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_age", 30).toJson());
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_id", List.of("id001", "id002", "id005")).toJson());
+        assertThat(params.get(2).toJson()).isEqualTo(new CosmosSqlParameter("@param002_age", 30).toJson());
     }
 
 	@Test
@@ -77,10 +79,10 @@ class ConditionTest {
 
         var params = List.copyOf(q.getParameters());
 
-        assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-        assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id", List.of("id001", "id002", "id005")).toJson());
-        assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_age", 30).toJson());
-        assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param003_fullName__last", "ABC").toJson());
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_id", List.of("id001", "id002", "id005")).toJson());
+        assertThat(params.get(2).toJson()).isEqualTo(new CosmosSqlParameter("@param002_age", 30).toJson());
+        assertThat(params.get(3).toJson()).isEqualTo(new CosmosSqlParameter("@param003_fullName__last", "ABC").toJson());
     }
 
 	@Test
@@ -103,13 +105,13 @@ class ConditionTest {
 
         var params = List.copyOf(q.getParameters());
 
-        assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-        assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id", List.of("id001", "id002", "id005")).toJson());
-        assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_age", 30).toJson());
-        assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param003_fullName__first", "F").toJson());
-        assertThat(params.get(4).toJson()).isEqualTo(new SqlParameter("@param004_fullName__last", "F").toJson());
-        assertThat(params.get(5).toJson()).isEqualTo(new SqlParameter("@param005_fullName__last", "L").toJson());
-        assertThat(params.get(6).toJson()).isEqualTo(new SqlParameter("@param006_skill", "Java").toJson());
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_id", List.of("id001", "id002", "id005")).toJson());
+        assertThat(params.get(2).toJson()).isEqualTo(new CosmosSqlParameter("@param002_age", 30).toJson());
+        assertThat(params.get(3).toJson()).isEqualTo(new CosmosSqlParameter("@param003_fullName__first", "F").toJson());
+        assertThat(params.get(4).toJson()).isEqualTo(new CosmosSqlParameter("@param004_fullName__last", "F").toJson());
+        assertThat(params.get(5).toJson()).isEqualTo(new CosmosSqlParameter("@param005_fullName__last", "L").toJson());
+        assertThat(params.get(6).toJson()).isEqualTo(new CosmosSqlParameter("@param006_skill", "Java").toJson());
     }
 
 	@Test
@@ -130,9 +132,9 @@ class ConditionTest {
 
         var params = List.copyOf(q.getParameters());
 
-        assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-        assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id", List.of("id001", "id002", "id005")).toJson());
-        assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_age", 30).toJson());
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_id", List.of("id001", "id002", "id005")).toJson());
+        assertThat(params.get(2).toJson()).isEqualTo(new CosmosSqlParameter("@param002_age", 30).toJson());
     }
 
 	@Test
@@ -140,19 +142,19 @@ class ConditionTest {
 
 		var q = Condition.filter("fullName.last", "Hanks") //
 				.fields("contents.aa-bb-cc", "contents.xx-yy-zz", "age") //
-				.sort("_ts", "DESC") //
-				.offset(10) //
-				.limit(20) //
-				.toQuerySpec();
+                .sort("_ts", "DESC") //
+                .offset(10) //
+                .limit(20) //
+                .toQuerySpec();
 
-		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT VALUE {\"contents\":{\"aa-bb-cc\":c[\"contents\"][\"aa-bb-cc\"],\"xx-yy-zz\":c[\"contents\"][\"xx-yy-zz\"]},\"age\":c[\"age\"]} FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+        assertThat(q.getQueryText().trim()).isEqualTo(
+                "SELECT VALUE {\"contents\":{\"aa-bb-cc\":c[\"contents\"][\"aa-bb-cc\"],\"xx-yy-zz\":c[\"contents\"][\"xx-yy-zz\"]},\"age\":c[\"age\"]} FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
-		var params = List.copyOf(q.getParameters());
+        var params = List.copyOf(q.getParameters());
 
-		assertThat(params).hasSize(1);
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-	}
+        assertThat(params).hasSize(1);
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+    }
 
 	@Test
 	public void generate_field_should_work() {
@@ -187,10 +189,10 @@ class ConditionTest {
 
             var params = List.copyOf(q.getParameters());
 
-            assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-            assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_position", "leader").toJson());
-            assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_organization", "executive").toJson());
-            assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param003_age", 30).toJson());
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+            assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_position", "leader").toJson());
+            assertThat(params.get(2).toJson()).isEqualTo(new CosmosSqlParameter("@param002_organization", "executive").toJson());
+            assertThat(params.get(3).toJson()).isEqualTo(new CosmosSqlParameter("@param003_age", 30).toJson());
         }
 
         {
@@ -200,7 +202,7 @@ class ConditionTest {
                     .toQuerySpec();
             assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE ((c[\"position\"] = @param000_position)) OFFSET 0 LIMIT 100");
             var params = List.copyOf(q.getParameters());
-            assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_position", "leader").toJson());
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
         }
 
         {
@@ -214,8 +216,8 @@ class ConditionTest {
                     .toQuerySpec();
             assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE ((c[\"position\"] = @param000_position)) AND ((c[\"address\"] = @param001_address)) OFFSET 0 LIMIT 100");
             var params = List.copyOf(q.getParameters());
-            assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_position", "leader").toJson());
-            assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_address", "London").toJson());
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
+            assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_address", "London").toJson());
         }
     }
 
@@ -249,8 +251,8 @@ class ConditionTest {
 
         var params = List.copyOf(q.getParameters());
 
-        assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_position", "leader").toJson());
-        assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_organization", "executive").toJson());
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_organization", "executive").toJson());
     }
 
 
@@ -273,8 +275,8 @@ class ConditionTest {
 
             var params = List.copyOf(q.getParameters());
 
-            assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_position", "leader").toJson());
-            assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_organization", "executive").toJson());
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
+            assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_organization", "executive").toJson());
         }
 
         {
@@ -284,7 +286,7 @@ class ConditionTest {
                     .toQuerySpec();
             assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE ((c[\"position\"] = @param000_position)) OFFSET 0 LIMIT 100");
             var params = List.copyOf(q.getParameters());
-            assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_position", "leader").toJson());
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
         }
 
         {
@@ -299,7 +301,7 @@ class ConditionTest {
             assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE ((c[\"position\"] = @param000_position)) AND (1=1) OFFSET 0 LIMIT 100");
             var params = List.copyOf(q.getParameters());
             assertThat(params).hasSize(1);
-            assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_position", "leader").toJson());
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
         }
     }
 
@@ -402,7 +404,7 @@ class ConditionTest {
                 String paramName = param.getName();
                 assertThat(paramName.equals("@param000_open") || paramName.equals("@raw_param_status"));
 
-                assertThat(param.getValue(Object.class)).isEqualTo(valueMap.get(paramName));
+                assertThat(param.getValue()).isEqualTo(valueMap.get(paramName));
             });
 
         }
@@ -440,69 +442,69 @@ class ConditionTest {
 	@Test
 	public void buildQuerySpec_should_work_for_LIKE() {
 
-		var q = Condition.filter("fullName.last", "Hanks", //
-				"fullName.first LIKE", "%om%", //
-				"age >", 20 //
-		)
-				.sort("_ts", "DESC") //
-				.offset(10) //
-				.limit(20) //
-				.toQuerySpec();
+        var q = Condition.filter("fullName.last", "Hanks", //
+                        "fullName.first LIKE", "%om%", //
+                        "age >", 20 //
+                )
+                .sort("_ts", "DESC") //
+                .offset(10) //
+                .limit(20) //
+                .toQuerySpec();
 
-		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"fullName\"][\"first\"] LIKE @param001_fullName__first) AND (c[\"age\"] > @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+        assertThat(q.getQueryText().trim()).isEqualTo(
+                "SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (c[\"fullName\"][\"first\"] LIKE @param001_fullName__first) AND (c[\"age\"] > @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
-		var params = List.copyOf(q.getParameters());
+        var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_fullName__first", "%om%").toJson());
-		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_age", 20).toJson());
-	}
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_fullName__first", "%om%").toJson());
+        assertThat(params.get(2).toJson()).isEqualTo(new CosmosSqlParameter("@param002_age", 20).toJson());
+    }
 
 	@Test
 	public void buildQuerySpec_should_work_for_ARRAY_CONTAINS_ANY() {
 
-		var q = Condition.filter("fullName.last", "Hanks", //
-				"tags ARRAY_CONTAINS_ANY", List.of("id001", "id002", "id005"), //
-				"age >", 20 //
-				)
-				.sort("_ts", "DESC") //
-				.offset(10) //
-				.limit(20) //
-				.toQuerySpec();
+        var q = Condition.filter("fullName.last", "Hanks", //
+                        "tags ARRAY_CONTAINS_ANY", List.of("id001", "id002", "id005"), //
+                        "age >", 20 //
+                )
+                .sort("_ts", "DESC") //
+                .offset(10) //
+                .limit(20) //
+                .toQuerySpec();
 
-		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE ARRAY_CONTAINS(@param001_tags, x))) AND (c[\"age\"] > @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+        assertThat(q.getQueryText().trim()).isEqualTo(
+                "SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE ARRAY_CONTAINS(@param001_tags, x))) AND (c[\"age\"] > @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
-		var params = List.copyOf(q.getParameters());
+        var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_tags", List.of("id001", "id002", "id005")).toJson());
-		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param002_age", 20).toJson());
-	}
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_tags", List.of("id001", "id002", "id005")).toJson());
+        assertThat(params.get(2).toJson()).isEqualTo(new CosmosSqlParameter("@param002_age", 20).toJson());
+    }
 
 	@Test
 	public void buildQuerySpec_should_work_for_ARRAY_CONTAINS_ALL() {
 
-		var q = Condition.filter("fullName.last", "Hanks", //
-				"tags ARRAY_CONTAINS_ALL", List.of("id001", "id002"), //
-				"age >", 20 //
-		)
-				.sort("_ts", "DESC") //
-				.offset(10) //
-				.limit(20) //
-				.toQuerySpec();
+        var q = Condition.filter("fullName.last", "Hanks", //
+                        "tags ARRAY_CONTAINS_ALL", List.of("id001", "id002"), //
+                        "age >", 20 //
+                )
+                .sort("_ts", "DESC") //
+                .offset(10) //
+                .limit(20) //
+                .toQuerySpec();
 
-		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE x = @param001_tags__0) AND EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE x = @param001_tags__1)) AND (c[\"age\"] > @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
+        assertThat(q.getQueryText().trim()).isEqualTo(
+                "SELECT * FROM c WHERE (c[\"fullName\"][\"last\"] = @param000_fullName__last) AND (EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE x = @param001_tags__0) AND EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE x = @param001_tags__1)) AND (c[\"age\"] > @param002_age) ORDER BY c[\"_ts\"] DESC OFFSET 10 LIMIT 20");
 
-		var params = List.copyOf(q.getParameters());
+        var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_tags__0", "id001").toJson());
-		assertThat(params.get(2).toJson()).isEqualTo(new SqlParameter("@param001_tags__1", "id002").toJson());
-		assertThat(params.get(3).toJson()).isEqualTo(new SqlParameter("@param002_age", 20).toJson());
-	}
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_tags__0", "id001").toJson());
+        assertThat(params.get(2).toJson()).isEqualTo(new CosmosSqlParameter("@param001_tags__1", "id002").toJson());
+        assertThat(params.get(3).toJson()).isEqualTo(new CosmosSqlParameter("@param002_age", 20).toJson());
+    }
 
 	@Test
 	public void generateAggregateSelect_should_work() {
@@ -533,50 +535,50 @@ class ConditionTest {
 
 		}
 
-		{
-			// with filter
-			var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
-			var q = Condition.filter("age >=", 20) //
-					.toQuerySpec(aggregate);
+        {
+            // with filter
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
+            var q = Condition.filter("age >=", 20) //
+                    .toQuerySpec(aggregate);
 
-			assertThat(q.getQueryText().trim()).isEqualTo(
-					"SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
+            assertThat(q.getQueryText().trim()).isEqualTo(
+                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
 
-			var params = List.copyOf(q.getParameters());
-			assertThat(params).hasSize(1);
-			assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_age", 20).toJson());
+            var params = List.copyOf(q.getParameters());
+            assertThat(params).hasSize(1);
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_age", 20).toJson());
 
-		}
+        }
 
-		{
-			// with offset / limit
-			var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
-			var q = Condition.filter("age >=", 20).offset(5).limit(10) //
-					.toQuerySpec(aggregate);
+        {
+            // with offset / limit
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
+            var q = Condition.filter("age >=", 20).offset(5).limit(10) //
+                    .toQuerySpec(aggregate);
 
-			assertThat(q.getQueryText().trim()).isEqualTo(
-					"SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 5 LIMIT 10");
+            assertThat(q.getQueryText().trim()).isEqualTo(
+                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 5 LIMIT 10");
 
-			var params = List.copyOf(q.getParameters());
-			assertThat(params).hasSize(1);
-			assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_age", 20).toJson());
+            var params = List.copyOf(q.getParameters());
+            assertThat(params).hasSize(1);
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_age", 20).toJson());
 
-		}
+        }
 
-		{
-			// with order by
-			var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
-			var q = Condition.filter("age >=", 20).sort("status", "ASC") //
-					.toQuerySpec(aggregate);
+        {
+            // with order by
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
+            var q = Condition.filter("age >=", 20).sort("status", "ASC") //
+                    .toQuerySpec(aggregate);
 
-			assertThat(q.getQueryText().trim()).isEqualTo(
-					"SELECT * FROM (SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"]) agg ORDER BY agg[\"status\"] ASC OFFSET 0 LIMIT 100");
+            assertThat(q.getQueryText().trim()).isEqualTo(
+                    "SELECT * FROM (SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"]) agg ORDER BY agg[\"status\"] ASC OFFSET 0 LIMIT 100");
 
-			var params = List.copyOf(q.getParameters());
-			assertThat(params).hasSize(1);
-			assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_age", 20).toJson());
+            var params = List.copyOf(q.getParameters());
+            assertThat(params).hasSize(1);
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_age", 20).toJson());
 
-		}
+        }
 	}
 
 	@Test
@@ -746,9 +748,9 @@ class ConditionTest {
 			for (var param : params) {
 				assertThat(param.getName()).startsWith("@param0");
 				if (param.getName().endsWith("01")) {
-					assertThat(param.getValue(String.class)).isEqualTo("Tom");
+                    assertThat(param.getValue()).isEqualTo("Tom");
 				} else {
-					assertThat(param.getValue(Integer.class)).isEqualTo(20);
+                    assertThat(param.getValue()).isEqualTo(20);
 				}
 			}
 		}
@@ -772,19 +774,19 @@ class ConditionTest {
 	@Test
 	public void buildQuerySpec_should_work_for_is_defined() {
 
-		var q = Condition.filter("id", "Hanks", //
-				"age IS_DEFINED", true) //
-				.limit(20)
-				.toQuerySpec();
+        var q = Condition.filter("id", "Hanks", //
+                        "age IS_DEFINED", true) //
+                .limit(20)
+                .toQuerySpec();
 
-		assertThat(q.getQueryText().trim()).isEqualTo(
-				"SELECT * FROM c WHERE (c[\"id\"] = @param000_id) AND (IS_DEFINED(c[\"age\"]) = @param001_age) OFFSET 0 LIMIT 20");
+        assertThat(q.getQueryText().trim()).isEqualTo(
+                "SELECT * FROM c WHERE (c[\"id\"] = @param000_id) AND (IS_DEFINED(c[\"age\"]) = @param001_age) OFFSET 0 LIMIT 20");
 
-		var params = List.copyOf(q.getParameters());
+        var params = List.copyOf(q.getParameters());
 
-		assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_id", "Hanks").toJson());
-		assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_age", true).toJson());
-	}
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_id", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_age", true).toJson());
+    }
 
 	@Test
 	public void negative_should_have_no_effect_for_a_whole_rawSql() {
@@ -803,7 +805,7 @@ class ConditionTest {
 
         var filterQuery = Condition.rawSql("\"tokyo\" IN c.cities") //
                 .not() // negative will have no effect for a whole rawSql
-                .generateFilterQuery("", new SqlParameterCollection(), new AtomicInteger(), new AtomicInteger());
+                .generateFilterQuery("", Lists.newArrayList(), new AtomicInteger(), new AtomicInteger());
 
         assertThat(filterQuery.queryText.toString()).isEqualTo(
                 " NOT(\"tokyo\" IN c.cities)");
@@ -825,8 +827,8 @@ class ConditionTest {
 
         var params = List.copyOf(q.getParameters());
 
-        assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_fullName__last", "Hanks").toJson());
-        assertThat(params.get(1).toJson()).isEqualTo(new SqlParameter("@param001_id", List.of("id001")).toJson());
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_fullName__last", "Hanks").toJson());
+        assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_id", List.of("id001")).toJson());
     }
 
     @Test
@@ -857,8 +859,7 @@ class ConditionTest {
 
         assertThat(params).hasSize(1);
 
-        assertThat(params.get(0).toJson()).isEqualTo(new SqlParameter("@param000_id", "001").toJson());
-
+        assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_id", "001").toJson());
 
     }
 
@@ -868,6 +869,16 @@ class ConditionTest {
         assertThat(Condition.typeCheckFunctionPattern.asMatchPredicate().test("IS_DEFINED")).isTrue();
         assertThat(Condition.typeCheckFunctionPattern.asMatchPredicate().test("IS_PRIMITIVE")).isTrue();
         assertThat(Condition.typeCheckFunctionPattern.asMatchPredicate().test("IS_NOTEXIST")).isFalse();
+    }
+
+    @Test
+    void getRawQuerySpecJson_should_work() {
+        assertThat(Condition.filter().getRawQuerySpecJson()).isEqualTo(null);
+
+        assertThat(Condition.falseCondition().getRawQuerySpecJson())
+                .isEqualTo(JsonUtil.toJson(Condition.rawSql("1=0").rawQuerySpec));
+        assertThat(Condition.trueCondition().getRawQuerySpecJson())
+                .isEqualTo(JsonUtil.toJson(Condition.rawSql("1=1").rawQuerySpec));
     }
 
 }

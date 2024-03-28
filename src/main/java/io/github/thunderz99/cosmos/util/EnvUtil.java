@@ -12,9 +12,10 @@ public class EnvUtil {
 
     /**
      * get env variable as String, or return a default value.
-     * @param envName env variable name
+     *
+     * @param envName      env variable name
      * @param defaultValue default value when env variable not exist
-     * @return
+     * @return return default value of not found
      */
     public static String getOrDefault(String envName, String defaultValue) {
         var value = System.getenv(envName);

@@ -35,8 +35,8 @@ public class MapUtil {
      *
      * </p>
      *
-     * @param map
-     * @return
+     * @param map map to convert
+     * @return map flattened
      */
     public static Map<String, Object> toFlatMap(Map<String, ? extends Object> map) {
         return toFlatMap("", map);
