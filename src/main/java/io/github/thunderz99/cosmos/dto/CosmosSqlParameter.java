@@ -63,7 +63,8 @@ public class CosmosSqlParameter extends RecordData {
 
     /**
      * Util method to generate a SqlParameterCollection(V2) from List of CosmosSqlParameter
-     * @param params
+     *
+     * @param params params to convert
      * @return SqlParameterCollection
      */
     public static SqlParameterCollection toParamsV2(List<CosmosSqlParameter> params) {
@@ -80,7 +81,8 @@ public class CosmosSqlParameter extends RecordData {
 
     /**
      * Util method to generate a List of SqlParameter V4 from List of CosmosSqlParameter
-     * @param params
+     *
+     * @param params params to convert
      * @return SqlParameterCollection
      */
     public static List<com.azure.cosmos.models.SqlParameter> toParamsV4(List<CosmosSqlParameter> params) {
@@ -126,10 +128,12 @@ public class CosmosSqlParameter extends RecordData {
      * Return param value by key. Deprecated. Only for backwards compatibility
      *
      * <p>
-     * return name only if input is "name". return value only if input is "value" <br/>
+     * return name only if input is "name".
+     * return value only if input is "value".
      * return null if input is others.
      * </p>
      *
+     * @param "name" or "value"
      * @return value by key
      */
     @Deprecated

@@ -8,7 +8,7 @@ public class NumberUtil {
     /**
      * Convert Long / Integer / Double / Float to Integer if compatible. If not compatible, remains the origin formatl
      *
-     * @param number
+     * @param number number to convert
      * @return Integer if compatible, or the origin number
      */
     public static Number convertNumberToIntIfCompatible(Number number) {

@@ -37,7 +37,7 @@ public class Condition {
     /**
      * A constructor accepting a map as filter
      *
-     * @param filter
+     * @param filter map as filter directly
      */
     public Condition(Map<String, Object> filter) {
         this.filter = filter;
@@ -229,7 +229,7 @@ public class Condition {
     /**
      * set whether is cross-partition query
      *
-     * @param crossPartition
+     * @param crossPartition whether a crossPartition query or not
      * @return condition
      */
     public Condition crossPartition(boolean crossPartition) {

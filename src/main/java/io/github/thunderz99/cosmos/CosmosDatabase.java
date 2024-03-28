@@ -1235,12 +1235,12 @@ public class CosmosDatabase {
      * see details of increment: <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update#supported-operations">supported operations: increment</a>
      * </p>
      *
-     * @param coll
-     * @param id
-     * @param path
-     * @param value
-     * @param partition
-     * @return
+     * @param coll      collection
+     * @param id        item id
+     * @param path      json path
+     * @param value     amount of increment
+     * @param partition partition for item
+     * @return result item
      * @throws Exception
      */
     public CosmosDocument increment(String coll, String id, String path, int value, String partition) throws Exception {

@@ -117,7 +117,8 @@ public class CosmosSqlQuerySpec extends RecordData {
 
     /**
      * set query text
-     * @param queryText
+     *
+     * @param queryText query text to set
      */
     public void setQueryText(String queryText) {
         this.queryText = queryText;
@@ -125,7 +126,8 @@ public class CosmosSqlQuerySpec extends RecordData {
 
     /**
      * set params for query
-     * @param params
+     *
+     * @param params params to set
      */
     public void setParameters(List<CosmosSqlParameter> params){
         this.params = params;
