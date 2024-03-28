@@ -133,7 +133,7 @@ public class CosmosSqlParameter extends RecordData {
      * return null if input is others.
      * </p>
      *
-     * @param "name" or "value"
+     * @param key "name" or "value"
      * @return value by key
      */
     @Deprecated
@@ -151,10 +151,12 @@ public class CosmosSqlParameter extends RecordData {
      * Return param value(in String type) by key. Deprecated. Only for backwards compatibility
      *
      * <p>
-     * return name only if input is "name". return value only if input is "value" <br/>
+     * return name only if input is "name".
+     * return value only if input is "value".
      * return null if input is others.
      * </p>
      *
+     * @param key "name" or "value"
      * @return value by key
      */
     @Deprecated

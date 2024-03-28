@@ -1241,7 +1241,7 @@ public class CosmosDatabase {
      * @param value     amount of increment
      * @param partition partition for item
      * @return result item
-     * @throws Exception
+     * @throws Exception CosmosException doing increment
      */
     public CosmosDocument increment(String coll, String id, String path, int value, String partition) throws Exception {
 
