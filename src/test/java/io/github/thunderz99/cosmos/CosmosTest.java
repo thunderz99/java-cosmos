@@ -118,4 +118,29 @@ public class CosmosTest {
 
     }
 
+    @Test
+    public void extractAccountName_should_work() {
+        Cosmos cosmos = new Cosmos("AccountEndpoint=https://example.documents.azure.com:443/;AccountKey=key;", null);
+
+        // Test with a standard endpoint
+        String accountName = cosmos.extractAccountName("https://example.documents.azure.com:443/");
+        assertThat(accountName).isEqualTo("example");
+
+        // Test with an endpoint that has a different subdomain
+        accountName = cosmos.extractAccountName("https://different.documents.azure.com:443/");
+        assertThat(accountName).isEqualTo("different");
+
+        // Test with an endpoint that has an unusual subdomain format
+        accountName = cosmos.extractAccountName("https://sub-domain.example.documents.azure.com:443/");
+        assertThat(accountName).isEqualTo("sub-domain");
+
+        // Test with an endpoint without the standard port
+        accountName = cosmos.extractAccountName("https://example.documents.azure.com/");
+        assertThat(accountName).isEqualTo("example");
+
+        // Test with an invalid URL to ensure proper error handling or return value
+        accountName = cosmos.extractAccountName("https:///incorrect-url-format");
+        assertThat(accountName).isEmpty();
+    }
+
 }

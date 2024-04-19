@@ -46,9 +46,7 @@ public class CosmosDatabase {
     static final int MAX_BATCH_NUMBER_OF_OPERATION = 100;
 
     String db;
-
-    String account;
-
+    
     DocumentClient client;
 
     CosmosClient clientV4;
@@ -1376,11 +1374,7 @@ public class CosmosDatabase {
      * @throws Exception Cosmos client exception
      */
     String getAccount() throws Exception {
-        if (StringUtils.isNotEmpty(this.account)) {
-            return this.account;
-        }
-        this.account = Cosmos.getAccount(this.client);
-        return this.account;
+        return this.cosmosAccount.getAccount();
     }
 
     /**

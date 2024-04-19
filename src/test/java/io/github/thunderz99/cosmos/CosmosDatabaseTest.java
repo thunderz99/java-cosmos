@@ -903,6 +903,29 @@ class CosmosDatabaseTest {
     }
 
     @Test
+    void find_should_work_when_reading_double_type() throws Exception {
+
+        var id = "find_should_work_when_reading_double_type";
+        var partition = "FindTests";
+        // double field in db should be found and still be double type
+        try {
+            var data = Map.of("id", id, "score", 10.0);
+
+            // test find
+            db.upsert(coll, data, partition);
+            var result = db.find(coll, Condition.filter("id", id), partition).toMap();
+            assertThat(result).hasSize(1);
+
+            // the result of score be double
+            assertThat(result.get(0).get("score")).isInstanceOf(Double.class).isEqualTo(10.0);
+
+        } finally {
+            db.delete(coll, id, partition);
+        }
+    }
+
+
+    @Test
     void convertAggregateResultsToInteger_should_work() {
         // Setup
 
