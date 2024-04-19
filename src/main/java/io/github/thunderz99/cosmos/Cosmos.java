@@ -1,13 +1,17 @@
 package io.github.thunderz99.cosmos;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosClientBuilder;
-import com.microsoft.azure.documentdb.*;
+import com.azure.cosmos.models.CosmosContainerProperties;
+import com.azure.cosmos.models.CosmosContainerResponse;
+import com.azure.cosmos.models.UniqueKey;
+import com.azure.cosmos.models.UniqueKeyPolicy;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.ConnectionStringUtil;
 import io.github.thunderz99.cosmos.util.EnvUtil;
@@ -33,8 +37,6 @@ public class Cosmos {
 
     private static Logger log = LoggerFactory.getLogger(Cosmos.class);
 
-    DocumentClient client;
-
     CosmosClient clientV4;
 
     String account;
@@ -53,8 +55,6 @@ public class Cosmos {
         var endpoint = pair.getLeft();
         var key = pair.getRight();
 
-        this.client = new DocumentClient(endpoint, key, ConnectionPolicy.GetDefault(), ConsistencyLevel.Session);
-
         // default to true
         var v4Enable = Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.COSMOS_SDK_V4_ENABLE, "true"));
 
@@ -67,6 +67,8 @@ public class Cosmos {
                     .consistencyLevel(com.azure.cosmos.ConsistencyLevel.SESSION)
                     .contentResponseOnWriteEnabled(true)
                     .buildClient();
+
+            this.account = extractAccountName(endpoint);
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 this.clientV4.close();
@@ -90,20 +92,49 @@ public class Cosmos {
 
 
     /**
+     * extract the Cosmos DB 's account name from the endpoint
+     *
+     * @param endpoint the endpoint for Cosmos DB
+     * @return account name
+     */
+    static String extractAccountName(String endpoint) {
+        try {
+            var uri = new URI(endpoint);
+            String host = uri.getHost();
+            return StringUtils.isEmpty(host) ? "" : host.split("\\.")[0];
+        } catch (URISyntaxException e) {
+            log.error("Error parsing endpoint URI", e);
+            return "";
+        }
+    }
+
+    /**
      * Create the db and coll if not exist. Coll creation will be skipped if empty. uniqueKeyPolicy can be specified.
      *
      * @param db              database name
      * @param coll            collection name
      * @param uniqueKeyPolicy unique key policy for the collection
      * @return CosmosDatabase instance
-     * @throws DocumentClientException Cosmos client exception Cosmos client exception
+     * @throws CosmosException Cosmos client exception
      */
-    public CosmosDatabase createIfNotExist(String db, String coll, UniqueKeyPolicy uniqueKeyPolicy) throws DocumentClientException {
+    public CosmosDatabase createIfNotExist(String db, String coll, UniqueKeyPolicy uniqueKeyPolicy) throws CosmosException {
+
+        Checker.checkNotBlank(db, "Database name");
+
+        this.clientV4.createDatabaseIfNotExists(db);
+        log.info("created database:{}, account:{}", db, account);
 
         if (StringUtils.isBlank(coll)) {
-            createDatabaseIfNotExist(client, db);
+            //do nothing
         } else {
-            createCollectionIfNotExist(client, db, coll, uniqueKeyPolicy);
+            var cosmosDatabase = this.clientV4.getDatabase(db);
+            var containerProperties = new CosmosContainerProperties(coll, "/" + getDefaultPartitionKey());
+
+            var keyList = uniqueKeyPolicy.getUniqueKeys();
+            if (!keyList.isEmpty()) {
+                containerProperties.setUniqueKeyPolicy(uniqueKeyPolicy);
+            }
+            cosmosDatabase.createContainerIfNotExists(containerProperties);
         }
 
         return new CosmosDatabase(this, db);
@@ -119,27 +150,32 @@ public class Cosmos {
      * @param db   database name
      * @param coll collection name
      * @return CosmosDatabase instance
-     * @throws DocumentClientException Cosmos client exception Cosmos client exception
+     * @throws CosmosException Cosmos client exception Cosmos client exception
      */
-    public CosmosDatabase createIfNotExist(String db, String coll) throws DocumentClientException {
-
-        if (StringUtils.isBlank(coll)) {
-            createDatabaseIfNotExist(client, db);
-        } else {
-            createCollectionIfNotExist(client, db, coll);
-        }
-
-        return new CosmosDatabase(this, db);
+    public CosmosDatabase createIfNotExist(String db, String coll) throws CosmosException {
+        return createIfNotExist(db, coll, getDefaultUniqueKeyPolicy());
     }
 
     /**
      * Delete a database by name
      *
      * @param db database name
-     * @throws DocumentClientException Cosmos client exception
+     * @throws CosmosException Cosmos client exception
      */
-    public void deleteDatabase(String db) throws DocumentClientException {
-        deleteDatabase(client, db);
+    public void deleteDatabase(String db) throws CosmosException {
+        if (StringUtils.isEmpty(db)) {
+            return;
+        }
+        var cosmosDatabase = this.clientV4.getDatabase(db);
+        try {
+            cosmosDatabase.delete();
+        } catch (com.azure.cosmos.CosmosException ce) {
+            if (isResourceNotFoundException(ce)) {
+                log.info("delete Database not exist. Ignored:{}, account:{}", getDatabaseLink(db), this.account);
+            } else {
+                throw ce;
+            }
+        }
     }
 
     /**
@@ -147,120 +183,23 @@ public class Cosmos {
      *
      * @param db   database name
      * @param coll collection name
-     * @throws DocumentClientException Cosmos client exception
+     * @throws CosmosException Cosmos client exception
      */
-    public void deleteCollection(String db, String coll) throws DocumentClientException {
-        deleteCollection(client, db, coll);
-    }
+    public void deleteCollection(String db, String coll) throws CosmosException {
 
-    static Database createDatabaseIfNotExist(DocumentClient client, String db) throws DocumentClientException {
-
-        var database = readDatabase(client, db);
-        if (database != null) {
-            return database;
-        }
-
-        var account = getAccount(client);
-
-        var dbObj = new Database();
-        dbObj.setId(db);
-        var options = new RequestOptions();
-        options.setOfferThroughput(400);
-        var result = client.createDatabase(dbObj, options);
-        log.info("created database:{}, account:{}", db, account);
-        return result.getResource();
-    }
-
-    static Database readDatabase(DocumentClient client, String db) throws DocumentClientException {
+        var cosmosDatabase = this.clientV4.getDatabase(db);
+        var container = cosmosDatabase.getContainer(coll);
         try {
-            Checker.checkNotBlank(db, "db");
-            var res =
-                    client.readDatabase(getDatabaseLink(db), null);
-            return res.getResource();
-        } catch (DocumentClientException de) {
+            container.delete();
+        } catch (com.azure.cosmos.CosmosException ce) {
             // If not exist
-            if (isResourceNotFoundException(de)) {
-                return null;
+            if (isResourceNotFoundException(ce)) {
+                log.info("delete Collection not exist. Ignored:{}, account:{}", getCollectionLink(db, coll), this.account);
             } else {
                 // Throw any other Exception
-                throw de;
+                throw ce;
             }
         }
-    }
-
-    static void deleteDatabase(DocumentClient client, String db) throws DocumentClientException {
-        try {
-            Checker.checkNotNull(client, "client");
-            Checker.checkNotBlank(db, "db");
-            client.deleteDatabase(getDatabaseLink(db), null);
-            log.info("delete Database:{}, account:{}", db, getAccount(client));
-        } catch (DocumentClientException de) {
-            // If not exist
-            if (isResourceNotFoundException(de)) {
-                log.info("delete Database not exist. Ignored:{}, account:{}", db, getAccount(client));
-            } else {
-                // Throw any other Exception
-                throw de;
-            }
-        }
-    }
-
-    static void deleteCollection(DocumentClient client, String db, String coll) throws DocumentClientException {
-        var collectionLink = getCollectionLink(db, coll);
-        try {
-            Checker.checkNotNull(client, "client");
-            Checker.checkNotBlank(db, "db");
-            Checker.checkNotBlank(coll, "coll");
-            client.deleteCollection(collectionLink, null);
-            log.info("delete Collection:{}, account:{}", collectionLink, getAccount(client));
-        } catch (DocumentClientException de) {
-            // If not exist
-            if (isResourceNotFoundException(de)) {
-                log.info("delete Collection not exist. Ignored:{}, account:{}", collectionLink, getAccount(client));
-            } else {
-                // Throw any other Exception
-                throw de;
-            }
-        }
-    }
-
-    static DocumentCollection createCollectionIfNotExist(DocumentClient client, String db, String coll) throws DocumentClientException {
-        return createCollectionIfNotExist(client, db, coll, getDefaultUniqueKeyPolicy());
-    }
-
-    static DocumentCollection createCollectionIfNotExist(DocumentClient client, String db, String coll, UniqueKeyPolicy uniqueKeyPolicy) throws DocumentClientException {
-
-        createDatabaseIfNotExist(client, db);
-
-        var collection = readCollection(client, db, coll);
-
-        if (collection != null) {
-            return collection;
-        }
-
-        var collectionInfo = new DocumentCollection();
-        collectionInfo.setId(coll);
-
-        collectionInfo.setIndexingPolicy(getDefaultIndexingPolicy());
-
-        if (uniqueKeyPolicy != null) {
-            collectionInfo.setUniqueKeyPolicy(uniqueKeyPolicy);
-        }
-
-        collectionInfo.setDefaultTimeToLive(-1);
-
-        var partitionKeyDef = new PartitionKeyDefinition();
-        var paths = List.of("/" + getDefaultPartitionKey());
-        partitionKeyDef.setPaths(paths);
-
-        collectionInfo.setPartitionKey(partitionKeyDef);
-
-        var databaseLink = getDatabaseLink(db);
-        var createdColl = client.createCollection(databaseLink, collectionInfo, null);
-        log.info("create Collection:{}/colls/{}, account:{}", databaseLink, coll, getAccount(client));
-
-        return createdColl.getResource();
-
     }
 
     /**
@@ -268,22 +207,23 @@ public class Cosmos {
      *
      * @param db   dbName
      * @param coll collName
-     * @return documentCollection obj
-     * @throws DocumentClientException when client exception occurs
+     * @return CosmosContainerResponse obj
+     * @throws CosmosException when client exception occurs
      */
-    public DocumentCollection readCollection(String db, String coll) throws DocumentClientException {
-        return readCollection(client, db, coll);
-    }
+    public CosmosContainerResponse readCollection(String db, String coll) throws CosmosException {
 
 
-    /**
-     * Get Official cosmos db sdk(v2)'s DocumentClient instance
-     *
-     * @return official cosmosdb sdk client(v2)
-     */
-    public DocumentClient getClient() {
-        return this.client;
+        var database = this.clientV4.getDatabase(db);
+        try {
+            return database.getContainer(coll).read();
+        } catch (com.azure.cosmos.CosmosException ce) {
+            if (isResourceNotFoundException(ce)) {
+                return null;
+            }
+            throw ce;
+        }
     }
+
 
     /**
      * Get Official cosmos db sdk(v4)'s CosmosClient instance
@@ -292,39 +232,6 @@ public class Cosmos {
      */
     public CosmosClient getClientV4() {
         return this.clientV4;
-    }
-    
-
-    static DocumentCollection readCollection(DocumentClient client, String db, String coll)
-            throws DocumentClientException {
-        try {
-            var res = client.readCollection(getCollectionLink(db, coll), null);
-            return res.getResource();
-        } catch (DocumentClientException de) {
-            // if Not Found
-            if (de.getStatusCode() == 404) {
-                return null;
-            } else {
-                // Throw other exceptions
-                throw de;
-            }
-        }
-    }
-
-    /**
-     * return the default indexingPolicy
-     *
-     * @return default indexingPolicy
-     */
-    static IndexingPolicy getDefaultIndexingPolicy() {
-        var rangeIndexOverride = new Index[3];
-        rangeIndexOverride[0] = Index.Range(DataType.Number, -1);
-        rangeIndexOverride[1] = Index.Range(DataType.String, -1);
-        rangeIndexOverride[2] = Index.Spatial(DataType.Point);
-        var indexingPolicy = new IndexingPolicy(rangeIndexOverride);
-        indexingPolicy.setIndexingMode(IndexingMode.Consistent);
-        log.info("set indexing policy to default: {} ", indexingPolicy);
-        return indexingPolicy;
     }
 
     /**
@@ -367,8 +274,7 @@ public class Cosmos {
      */
     static UniqueKey toUniqueKey(String key) {
         Checker.checkNotBlank(key, "uniqueKey");
-        var ret = new UniqueKey();
-        ret.setPaths(List.of(key));
+        var ret = new UniqueKey(List.of(key));
         return ret;
     }
 
@@ -423,26 +329,8 @@ public class Cosmos {
         return "_partition";
     }
 
-    public String getAccount() throws DocumentClientException {
-        if (StringUtils.isNotEmpty(this.account)) {
-            return this.account;
-        }
-        this.account = getAccount(this.client);
-        return this.account;
-    }
-
-    /**
-     * Get cosmos db account id from client
-     *
-     * @param client documentClient
-     * @return cosmos db account id
-     * @throws DocumentClientException Cosmos client exception
-     */
-    static String getAccount(DocumentClient client) throws DocumentClientException {
-        if (Objects.isNull(client)) {
-            return "";
-        }
-        return client.getDatabaseAccount().get("id").toString();
+    public String getAccount() throws CosmosException {
+        return account;
     }
 
 }

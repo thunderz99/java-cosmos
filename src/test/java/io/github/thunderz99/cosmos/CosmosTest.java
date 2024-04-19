@@ -3,8 +3,6 @@ package io.github.thunderz99.cosmos;
 import java.util.Map;
 import java.util.Set;
 
-import com.microsoft.azure.documentdb.DocumentClientException;
-import com.microsoft.azure.documentdb.FeedOptions;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import org.junit.jupiter.api.Test;
 
@@ -63,8 +61,7 @@ public class CosmosTest {
             cosmos.createIfNotExist(dbName, testColl, uniqueKeyPolicy);
 
             var collection = cosmos.readCollection(dbName, testColl);
-            var uniqueKeys = collection.getUniqueKeyPolicy().getUniqueKeys();
-
+            var uniqueKeys = collection.getProperties().getUniqueKeyPolicy().getUniqueKeys();
             assertThat(uniqueKeys).hasSize(2);
 
             for (var uniqueKey : uniqueKeys) {
@@ -93,29 +90,43 @@ public class CosmosTest {
 
 
     @Test
-    void cosmos_account_should_be_get() throws DocumentClientException {
+    void cosmos_account_should_be_get() {
         var cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
-        assertThat(cosmos.getAccount()).isEqualTo("rapid-cosmos-japaneast");
+        assertThat(cosmos.getAccount()).isEqualTo("rapid-cosmos");
     }
 
     @Test
-    void getClient_should_work() throws DocumentClientException {
-        var cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
-        assertThat(cosmos.getClient()).isNotNull();
-
-        var dbs = cosmos.getClient().readDatabases(new FeedOptions());
-        assertThat(dbs.getQueryIterator().hasNext()).isTrue();
-
-    }
-
-    @Test
-    void getClientV4_should_work() throws DocumentClientException {
+    void getClientV4_should_work() {
         var cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
         assertThat(cosmos.getClientV4()).isNotNull();
 
         var dbs = cosmos.getClientV4().readAllDatabases();
         assertThat(dbs).isNotEmpty();
 
+    }
+
+    @Test
+    public void extractAccountName_should_work() {
+
+        // Test with a standard endpoint
+        String accountName = Cosmos.extractAccountName("https://example.documents.azure.com:443/");
+        assertThat(accountName).isEqualTo("example");
+
+        // Test with an endpoint that has a different subdomain
+        accountName = Cosmos.extractAccountName("https://different.documents.azure.com:443/");
+        assertThat(accountName).isEqualTo("different");
+
+        // Test with an endpoint that has an unusual subdomain format
+        accountName = Cosmos.extractAccountName("https://sub-domain.example.documents.azure.com:443/");
+        assertThat(accountName).isEqualTo("sub-domain");
+
+        // Test with an endpoint without the standard port
+        accountName = Cosmos.extractAccountName("https://example.documents.azure.com/");
+        assertThat(accountName).isEqualTo("example");
+
+        // Test with an invalid URL to ensure proper error handling or return value
+        accountName = Cosmos.extractAccountName("https:///incorrect-url-format");
+        assertThat(accountName).isEmpty();
     }
 
 }

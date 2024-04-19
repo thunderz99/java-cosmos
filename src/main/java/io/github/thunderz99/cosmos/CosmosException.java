@@ -1,7 +1,6 @@
 package io.github.thunderz99.cosmos;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.microsoft.azure.documentdb.DocumentClientException;
 
 /**
  * Original Exception thrown by java-cosmos. Wrapping v2 DocumentClientException and v4 CosmosException.
@@ -9,9 +8,6 @@ import com.microsoft.azure.documentdb.DocumentClientException;
 public class CosmosException extends RuntimeException {
 
     static final long serialVersionUID = 1L;
-
-    @JsonIgnore
-    private DocumentClientException dce;
 
     @JsonIgnore
     private com.azure.cosmos.CosmosException ce;
@@ -30,20 +26,6 @@ public class CosmosException extends RuntimeException {
      * T time to retry suggested by the 429 exception in milliseconds. 0 if not 429 exception.
      */
     long retryAfterInMilliseconds;
-
-
-    /**
-     * Constructor using DocumentClientException;
-     *
-     * @param dce document client exception
-     */
-    public CosmosException(DocumentClientException dce) {
-        super(dce.getMessage(), dce);
-        this.dce = dce;
-        this.statusCode = dce.getStatusCode();
-        this.code = dce.getError() == null ? "" : dce.getError().getCode();
-        this.retryAfterInMilliseconds = dce.getRetryAfterInMilliseconds();
-    }
 
     public CosmosException(com.azure.cosmos.CosmosException ce) {
         super(ce.getMessage(), ce);

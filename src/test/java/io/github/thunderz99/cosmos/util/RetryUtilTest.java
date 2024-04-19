@@ -4,11 +4,10 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.azure.cosmos.implementation.CosmosError;
-import com.microsoft.azure.documentdb.DocumentClientException;
 import io.github.thunderz99.cosmos.CosmosException;
 import org.junit.jupiter.api.Test;
 
-import static com.microsoft.azure.documentdb.internal.HttpConstants.HttpHeaders.RETRY_AFTER_IN_MILLISECONDS;
+import static com.azure.cosmos.implementation.HttpConstants.HttpHeaders.RETRY_AFTER_IN_MILLISECONDS;
 import static java.time.Duration.ofSeconds;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -16,13 +15,15 @@ import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 class RetryUtilTest {
 
+
     @Test
     void executeWithRetry_should_not_retry_404() throws Exception {
 
         { // should not retry 404
             assertThatThrownBy(() ->
                     RetryUtil.executeWithRetry(() -> {
-                        throw new DocumentClientException(404, new com.microsoft.azure.documentdb.Error("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "0"));
+                        throw new com.azure.cosmos.CosmosException(404, new CosmosError("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "0")) {
+                        };
                     })
             ).isInstanceOf(CosmosException.class);
         }
@@ -45,7 +46,8 @@ class RetryUtilTest {
             var ret = assertTimeout(ofSeconds(1), () ->
                     RetryUtil.executeWithRetry(() -> {
                         if (i.incrementAndGet() < 2) {
-                            throw new DocumentClientException(429, new com.microsoft.azure.documentdb.Error("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10"));
+                            throw new com.azure.cosmos.CosmosException(429, new CosmosError("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10")) {
+                            };
                         }
                         return "OK";
                     })
@@ -95,7 +97,8 @@ class RetryUtilTest {
         assertThatThrownBy(() ->
                 RetryUtil.executeWithRetry(() -> {
                     if (i.incrementAndGet() < 12) {
-                        throw new DocumentClientException(429);
+                        throw new com.azure.cosmos.CosmosException(429, new CosmosError("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "1")) {
+                        };
                     }
                     return "OK";
                 }, 1)
@@ -115,7 +118,8 @@ class RetryUtilTest {
             var ret = assertTimeout(ofSeconds(3), () ->
                     RetryUtil.executeWithRetry(() -> {
                         if (i.incrementAndGet() < 2) {
-                            throw new DocumentClientException(429, new com.microsoft.azure.documentdb.Error("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "-1"));
+                            throw new com.azure.cosmos.CosmosException(429, new CosmosError("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "-1")) {
+                            };
                         }
                         return "OK";
                     })

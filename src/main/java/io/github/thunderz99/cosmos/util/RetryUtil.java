@@ -5,7 +5,6 @@ import java.util.concurrent.Callable;
 
 import com.azure.cosmos.models.CosmosBatchResponse;
 import com.google.common.collect.Sets;
-import com.microsoft.azure.documentdb.DocumentClientException;
 import io.github.thunderz99.cosmos.CosmosException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,9 +73,6 @@ public class RetryUtil {
             try {
                 i++;
                 return func.call();
-            } catch (DocumentClientException dce) {
-                // deal with document client exception
-                cosmosException = new CosmosException(dce);
             } catch (com.azure.cosmos.CosmosException ce) {
                 // deal with sdkv4's CosmosException
                 cosmosException = new CosmosException(ce);

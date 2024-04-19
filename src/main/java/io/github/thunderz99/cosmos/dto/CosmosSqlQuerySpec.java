@@ -7,7 +7,6 @@ import com.azure.cosmos.models.SqlParameter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.google.common.collect.Lists;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.microsoft.azure.documentdb.SqlQuerySpec;
 import org.apache.commons.collections4.CollectionUtils;
 
 /**
@@ -43,11 +42,6 @@ public class CosmosSqlQuerySpec extends RecordData {
 
     }
 
-    CosmosSqlQuerySpec(com.microsoft.azure.documentdb.SqlQuerySpec querySpecV2){
-        this.queryText = querySpecV2.getQueryText();
-        this.params = querySpecV2.getParameters().stream().map(p -> new CosmosSqlParameter(p.getName(), p.getValue(Object.class)))
-                .collect(Collectors.toList());
-    }
 
     CosmosSqlQuerySpec(com.azure.cosmos.models.SqlQuerySpec querySpecV4){
         this.queryText = querySpecV4.getQueryText();
@@ -61,15 +55,6 @@ public class CosmosSqlQuerySpec extends RecordData {
                 .collect(Collectors.toList());
     }
 
-
-    /**
-     * Generate and return a SqlQuerySpec V2 object
-     * @return SqlQuerySpec V2
-     */
-    @JsonIgnore
-    public SqlQuerySpec toSqlQuerySpecV2(){
-        return new SqlQuerySpec(this.queryText, CosmosSqlParameter.toParamsV2(this.params));
-    }
 
     /**
      * Generate and return a SqlQuerySpec V4 object
