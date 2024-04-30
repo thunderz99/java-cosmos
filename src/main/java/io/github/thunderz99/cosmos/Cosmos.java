@@ -2,13 +2,14 @@ package io.github.thunderz99.cosmos;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosClientBuilder;
-import com.azure.cosmos.CosmosContainer;
+import com.azure.cosmos.models.CosmosContainerProperties;
 import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.ConnectionStringUtil;
@@ -117,15 +118,29 @@ public class Cosmos {
      * @param coll            collection name
      * @param uniqueKeyPolicy unique key policy for the collection
      * @return CosmosDatabase instance
-     * @throws DocumentClientException Cosmos client exception Cosmos client exception
+     * @throws CosmosException Cosmos client exception
      */
     public CosmosDatabase createIfNotExist(String db, String coll, UniqueKeyPolicy uniqueKeyPolicy) throws CosmosException {
 
+        Checker.checkNotBlank(db, "Database name");
+
+        this.clientV4.createDatabaseIfNotExists(db);
+        log.info("created database:{}, account:{}", db, account);
+
         if (StringUtils.isBlank(coll)) {
-            this.clientV4.createDatabaseIfNotExists(db);
-            log.info("created database:{}, account:{}", db, account);
+            //do nothing
         } else {
-            this.createCollectionIfNotExist(client, db, coll, uniqueKeyPolicy);
+            var cosmosDatabase = this.clientV4.getDatabase(db);
+            var containerProperties = new CosmosContainerProperties(coll, getDefaultPartitionKey());
+
+            var uniqueKeyPolicyV4 = new com.azure.cosmos.models.UniqueKeyPolicy();
+
+            //TODO
+            //var keyList = uniqueKeyPolicy.getUniqueKeys().stream().map( k -> k.getPaths())
+            uniqueKeyPolicyV4.setUniqueKeys(Arrays.asList(new com.azure.cosmos.models.UniqueKey(Arrays.asList("/yourUniqueField"))));
+
+            containerProperties.setUniqueKeyPolicy(uniqueKeyPolicyV4);
+            cosmosDatabase.createContainerIfNotExists(containerProperties);
         }
 
         return new CosmosDatabase(this, db);
@@ -154,7 +169,19 @@ public class Cosmos {
      * @throws DocumentClientException Cosmos client exception
      */
     public void deleteDatabase(String db) throws DocumentClientException {
-        deleteDatabase(client, db);
+        if (StringUtils.isEmpty(db)) {
+            return;
+        }
+        var cosmosDatabase = this.clientV4.getDatabase(db);
+        try {
+            cosmosDatabase.delete();
+        } catch (com.azure.cosmos.CosmosException ce) {
+            if (isResourceNotFoundException(ce)) {
+                log.info("delete Database not exist. Ignored:{}, account:{}", getDatabaseLink(db), this.account);
+            } else {
+                throw ce;
+            }
+        }
     }
 
     /**
@@ -165,100 +192,20 @@ public class Cosmos {
      * @throws DocumentClientException Cosmos client exception
      */
     public void deleteCollection(String db, String coll) throws DocumentClientException {
-        deleteCollection(client, db, coll);
-    }
 
-    static com.azure.cosmos.CosmosDatabase readDatabase(CosmosClient client, String db) throws DocumentClientException {
+        var cosmosDatabase = this.clientV4.getDatabase(db);
+        var container = cosmosDatabase.getContainer(coll);
         try {
-            Checker.checkNotBlank(db, "db");
-            var res =
-                    client.getDatabase(db);
-            return res;
+            container.delete();
         } catch (com.azure.cosmos.CosmosException ce) {
             // If not exist
             if (isResourceNotFoundException(ce)) {
-                return null;
+                log.info("delete Collection not exist. Ignored:{}, account:{}", getCollectionLink(db, coll), this.account);
             } else {
                 // Throw any other Exception
                 throw ce;
             }
         }
-    }
-
-    static void deleteDatabase(DocumentClient client, String db) throws DocumentClientException {
-        try {
-            Checker.checkNotNull(client, "client");
-            Checker.checkNotBlank(db, "db");
-            client.deleteDatabase(getDatabaseLink(db), null);
-            log.info("delete Database:{}, account:{}", db, getAccount(client));
-        } catch (DocumentClientException de) {
-            // If not exist
-            if (isResourceNotFoundException(de)) {
-                log.info("delete Database not exist. Ignored:{}, account:{}", db, getAccount(client));
-            } else {
-                // Throw any other Exception
-                throw de;
-            }
-        }
-    }
-
-    static void deleteCollection(DocumentClient client, String db, String coll) throws DocumentClientException {
-        var collectionLink = getCollectionLink(db, coll);
-        try {
-            Checker.checkNotNull(client, "client");
-            Checker.checkNotBlank(db, "db");
-            Checker.checkNotBlank(coll, "coll");
-            client.deleteCollection(collectionLink, null);
-            log.info("delete Collection:{}, account:{}", collectionLink, getAccount(client));
-        } catch (DocumentClientException de) {
-            // If not exist
-            if (isResourceNotFoundException(de)) {
-                log.info("delete Collection not exist. Ignored:{}, account:{}", collectionLink, getAccount(client));
-            } else {
-                // Throw any other Exception
-                throw de;
-            }
-        }
-    }
-
-    CosmosContainer createCollectionIfNotExist(String db, String coll) throws DocumentClientException {
-        return createCollectionIfNotExist(db, coll, getDefaultUniqueKeyPolicy());
-    }
-
-    CosmosContainer createCollectionIfNotExist(String db, String coll, UniqueKeyPolicy uniqueKeyPolicy) throws DocumentClientException {
-
-        this.clientV4.createDatabaseIfNotExists(db);
-        log.info("created database:{}, account:{}", db, account);
-
-        var container = this.clientV4.getDatabase(db).createContainerIfNotExists()
-
-        if (container != null) {
-            return container;
-        }
-
-        var collectionInfo = new DocumentCollection();
-        collectionInfo.setId(coll);
-
-        collectionInfo.setIndexingPolicy(getDefaultIndexingPolicy());
-
-        if (uniqueKeyPolicy != null) {
-            collectionInfo.setUniqueKeyPolicy(uniqueKeyPolicy);
-        }
-
-        collectionInfo.setDefaultTimeToLive(-1);
-
-        var partitionKeyDef = new PartitionKeyDefinition();
-        var paths = List.of("/" + getDefaultPartitionKey());
-        partitionKeyDef.setPaths(paths);
-
-        collectionInfo.setPartitionKey(partitionKeyDef);
-
-        var databaseLink = getDatabaseLink(db);
-        var createdColl = client.createCollection(databaseLink, collectionInfo, null);
-        log.info("create Collection:{}/colls/{}, account:{}", databaseLink, coll, getAccount(client));
-
-        return createdColl.getResource();
-
     }
 
     /**
