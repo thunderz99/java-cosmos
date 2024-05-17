@@ -903,6 +903,29 @@ class CosmosDatabaseTest {
     }
 
     @Test
+    void find_should_work_when_reading_double_type() throws Exception {
+
+        var id = "find_should_work_when_reading_double_type";
+        var partition = "FindTests";
+        // double field in db should be found and still be double type
+        try {
+            var data = Map.of("id", id, "score", 10.0);
+
+            // test find
+            db.upsert(coll, data, partition);
+            var result = db.find(coll, Condition.filter("id", id), partition).toMap();
+            assertThat(result).hasSize(1);
+
+            // the result of score be double
+            assertThat(result.get(0).get("score")).isInstanceOf(Double.class).isEqualTo(10.0);
+
+        } finally {
+            db.delete(coll, id, partition);
+        }
+    }
+
+
+    @Test
     void convertAggregateResultsToInteger_should_work() {
         // Setup
 
@@ -1310,38 +1333,12 @@ class CosmosDatabaseTest {
             } finally {
                 var toDelete = db.find(coll, Condition.filter(), partition).toMap();
                 for (var map : toDelete) {
-                    var selfLink = map.get("_self").toString();
-                    db.deleteBySelfLink(selfLink, partition);
+                    db.delete(coll, map.getOrDefault("id", "").toString(), partition);
                 }
             }
         }
 
     }
-
-	@Test
-	void delete_by_self_link_should_work() throws Exception {
-
-		var partition = "SelfLink";
-		var id = "delete_by_self_link_should_work";
-		try {
-			var data = Map.of("id", id, "name", "Lee");
-			var upserted = db.upsert(coll, data, partition).toMap();
-			assertThat(upserted).isNotNull();
-
-			var selfLink = upserted.get("_self").toString();
-			assertThat(selfLink).isNotNull();
-
-			db.deleteBySelfLink(selfLink, partition);
-
-			var read = db.readSuppressing404(coll, id, partition);
-
-			//not exist after deleteBySelfLink
-			assertThat(read).isNull();
-
-		} finally {
-			db.delete(coll, id, partition);
-		}
-	}
 
 	@Test
 	void get_database_name_should_work() throws Exception {

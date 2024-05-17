@@ -5,11 +5,9 @@ import java.util.stream.Collectors;
 
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosContainer;
-import com.azure.cosmos.models.SqlQuerySpec;
+import com.azure.cosmos.implementation.HttpConstants;
 import com.azure.cosmos.models.*;
 import com.google.common.base.Preconditions;
-import com.microsoft.azure.documentdb.PartitionKey;
-import com.microsoft.azure.documentdb.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
@@ -24,9 +22,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.HttpStatus;
 import org.jetbrains.annotations.NotNull;
-import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,11 +42,6 @@ public class CosmosDatabase {
     static final int MAX_BATCH_NUMBER_OF_OPERATION = 100;
 
     String db;
-
-    String account;
-
-    DocumentClient client;
-
     CosmosClient clientV4;
 
     Cosmos cosmosAccount;
@@ -58,7 +49,6 @@ public class CosmosDatabase {
     CosmosDatabase(Cosmos cosmosAccount, String db) {
         this.cosmosAccount = cosmosAccount;
         this.db = db;
-        this.client = cosmosAccount.client;
         this.clientV4 = cosmosAccount.clientV4;
     }
 
@@ -183,10 +173,9 @@ public class CosmosDatabase {
 
         doBatchWithRetry(container, batch);
 
-        return ids.stream().map(it -> {
-            var doc = new Document(JsonUtil.toJson(Map.of("id", it)));
-            return new CosmosDocument(doc.toObject(JSONObject.class));
-        }).collect(Collectors.toList());
+        return ids.stream().map(it ->
+                new CosmosDocument(Map.of("id", it))
+        ).collect(Collectors.toList());
     }
 
     static String getId(Object object) {
@@ -222,10 +211,9 @@ public class CosmosDatabase {
 
         var successDocuments = new ArrayList<CosmosDocument>();
         for (CosmosBatchOperationResult cosmosBatchOperationResult : response.getResults()) {
-            var item = cosmosBatchOperationResult.getItem(Object.class);
+            var item = cosmosBatchOperationResult.getItem(mapInstance.getClass());
             if (item == null) continue;
-            var doc = new Document(JsonUtil.toJson(item));
-            successDocuments.add(new CosmosDocument(doc.toObject(JSONObject.class)));
+            successDocuments.add(new CosmosDocument(item));
         }
 
         return successDocuments;
@@ -303,10 +291,9 @@ public class CosmosDatabase {
 
         var result = doBulkWithRetry(coll, operations);
 
-        result.successList = ids.stream().map(it -> {
-            var doc = new Document(JsonUtil.toJson(Map.of("id", it)));
-            return new CosmosDocument(doc.toObject(JSONObject.class));
-        }).collect(Collectors.toList());
+        result.successList = ids.stream().map(it ->
+                new CosmosDocument(Map.of("id", it))
+        ).collect(Collectors.toList());
 
 
         return result;
@@ -339,13 +326,12 @@ public class CosmosDatabase {
                     delay = Math.max(delay, response.getRetryAfterDuration().toMillis());
                     retryTasks.add(operation);
                 } else if (response.isSuccessStatusCode()) {
-                    var item = response.getItem(Object.class);
+                    var item = response.getItem(mapInstance.getClass());
                     if (item == null) continue;
-                    var doc = new Document(JsonUtil.toJson(item));
-                    successDocuments.add(new CosmosDocument(doc.toObject(JSONObject.class)));
+                    successDocuments.add(new CosmosDocument(item));
                 } else {
                     var ex = result.getException();
-                    if (HttpStatus.SC_CONFLICT == response.getStatusCode()) {
+                    if (HttpConstants.StatusCodes.CONFLICT == response.getStatusCode()) {
                         Map<String, String> map = operation.getItem();
                         bulkResult.fatalList.add(new CosmosException(response.getStatusCode(), "CONFLICT", "id already exits: " + map.get("id")));
                     } else {
@@ -838,34 +824,6 @@ public class CosmosDatabase {
 
     }
 
-    /**
-     * Delete a document by selfLink. Do nothing if object not exist
-     *
-     * @param selfLink  selfLink of a document
-     * @param partition partition name
-     * @return CosmosDatabase instance
-     * @throws Exception Cosmos client exception
-     */
-
-    public CosmosDatabase deleteBySelfLink(String selfLink, String partition) throws Exception {
-
-        Checker.checkNotBlank(selfLink, "selfLink");
-        Checker.checkNotBlank(partition, "partition");
-
-        try {
-            RetryUtil.executeWithRetry(() -> client.deleteDocument(selfLink, requestOptions(partition)).getResource());
-            log.info("deleted Document:{}, partition:{}, account:{}", selfLink, partition, getAccount());
-
-        } catch (Exception e) {
-            if (Cosmos.isResourceNotFoundException(e)) {
-                log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", selfLink, partition, getAccount());
-                return this;
-            }
-            throw e;
-        }
-        return this;
-
-    }
 
     /**
      * find data by condition
@@ -1211,18 +1169,29 @@ public class CosmosDatabase {
 
         var collectionLink = Cosmos.getCollectionLink(db, coll);
 
-        var options = new FeedOptions();
-        options.setPartitionKey(new PartitionKey(partition));
+        var queryRequestOptions = new CosmosQueryRequestOptions();
+
+        if (cond.crossPartition) {
+            // In v4, do not set the partitionKey to do a cross partition query
+        } else {
+            queryRequestOptions.setPartitionKey(new com.azure.cosmos.models.PartitionKey(partition));
+        }
+
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
 
         var querySpec = cond.toQuerySpecForCount();
 
-        var docs = RetryUtil.executeWithRetry(() -> client.queryDocuments(collectionLink, querySpec.toSqlQuerySpecV2(), options).getQueryIterable().toList());
+        var docs = RetryUtil.executeWithRetry(
+                () -> container.queryItems(querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass())
+        );
+
+        List<Map> maps = docs.stream().collect(Collectors.toList());
 
         if (log.isInfoEnabled()) {
-            log.info("count Document:{}, cond:{}, partition:{}, account:{}", coll, cond, partition, getAccount());
+            log.info("count Document:{}, cond:{}, collection:{}, partition:{}, account:{}", coll, cond, collectionLink, partition, getAccount());
         }
 
-        return docs.get(0).getInt("$1");
+        return Integer.parseInt(maps.get(0).getOrDefault("$1", "0").toString());
 
     }
 
@@ -1315,29 +1284,6 @@ public class CosmosDatabase {
 
         return new CosmosDocument(item);
     }
-
-    RequestOptions requestOptions(String partition) {
-        var options = new RequestOptions();
-        options.setPartitionKey(new PartitionKey(partition));
-        return options;
-    }
-
-    RequestOptions requestOptions(String partition, String etag) {
-        var options = new RequestOptions();
-        options.setPartitionKey(new PartitionKey(partition));
-
-        // using etag for optimistic concurrency control
-        // see https://docs.microsoft.com/en-us/azure/cosmos-db/sql/database-transactions-optimistic-concurrency#optimistic-concurrency-control
-
-        if (StringUtils.isNotEmpty(etag)) {
-            var accessCondition = new AccessCondition();
-            accessCondition.setCondition(etag);
-            options.setAccessCondition(accessCondition);
-        }
-
-        return options;
-    }
-
     /**
      * like Object.assign(m1, m2) in javascript, but support nested merge.
      *
@@ -1376,11 +1322,7 @@ public class CosmosDatabase {
      * @throws Exception Cosmos client exception
      */
     String getAccount() throws Exception {
-        if (StringUtils.isNotEmpty(this.account)) {
-            return this.account;
-        }
-        this.account = Cosmos.getAccount(this.client);
-        return this.account;
+        return this.cosmosAccount.getAccount();
     }
 
     /**

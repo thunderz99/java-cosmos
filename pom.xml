@@ -4,7 +4,7 @@
     <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
     <packaging>jar</packaging>
-    <version>0.6.2</version>
+    <version>0.6.3</version>
     <name>${project.groupId}:${project.artifactId}$</name>
     <description>A lightweight Azure CosmosDB client for Java</description>
     <url>https://github.com/thunderz99/java-cosmos</url>
@@ -73,32 +73,6 @@
             <groupId>org.json</groupId>
             <artifactId>json</artifactId>
             <version>20230227</version>
-        </dependency>
-
-        <!-- https://mvnrepository.com/artifact/com.microsoft.azure/azure-documentdb -->
-        <dependency>
-            <groupId>com.microsoft.azure</groupId>
-            <artifactId>azure-documentdb</artifactId>
-            <version>2.6.4</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>com.fasterxml.jackson.core</groupId>
-                    <artifactId>jackson-databind</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>com.fasterxml.jackson.core</groupId>
-                    <artifactId>jackson-annotations</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>com.fasterxml.jackson.core</groupId>
-                    <artifactId>jackson-core</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.json</groupId>
-                    <artifactId>json</artifactId>
-                </exclusion>
-
-            </exclusions>
         </dependency>
 
         <dependency>
