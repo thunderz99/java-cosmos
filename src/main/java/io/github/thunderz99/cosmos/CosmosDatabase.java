@@ -10,6 +10,7 @@ import com.azure.cosmos.models.*;
 import com.google.common.base.Preconditions;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
@@ -207,10 +208,12 @@ public class CosmosDatabase {
     }
 
     private List<CosmosDocument> doBatchWithRetry(CosmosContainer container, CosmosBatch batch) throws Exception {
-        var response = RetryUtil.executeBatchWithRetry(() -> container.executeCosmosBatch(batch));
+        var response = RetryUtil.executeBatchWithRetry(() ->
+                new CosmosBatchResponseWrapper(container.executeCosmosBatch(batch))
+        );
 
         var successDocuments = new ArrayList<CosmosDocument>();
-        for (CosmosBatchOperationResult cosmosBatchOperationResult : response.getResults()) {
+        for (CosmosBatchOperationResult cosmosBatchOperationResult : response.cosmosBatchReponse.getResults()) {
             var item = cosmosBatchOperationResult.getItem(mapInstance.getClass());
             if (item == null) continue;
             successDocuments.add(new CosmosDocument(item));

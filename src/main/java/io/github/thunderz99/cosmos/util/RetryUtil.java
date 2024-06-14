@@ -3,9 +3,9 @@ package io.github.thunderz99.cosmos.util;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
-import com.azure.cosmos.models.CosmosBatchResponse;
 import com.google.common.collect.Sets;
 import io.github.thunderz99.cosmos.CosmosException;
+import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,13 +30,14 @@ public class RetryUtil {
     RetryUtil() {
     }
 
-    public static CosmosBatchResponse executeBatchWithRetry(Callable<CosmosBatchResponse> func) throws Exception {
+    public static CosmosBatchResponseWrapper executeBatchWithRetry(Callable<CosmosBatchResponseWrapper> func) throws Exception {
         return executeBatchWithRetry(func, 2000);
     }
 
-    public static CosmosBatchResponse executeBatchWithRetry(Callable<CosmosBatchResponse> func, long defaultWaitTime) throws Exception {
+    public static CosmosBatchResponseWrapper executeBatchWithRetry(Callable<CosmosBatchResponseWrapper> func, long defaultWaitTime) throws Exception {
+        CosmosBatchResponseWrapper response = null;
         for (int attempt = 0; attempt < BATCH_MAX_RETRIES; attempt++) {
-            var response = func.call();
+            response = func.call();
 
             if (response.isSuccessStatusCode()) {
                 return response;
@@ -51,13 +52,16 @@ public class RetryUtil {
                 try {
                     log.info("Code:{}, 429 Too Many Requests / 449 Retry with / 408 Request Timeout. Wait:{} ms", response.getStatusCode(), delay);
                     Thread.sleep(delay);
-                } catch (InterruptedException ignored) {}
+                } catch (InterruptedException ignored) {
+                }
             } else {
-               throw new CosmosException(response.getStatusCode(), "", response.getErrorMessage());
+                throw new CosmosException(response.getStatusCode(), String.valueOf(response.getSubStatusCode()), response.getErrorMessage());
             }
         }
-
-        throw new CosmosException(0, "", "Max retries count reached");
+        if (response != null) {
+            throw new CosmosException(response.getStatusCode(), String.valueOf(response.getSubStatusCode()), response.getErrorMessage());
+        }
+        throw new CosmosException(429, "Too Many Requests", "Max retries count reached in executeBatchWithRetry");
     }
 
     public static <T> T executeWithRetry(Callable<T> func) throws Exception {
