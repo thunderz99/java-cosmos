@@ -25,52 +25,49 @@ public class RetryUtil {
      */
     static final Set<Integer> codesShouldRetry = Sets.newHashSet(429, 449, 408);
 
-    static final int BATCH_MAX_RETRIES = 10;
+    /**
+     * max retries for a single CRUD execution
+     */
+    static final int SINGLE_EXECUTION_MAX_RETRIES = 10;
+
+    /**
+     * Wait time before retry in Millis for a single CRUD execution
+     */
+    static final int SINGLE_EXECUTION_DEFAULT_WAIT_TIME = 2000;
+
+
+    /**
+     * max retries for a batch execution.
+     *
+     * <p>
+     * Which is smaller than single. Because the reason a batch failed is more complicated, we should handle the issue more quickly to the caller.
+     * </p>
+     */
+    static final int BATCH_EXECUTION_MAX_RETRIES = 3;
+
+    /**
+     * Wait time before retry in Millis for a batch execution
+     *
+     * <p>
+     * We set 10 seconds for batch retry delay as default. Longer than a single execution.
+     * </p>
+     */
+    static final int BATCH_EXECUTION_DEFAULT_WAIT_TIME = 10_000;
+
 
     RetryUtil() {
     }
 
-    public static CosmosBatchResponseWrapper executeBatchWithRetry(Callable<CosmosBatchResponseWrapper> func) throws Exception {
-        return executeBatchWithRetry(func, 2000);
-    }
-
-    public static CosmosBatchResponseWrapper executeBatchWithRetry(Callable<CosmosBatchResponseWrapper> func, long defaultWaitTime) throws Exception {
-        CosmosBatchResponseWrapper response = null;
-        for (int attempt = 0; attempt < BATCH_MAX_RETRIES; attempt++) {
-            response = func.call();
-
-            if (response.isSuccessStatusCode()) {
-                return response;
-            } else if (shouldRetry(response.getStatusCode())) {
-                long delay = response.getRetryAfterDuration().toMillis();
-                if (delay <= 0) {
-                    delay = defaultWaitTime;
-                    if (delay < 0) {
-                        log.warn("retryAfterInMilliseconds {} is minus. Will retry by defaultWaitTime(2000ms). error:{}", delay, response.getErrorMessage());
-                    }
-                }
-                try {
-                    log.info("Code:{}, 429 Too Many Requests / 449 Retry with / 408 Request Timeout. Wait:{} ms", response.getStatusCode(), delay);
-                    Thread.sleep(delay);
-                } catch (InterruptedException ignored) {
-                }
-            } else {
-                throw new CosmosException(response.getStatusCode(), String.valueOf(response.getSubStatusCode()), response.getErrorMessage());
-            }
-        }
-        if (response != null) {
-            throw new CosmosException(response.getStatusCode(), String.valueOf(response.getSubStatusCode()), response.getErrorMessage());
-        }
-        throw new CosmosException(429, "Too Many Requests", "Max retries count reached in executeBatchWithRetry");
-    }
-
     public static <T> T executeWithRetry(Callable<T> func) throws Exception {
         //default wait time is 2s
-        return executeWithRetry(func, 2000);
+        return executeWithRetry(func, SINGLE_EXECUTION_DEFAULT_WAIT_TIME);
     }
 
     public static <T> T executeWithRetry(Callable<T> func, long defaultWaitTime) throws Exception {
-        var maxRetries = 10;
+        return executeWithRetry(func, defaultWaitTime, SINGLE_EXECUTION_MAX_RETRIES);
+    }
+
+    public static <T> T executeWithRetry(Callable<T> func, long defaultWaitTime, int maxRetries) throws Exception {
         var i = 0;
         while (true) {
             CosmosException cosmosException = null;
@@ -105,8 +102,25 @@ public class RetryUtil {
         }
     }
 
+
+    public static CosmosBatchResponseWrapper executeBatchWithRetry(Callable<CosmosBatchResponseWrapper> func) throws Exception {
+        return executeBatchWithRetry(func, BATCH_EXECUTION_DEFAULT_WAIT_TIME, BATCH_EXECUTION_MAX_RETRIES);
+    }
+
+    public static CosmosBatchResponseWrapper executeBatchWithRetry(Callable<CosmosBatchResponseWrapper> func, long defaultWaitTime, int maxRetries) throws Exception {
+        return executeWithRetry(() -> {
+            var response = func.call();
+            if (!response.isSuccessStatusCode()) {
+                throw new CosmosException(response.getStatusCode(), String.valueOf(response.getSubStatusCode()),
+                        response.getErrorMessage(), response.getRetryAfterDuration().toMillis());
+            }
+            return response;
+        }, defaultWaitTime, maxRetries);
+    }
+
+
     /**
-     * Judge whether should retry action for this cosmos exception. Currently we will retry for 429/408
+     * Judge whether should retry action for this cosmos exception. Currently we will retry for 429/449/408
      *
      * @param cosmosException cosmosException
      * @return true/false

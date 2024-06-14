@@ -133,7 +133,7 @@ class RetryUtilTest {
     @Test
     void executeBatchWithRetry_should_not_retry_401() throws Exception {
 
-        { // should not retry 401
+        { // should not retry 401 for status in return value
             assertThatThrownBy(() ->
                     RetryUtil.executeBatchWithRetry(() -> {
                         return new CosmosBatchResponseWrapper(401, 10, "Unauthenticated");
@@ -142,6 +142,17 @@ class RetryUtilTest {
                 assertThat(e.getStatusCode()).isEqualTo(401);
                 assertThat(e.getCode()).isEqualTo("10");
                 assertThat(e.getMessage()).isEqualTo("Unauthenticated");
+            });
+        }
+
+        { // should not retry 401 for CosmosException
+            assertThatThrownBy(() ->
+                    RetryUtil.executeBatchWithRetry(() -> {
+                        throw new com.azure.cosmos.CosmosException(401, new CosmosError("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10")) {
+                        };
+                    })
+            ).isInstanceOfSatisfying(CosmosException.class, (e) -> {
+                assertThat(e.getStatusCode()).isEqualTo(401);
             });
         }
     }
@@ -185,36 +196,50 @@ class RetryUtilTest {
             );
             assertThat(ret.getErrorMessage()).isEqualTo("OK");
         }
+
+        { // success after 2 retries. for 449
+            final var i = new AtomicInteger(0);
+
+            // success within 1 second
+            var ret = assertTimeout(ofSeconds(1), () ->
+                    RetryUtil.executeBatchWithRetry(() -> {
+                        if (i.incrementAndGet() < 2) {
+                            throw new com.azure.cosmos.CosmosException(449, new CosmosError("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10")) {
+                            };
+                        }
+                        return new CosmosBatchResponseWrapper(200, 11, "OK");
+                    })
+            );
+            assertThat(ret.getErrorMessage()).isEqualTo("OK");
+        }
     }
 
     @Test
     void executeBatchWithRetry_should_throw_exception_after_max_retries() throws Exception {
 
-        { // exception after 10 retries. for 429
+        { // exception after 3 retries. for 429 CosmosException
             final var i = new AtomicInteger(0);
 
-            // success within 1 second
             assertThatThrownBy(() ->
                     RetryUtil.executeBatchWithRetry(() -> {
-                        if (i.incrementAndGet() < 12) {
-                            return new CosmosBatchResponseWrapper(429, 10, "Too many requests", Duration.ofMillis(1));
+                        if (i.incrementAndGet() < 5) {
+                            throw new com.azure.cosmos.CosmosException(429, new CosmosError("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10")) {
+                            };
                         }
                         return new CosmosBatchResponseWrapper(200, 11, "OK");
                     })
             ).isInstanceOfSatisfying(CosmosException.class, (e) -> {
                 assertThat(e.getStatusCode()).isEqualTo(429);
-                assertThat(e.getMessage()).isEqualTo("Too many requests");
-
             });
         }
 
-        { // exception after 10 retries. for 449
+        { // exception after 3 retries. for 449
             final var i = new AtomicInteger(0);
 
             // success within 1 second
             assertThatThrownBy(() ->
                     RetryUtil.executeBatchWithRetry(() -> {
-                        if (i.incrementAndGet() < 12) {
+                        if (i.incrementAndGet() < 5) {
                             return new CosmosBatchResponseWrapper(449, 10, "Retry With", Duration.ofMillis(1));
                         }
                         return new CosmosBatchResponseWrapper(200, 11, "OK");
@@ -222,6 +247,24 @@ class RetryUtilTest {
             ).isInstanceOfSatisfying(CosmosException.class, (e) -> {
                 assertThat(e.getStatusCode()).isEqualTo(449);
                 assertThat(e.getMessage()).isEqualTo("Retry With");
+
+            });
+        }
+
+        { // exception after 3 retries. for 408
+            final var i = new AtomicInteger(0);
+
+            // success within 1 second
+            assertThatThrownBy(() ->
+                    RetryUtil.executeBatchWithRetry(() -> {
+                        if (i.incrementAndGet() < 5) {
+                            return new CosmosBatchResponseWrapper(408, 10, "Request Timeout", Duration.ofMillis(1));
+                        }
+                        return new CosmosBatchResponseWrapper(200, 11, "OK");
+                    })
+            ).isInstanceOfSatisfying(CosmosException.class, (e) -> {
+                assertThat(e.getStatusCode()).isEqualTo(408);
+                assertThat(e.getMessage()).isEqualTo("Request Timeout");
 
             });
         }
