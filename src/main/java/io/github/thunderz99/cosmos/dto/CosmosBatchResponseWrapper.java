@@ -72,7 +72,7 @@ public class CosmosBatchResponseWrapper {
      */
     public String getErrorMessage() {
         if(cosmosBatchReponse != null){
-            return cosmosBatchReponse.getErrorMessage();
+            return cosmosBatchReponse.getErrorMessage() == null ? "" : cosmosBatchReponse.getErrorMessage();
         }
         return errorMessage;
     }
