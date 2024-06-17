@@ -271,12 +271,33 @@ public class Condition {
     }
 
 
+    /**
+     * Rebuild the query for special conditions.
+     *
+     * @return query spec which can be used in official DocumentClient
+     */
+    private void rebuildQueryForSpecialConditions() {
+        if (isFalseCondition(this) && !this.filter.containsKey(SubConditionType.AND)) {
+            this.rawQuerySpec = null;
+            this.filter.put(SubConditionType.AND, List.of(falseCondition()));
+        }
+
+        if (isTrueCondition(this) && !this.filter.containsKey(SubConditionType.AND)) {
+            this.rawQuerySpec = null;
+            this.filter.put(SubConditionType.AND, List.of(trueCondition()));
+        }
+    }
+
+
     public CosmosSqlQuerySpec toQuerySpec(Aggregate aggregate) {
 
-        // When rawSql is set, other filter / limit / offset / sort will be ignored.
-        if (rawQuerySpec != null) {
+        // When rawSql is set, other filter / limit / offset / sort will be ignored, but except for exactly true / false conditions.
+        if (rawQuerySpec != null && !isFalseCondition(this) && !isTrueCondition(this)) {
             return rawQuerySpec;
         }
+
+        // if the condition is exactly false condition or true condition, rebuild the query to avoid cosmos db error
+        rebuildQueryForSpecialConditions();
 
         var select = aggregate != null ? generateAggregateSelect(aggregate) : generateSelect();
 

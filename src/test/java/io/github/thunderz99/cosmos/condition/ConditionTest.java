@@ -864,6 +864,32 @@ class ConditionTest {
     }
 
     @Test
+    public void only_true_condition_exists_in_query_should_work() {
+
+        var cond = Condition.trueCondition();
+
+        var q = cond.toQuerySpec();
+        assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE (1=1) OFFSET 0 LIMIT 100");
+
+        var params = List.copyOf(q.getParameters());
+        assertThat(params).isEmpty();
+
+    }
+
+    @Test
+    public void only_false_condition_exists_in_query_should_work() {
+
+        var cond = Condition.falseCondition();
+
+        var q = cond.toQuerySpec();
+        assertThat(q.getQueryText()).isEqualTo("SELECT * FROM c WHERE (1=0) OFFSET 0 LIMIT 100");
+
+        var params = List.copyOf(q.getParameters());
+        assertThat(params).isEmpty();
+
+    }
+
+    @Test
     void typeCheckFunctionPattern_should_work() {
         assertThat(Condition.typeCheckFunctionPattern.asMatchPredicate().test("IS_NUMBER")).isTrue();
         assertThat(Condition.typeCheckFunctionPattern.asMatchPredicate().test("IS_DEFINED")).isTrue();
