@@ -1,0 +1,6 @@
+version: 2
+updates:
+  - package-ecosystem: "maven" # 使用しているビルドツールに応じて変更
+    directory: "/" # プロジェクトのルートディレクトリ
+    schedule:
+      interval: "monthly" # 依存関係のチェック頻度
