@@ -331,7 +331,7 @@ public class JsonSerializable implements Serializable {
      */
     public Double getDouble(String propertyName) {
         if (this.has(propertyName) && !this.propertyBag.isNull(propertyName)) {
-            return new Double(this.propertyBag.getDouble(propertyName));
+            return this.propertyBag.getDouble(propertyName);
         } else {
             return null;
         }
