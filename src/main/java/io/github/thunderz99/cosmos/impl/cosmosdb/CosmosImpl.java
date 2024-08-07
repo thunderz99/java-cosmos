@@ -83,7 +83,7 @@ public class CosmosImpl implements Cosmos {
      */
     public CosmosDatabase getDatabase(String db) {
         Checker.checkNotEmpty(db, "db");
-        return new CosmosDatabase(this, db);
+        return new CosmosDatabaseImpl(this, db);
     }
 
 
@@ -133,7 +133,7 @@ public class CosmosImpl implements Cosmos {
             cosmosDatabase.createContainerIfNotExists(containerProperties);
         }
 
-        return new CosmosDatabase(this, db);
+        return new CosmosDatabaseImpl(this, db);
     }
 
     /**
