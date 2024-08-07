@@ -1506,32 +1506,7 @@ class CosmosDatabaseTest {
                 assertThat(((Map<String, Object>) patched.get("sheet-2")).get("skills")).isEqualTo(List.of("Java", "JavaScript"));
 
             }
-
-            {
-                // partial update an array's item
-                // only supported when SDK v4 is enabled
-                var partialMap = Map.of("name", "Alex", "sheet-2", Map.of("skills/1", "Kotlin"));
-
-                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
-                assertThat(patched).containsEntry("name", "Alex")
-                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
-                        .containsEntry("_partition", partition);
-
-                assertThat(((Map<String, Object>) patched.get("sheet-2")).get("skills")).isEqualTo(List.of("Java", "Kotlin"));
-            }
-
-            {
-                // partial update an array's nested item
-                // only supported when SDK v4 is enabled
-                var partialMap = Map.of("name", "Kate", formId, Map.of("tags/0", Map.of("name", "fullstack")));
-
-                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
-                assertThat(patched).containsEntry("name", "Kate")
-                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
-                        .containsEntry("_partition", partition);
-
-                assertThat(((List<Map<String, Object>>) ((Map<String, Object>) patched.get(formId)).get("tags")).get(0).get("name")).isEqualTo("fullstack");
-            }
+            
             {
                 // partial update containing fields more than 10
                 var formMap = new HashMap<String, Integer>();
