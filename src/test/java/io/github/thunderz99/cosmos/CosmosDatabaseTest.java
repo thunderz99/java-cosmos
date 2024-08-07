@@ -13,6 +13,7 @@ import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosImpl;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -58,7 +59,7 @@ class CosmosDatabaseTest {
 
 	@BeforeAll
 	public static void beforeAll() throws Exception {
-        cosmos = new Cosmos(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
+        cosmos = new CosmosBuilder().withConnectionString(EnvUtil.get("COSMOSDB_CONNECTION_STRING")).build();
         db = cosmos.createIfNotExist(dbName, coll);
 
         initFamiliesData();
@@ -1508,32 +1509,28 @@ class CosmosDatabaseTest {
 
             {
                 // partial update an array's item
-                if (Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.COSMOS_SDK_V4_ENABLE, "false"))) {
-                    // only supported wen SDK v4 is enabled
-                    var partialMap = Map.of("name", "Alex", "sheet-2", Map.of("skills/1", "Kotlin"));
+                // only supported when SDK v4 is enabled
+                var partialMap = Map.of("name", "Alex", "sheet-2", Map.of("skills/1", "Kotlin"));
 
-                    var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
-                    assertThat(patched).containsEntry("name", "Alex")
-                            .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
-                            .containsEntry("_partition", partition);
+                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                assertThat(patched).containsEntry("name", "Alex")
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition);
 
-                    assertThat(((Map<String, Object>) patched.get("sheet-2")).get("skills")).isEqualTo(List.of("Java", "Kotlin"));
-                }
+                assertThat(((Map<String, Object>) patched.get("sheet-2")).get("skills")).isEqualTo(List.of("Java", "Kotlin"));
             }
 
             {
                 // partial update an array's nested item
-                if (Boolean.parseBoolean(EnvUtil.getOrDefault(Cosmos.COSMOS_SDK_V4_ENABLE, "false"))) {
-                    // only supported wen SDK v4 is enabl
-                    var partialMap = Map.of("name", "Kate", formId, Map.of("tags/0", Map.of("name", "fullstack")));
+                // only supported when SDK v4 is enabled
+                var partialMap = Map.of("name", "Kate", formId, Map.of("tags/0", Map.of("name", "fullstack")));
 
-                    var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
-                    assertThat(patched).containsEntry("name", "Kate")
-                            .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
-                            .containsEntry("_partition", partition);
+                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                assertThat(patched).containsEntry("name", "Kate")
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition);
 
-                    assertThat(((List<Map<String, Object>>) ((Map<String, Object>) patched.get(formId)).get("tags")).get(0).get("name")).isEqualTo("fullstack");
-                }
+                assertThat(((List<Map<String, Object>>) ((Map<String, Object>) patched.get(formId)).get("tags")).get(0).get("name")).isEqualTo("fullstack");
             }
             {
                 // partial update containing fields more than 10
@@ -1600,7 +1597,7 @@ class CosmosDatabaseTest {
                         .containsEntry("_partition", partition)
                 ;
 
-                var partialMapC = Map.of("city", "Tokyo", Cosmos.ETAG, "invalid etag");
+                var partialMapC = Map.of("city", "Tokyo", CosmosImpl.ETAG, "invalid etag");
 
                 // etag will be ignored, if PartialUpdateOption.checkETag false. So the following operation should succeed.
                 var patchedC = db.updatePartial(coll, id, partialMapC, partition).toMap();
@@ -1618,9 +1615,9 @@ class CosmosDatabaseTest {
                 var etag = originData.getOrDefault("_etag", "").toString();
                 assertThat(etag).isNotEmpty();
 
-                Map<String, Object> partialMapA = Maps.newHashMap(Map.of("age", 30, Cosmos.ETAG, etag));
+                Map<String, Object> partialMapA = Maps.newHashMap(Map.of("age", 30, CosmosImpl.ETAG, etag));
 
-                Map<String, Object> partialMapB = Map.of("sort", "199", "employeeCode", "X0456", Cosmos.ETAG, etag);
+                Map<String, Object> partialMapB = Map.of("sort", "199", "employeeCode", "X0456", CosmosImpl.ETAG, etag);
 
                 var patchedB = db.updatePartial(coll, id, partialMapB, partition, PartialUpdateOption.checkETag(true)).toMap();
 
@@ -1632,7 +1629,7 @@ class CosmosDatabaseTest {
                 ;
 
                 // new etag should be generated
-                assertThat(patchedB.getOrDefault(Cosmos.ETAG, "").toString()).isNotEmpty().isNotEqualTo(etag);
+                assertThat(patchedB.getOrDefault(CosmosImpl.ETAG, "").toString()).isNotEmpty().isNotEqualTo(etag);
 
 
                 assertThatThrownBy(() -> db.updatePartial(coll, id, partialMapA, partition, PartialUpdateOption.checkETag(true)).toMap())
@@ -1641,7 +1638,7 @@ class CosmosDatabaseTest {
                         });
 
                 // empty etag will be ignored
-                partialMapA.put(Cosmos.ETAG, "");
+                partialMapA.put(CosmosImpl.ETAG, "");
                 var patchedA = db.updatePartial(coll, id, partialMapA, partition, PartialUpdateOption.checkETag(true)).toMap();
 
                 // the result should be correct partial updated

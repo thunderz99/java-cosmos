@@ -14,6 +14,7 @@ import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosImpl;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.NumberUtil;
@@ -46,10 +47,13 @@ public class CosmosDatabase {
 
     Cosmos cosmosAccount;
 
-    CosmosDatabase(Cosmos cosmosAccount, String db) {
+    public CosmosDatabase(Cosmos cosmosAccount, String db) {
         this.cosmosAccount = cosmosAccount;
         this.db = db;
-        this.clientV4 = cosmosAccount.clientV4;
+        if (cosmosAccount instanceof CosmosImpl) {
+            this.clientV4 = ((CosmosImpl) cosmosAccount).getClientV4();
+        }
+
     }
 
     /**
@@ -78,9 +82,9 @@ public class CosmosDatabase {
         Map<String, Object> objectMap = JsonUtil.toMap(data);
 
         // add partition info
-        objectMap.put(Cosmos.getDefaultPartitionKey(), partition);
+        objectMap.put(CosmosImpl.getDefaultPartitionKey(), partition);
 
-        var collectionLink = Cosmos.getCollectionLink(db, coll);
+        var collectionLink = CosmosImpl.getCollectionLink(db, coll);
 
         checkValidId(objectMap);
 
@@ -116,7 +120,7 @@ public class CosmosDatabase {
         CosmosBatch batch = CosmosBatch.createCosmosBatch(partitionKey);
         data.forEach(it -> {
             var map = JsonUtil.toMap(it);
-            map.put(Cosmos.getDefaultPartitionKey(), partition);
+            map.put(CosmosImpl.getDefaultPartitionKey(), partition);
             batch.createItemOperation(map);
         });
 
@@ -141,7 +145,7 @@ public class CosmosDatabase {
         CosmosBatch batch = CosmosBatch.createCosmosBatch(partitionKey);
         data.forEach(it -> {
             var map = JsonUtil.toMap(it);
-            map.put(Cosmos.getDefaultPartitionKey(), partition);
+            map.put(CosmosImpl.getDefaultPartitionKey(), partition);
             batch.upsertItemOperation(map);
         });
 
@@ -236,7 +240,7 @@ public class CosmosDatabase {
         var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
         var operations = data.stream().map(it -> {
                     var map = JsonUtil.toMap(it);
-                    map.put(Cosmos.getDefaultPartitionKey(), partition);
+            map.put(CosmosImpl.getDefaultPartitionKey(), partition);
                     return CosmosBulkOperations.getCreateItemOperation(map, partitionKey);
                 }
         ).collect(Collectors.toList());
@@ -259,7 +263,7 @@ public class CosmosDatabase {
         var partitionKey = new com.azure.cosmos.models.PartitionKey(partition);
         var operations = data.stream().map(it -> {
                     var map = JsonUtil.toMap(it);
-                    map.put(Cosmos.getDefaultPartitionKey(), partition);
+            map.put(CosmosImpl.getDefaultPartitionKey(), partition);
                     return CosmosBulkOperations.getUpsertItemOperation(map, partitionKey);
                 }
         ).collect(Collectors.toList());
@@ -428,7 +432,7 @@ public class CosmosDatabase {
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
 
-        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
@@ -469,7 +473,7 @@ public class CosmosDatabase {
         try {
             return read(coll, id, partition);
         } catch (Exception e) {
-            if (Cosmos.isResourceNotFoundException(e)) {
+            if (CosmosImpl.isResourceNotFoundException(e)) {
                 return null;
             }
             throw e;
@@ -510,10 +514,10 @@ public class CosmosDatabase {
         Checker.checkNotBlank(id, "id");
         checkValidId(id);
 
-        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
 
         // add partition info
-        map.put(Cosmos.getDefaultPartitionKey(), partition);
+        map.put(CosmosImpl.getDefaultPartitionKey(), partition);
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
@@ -596,11 +600,11 @@ public class CosmosDatabase {
         var patchData = JsonUtil.toMap(data);
 
         // Remove partition key from patchData, because it is not needed for a patch action.
-        patchData.remove(Cosmos.getDefaultPartitionKey());
+        patchData.remove(CosmosImpl.getDefaultPartitionKey());
 
-        if (!option.checkETag || StringUtils.isEmpty(MapUtils.getString(patchData, Cosmos.ETAG))) {
+        if (!option.checkETag || StringUtils.isEmpty(MapUtils.getString(patchData, CosmosImpl.ETAG))) {
             // if don't check etag or etag is empty, remove it.
-            patchData.remove(Cosmos.ETAG);
+            patchData.remove(CosmosImpl.ETAG);
         }
 
         return updatePartialByMerge(coll, id, patchData, partition, option);
@@ -633,7 +637,7 @@ public class CosmosDatabase {
      */
     CosmosDocument updatePartialByMerge(String coll, String id, Map<String, Object> data, String partition, PartialUpdateOption option) throws Exception {
 
-        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
 
         var map = RetryUtil.executeWithRetry(() -> {
                     // we will not retry if checkETag is true, this will result in an OCC.
@@ -663,7 +667,7 @@ public class CosmosDatabase {
 
         var newData = JsonUtil.toMap(data);
         // add partition info
-        newData.put(Cosmos.getDefaultPartitionKey(), partition);
+        newData.put(CosmosImpl.getDefaultPartitionKey(), partition);
 
         // this is like `Object.assign(origin, newData)` in JavaScript, but support nested merge.
         var merged = merge(origin, newData);
@@ -685,7 +689,7 @@ public class CosmosDatabase {
      */
     Map<String, Object> replaceDocumentWithRefreshingEtag(String coll, String id, Map<String, Object> data, int maxRetry, String partition) throws Exception {
 
-        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
 
         var retriedCount = 0;
 
@@ -693,7 +697,7 @@ public class CosmosDatabase {
 
         while (true) {
             var merged = readAndMerge(coll, id, data, partition);
-            var etag = merged.getOrDefault(Cosmos.ETAG, "").toString();
+            var etag = merged.getOrDefault(CosmosImpl.ETAG, "").toString();
 
             try {
                 return container.replaceItem(
@@ -755,10 +759,10 @@ public class CosmosDatabase {
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotNull(data, "upsert data " + coll + " " + partition);
 
-        var collectionLink = Cosmos.getCollectionLink(db, coll);
+        var collectionLink = CosmosImpl.getCollectionLink(db, coll);
 
         // add partition info
-        map.put(Cosmos.getDefaultPartitionKey(), partition);
+        map.put(CosmosImpl.getDefaultPartitionKey(), partition);
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
@@ -800,7 +804,7 @@ public class CosmosDatabase {
         Checker.checkNotBlank(id, "id");
         Checker.checkNotBlank(partition, "partition");
 
-        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
 
         try {
 
@@ -815,7 +819,7 @@ public class CosmosDatabase {
             log.info("deleted Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
         } catch (Exception e) {
-            if (Cosmos.isResourceNotFoundException(e)) {
+            if (CosmosImpl.isResourceNotFoundException(e)) {
                 log.info("delete Document not exist. Ignored:{}, partition:{}, account:{}", documentLink, partition, getAccount());
                 return this;
             }
@@ -867,7 +871,7 @@ public class CosmosDatabase {
      */
     CosmosDocumentList find(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
 
-        var collectionLink = Cosmos.getCollectionLink(db, coll);
+        var collectionLink = CosmosImpl.getCollectionLink(db, coll);
 
         var queryRequestOptions = new CosmosQueryRequestOptions();
 
@@ -1168,7 +1172,7 @@ public class CosmosDatabase {
 
     public int count(String coll, Condition cond, String partition) throws Exception {
 
-        var collectionLink = Cosmos.getCollectionLink(db, coll);
+        var collectionLink = CosmosImpl.getCollectionLink(db, coll);
 
         var queryRequestOptions = new CosmosQueryRequestOptions();
 
@@ -1215,7 +1219,7 @@ public class CosmosDatabase {
      */
     public CosmosDocument increment(String coll, String id, String path, int value, String partition) throws Exception {
 
-        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
 
         Checker.checkNotNull(this.clientV4, String.format("SDK v4 must be enabled to use increment method. docLink:%s", documentLink));
 
@@ -1263,7 +1267,7 @@ public class CosmosDatabase {
      */
     public CosmosDocument patch(String coll, String id, PatchOperations operations, String partition) throws Exception {
 
-        var documentLink = Cosmos.getDocumentLink(db, coll, id);
+        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
 
         Checker.checkNotNull(this.clientV4, String.format("SDK v4 must be enabled to use patch method. docLink:%s", documentLink));
         Checker.checkNotEmpty("id", "id");
