@@ -1,6 +1,7 @@
 package io.github.thunderz99.cosmos;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.mongodb.MongoException;
 
 /**
  * Original Exception thrown by java-cosmos. Wrapping v2 DocumentClientException and v4 CosmosException.
@@ -10,7 +11,7 @@ public class CosmosException extends RuntimeException {
     static final long serialVersionUID = 1L;
 
     @JsonIgnore
-    private com.azure.cosmos.CosmosException ce;
+    private Exception ce;
 
     /**
      * http status code
@@ -35,6 +36,15 @@ public class CosmosException extends RuntimeException {
         this.code = "";
         this.retryAfterInMilliseconds = ce.getRetryAfterDuration().toMillis();
     }
+
+    public CosmosException(MongoException me) {
+        super(me.getMessage(), me);
+        this.ce = me;
+        this.statusCode = me.getCode();
+        this.code = "";
+        this.retryAfterInMilliseconds = 0;
+    }
+
 
     /**
      * Constructor using statusCode and message

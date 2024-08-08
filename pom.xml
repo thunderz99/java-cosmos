@@ -82,6 +82,13 @@
             <version>4.61.1</version>
         </dependency>
 
+        <!-- https://mvnrepository.com/artifact/org.mongodb/mongodb-driver-sync -->
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <version>5.1.2</version>
+        </dependency>
+
         <!-- https://mvnrepository.com/artifact/io.github.cdimascio/dotenv-java -->
         <dependency>
             <groupId>io.github.cdimascio</groupId>

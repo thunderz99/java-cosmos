@@ -1,7 +1,7 @@
 package io.github.thunderz99.cosmos;
 
-import com.azure.cosmos.models.CosmosContainerResponse;
-import com.azure.cosmos.models.UniqueKeyPolicy;
+import io.github.thunderz99.cosmos.dto.CosmosContainerResponse;
+import io.github.thunderz99.cosmos.dto.UniqueKeyPolicy;
 
 /***
  * class that represent a cosmos account

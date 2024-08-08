@@ -1,23 +1,21 @@
-package io.github.thunderz99.cosmos.impl.cosmosdb;
+package io.github.thunderz99.cosmos.impl.mongo;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.List;
+import java.util.ArrayList;
 
-import com.azure.cosmos.CosmosClient;
-import com.azure.cosmos.CosmosClientBuilder;
-import com.azure.cosmos.models.CosmosContainerProperties;
+import com.mongodb.MongoException;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
 import io.github.thunderz99.cosmos.Cosmos;
 import io.github.thunderz99.cosmos.CosmosDatabase;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosContainerResponse;
 import io.github.thunderz99.cosmos.dto.UniqueKeyPolicy;
 import io.github.thunderz99.cosmos.util.Checker;
-import io.github.thunderz99.cosmos.util.ConnectionStringUtil;
-import io.github.thunderz99.cosmos.util.UniqueKeyUtil;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
+import org.bson.Document;
+import org.bson.json.JsonWriterSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,50 +24,49 @@ import org.slf4j.LoggerFactory;
  *
  * <pre>
  * Usage: var cosmos = new
- * Cosmos("AccountEndpoint=https://xxx.documents.azure.com:443/;AccountKey=xxx==;");
+ * MongoImpl("mongodb://localhost:27017");
  * var db = cosmos.getDatabase("Database1");
  *
  * //Then use db to do CRUD / query db.upsert("Users", user);
  * </pre>
  *
  */
-public class CosmosImpl implements Cosmos {
+public class MongoImpl implements Cosmos {
 
-    private static Logger log = LoggerFactory.getLogger(CosmosImpl.class);
+    private static Logger log = LoggerFactory.getLogger(MongoImpl.class);
 
-    CosmosClient clientV4;
+    MongoClient client;
 
     String account;
 
-    public static final String COSMOS_SDK_V4_ENABLE = "COSMOS_SDK_V4_ENABLE";
+    public MongoImpl(String connectionString) {
 
-    public static final String ETAG = "_etag";
+        var mongoClient = MongoClients.create(connectionString);
+        log.info("mongodb Connection successful: " + preFlightChecks(mongoClient));
+        log.info("mongodb Print list of databases:");
 
-    public CosmosImpl(String connectionString) {
-        this(connectionString, null);
-    }
+        this.client = mongoClient;
+        this.account = extractAccountName(connectionString);
 
-    public CosmosImpl(String connectionString, List<String> preferredRegions) {
-
-        Pair<String, String> pair = ConnectionStringUtil.parseConnectionString(connectionString);
-        var endpoint = pair.getLeft();
-        var key = pair.getRight();
-
-        log.info("COSMOS_SDK_V4_ENABLE is enabled for endpoint:{}", endpoint);
-        this.clientV4 = new CosmosClientBuilder()
-                .endpoint(endpoint)
-                .key(key)
-                .preferredRegions(preferredRegions)
-                .consistencyLevel(com.azure.cosmos.ConsistencyLevel.SESSION)
-                .contentResponseOnWriteEnabled(true)
-                .buildClient();
-
-        this.account = extractAccountName(endpoint);
+        var databases = this.client.listDatabases().into(new ArrayList<>());
+        databases.forEach(db -> log.info(db.toJson()));
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            this.clientV4.close();
+            this.client.close();
         }));
 
+    }
+
+    /**
+     * do a Ping to mongo
+     * @param mongoClient
+     * @return
+     */
+    static boolean preFlightChecks(MongoClient mongoClient) {
+        Document pingCommand = new Document("ping", 1);
+        Document response = mongoClient.getDatabase("admin").runCommand(pingCommand);
+        log.info("mongodb: {ping: 1} cmd result: " + response.toJson(JsonWriterSettings.builder().indent(true).build()));
+        return response.get("ok", Number.class).intValue() == 1;
     }
 
 
@@ -81,17 +78,30 @@ public class CosmosImpl implements Cosmos {
      */
     public CosmosDatabase getDatabase(String db) {
         Checker.checkNotEmpty(db, "db");
-        return new CosmosDatabaseImpl(this, db);
+        return new MongoDatabaseImpl(this, db);
     }
 
 
     /**
-     * extract the Cosmos DB 's account name from the endpoint
+     * extract the MongoDB 's account(cluster) name from the connectionString
      *
-     * @param endpoint the endpoint for Cosmos DB
+     * @param connectionString the connectionString for MongoDB
      * @return account name
      */
-    static String extractAccountName(String endpoint) {
+    static String extractAccountName(String connectionString) {
+
+        var endpoint = "";
+
+        if(StringUtils.contains(connectionString, "mongodb://")){
+            endpoint = StringUtils.replace(connectionString, "mongodb://", "https://");
+        } else if(StringUtils.contains(connectionString, "mongodb+srv://")){
+            endpoint = StringUtils.replace(connectionString, "mongodb://", "https://");
+        }
+
+        if(StringUtils.isEmpty(endpoint)){
+            throw new IllegalArgumentException("connectionString not valid for mongodb: " + connectionString);
+        }
+
         try {
             var uri = new URI(endpoint);
             String host = uri.getHost();
@@ -115,23 +125,20 @@ public class CosmosImpl implements Cosmos {
 
         Checker.checkNotBlank(db, "Database name");
 
-        this.clientV4.createDatabaseIfNotExists(db);
+        var mongoDatabase = this.client.getDatabase(db);
         log.info("created database:{}, account:{}", db, account);
 
         if (StringUtils.isBlank(coll)) {
             //do nothing
         } else {
-            var cosmosDatabase = this.clientV4.getDatabase(db);
-            var containerProperties = new CosmosContainerProperties(coll, "/" + getDefaultPartitionKey());
-
-            var keyList = uniqueKeyPolicy.uniqueKeys;
-            if (CollectionUtils.isNotEmpty(keyList)) {
-                containerProperties.setUniqueKeyPolicy(UniqueKeyUtil.toCosmosUniqueKeyPolicy(uniqueKeyPolicy));
-            }
-            cosmosDatabase.createContainerIfNotExists(containerProperties);
+            mongoDatabase.getCollection(coll);
+            //mongoDatabase.createCollection(coll);
         }
 
-        return new CosmosDatabaseImpl(this, db);
+        // TODO
+        // deal with uniqueKeyPolicy
+
+        return new MongoDatabaseImpl(this, db);
     }
 
     /**
@@ -160,14 +167,14 @@ public class CosmosImpl implements Cosmos {
         if (StringUtils.isEmpty(db)) {
             return;
         }
-        var cosmosDatabase = this.clientV4.getDatabase(db);
+        var mongoDatabase = this.client.getDatabase(db);
         try {
-            cosmosDatabase.delete();
-        } catch (com.azure.cosmos.CosmosException ce) {
-            if (isResourceNotFoundException(ce)) {
+            mongoDatabase.drop();
+        } catch (MongoException me) {
+            if (isResourceNotFoundException(me)) {
                 log.info("delete Database not exist. Ignored:{}, account:{}", getDatabaseLink(db), this.account);
             } else {
-                throw ce;
+                throw new CosmosException(me);
             }
         }
     }
@@ -181,17 +188,17 @@ public class CosmosImpl implements Cosmos {
      */
     public void deleteCollection(String db, String coll) throws CosmosException {
 
-        var cosmosDatabase = this.clientV4.getDatabase(db);
-        var container = cosmosDatabase.getContainer(coll);
+        var mongoDatabase = this.client.getDatabase(db);
+        var collection = mongoDatabase.getCollection(coll);
         try {
-            container.delete();
-        } catch (com.azure.cosmos.CosmosException ce) {
+            collection.drop();
+        } catch (MongoException me) {
             // If not exist
-            if (isResourceNotFoundException(ce)) {
+            if (isResourceNotFoundException(me)) {
                 log.info("delete Collection not exist. Ignored:{}, account:{}", getCollectionLink(db, coll), this.account);
             } else {
                 // Throw any other Exception
-                throw ce;
+                throw new CosmosException(me);
             }
         }
     }
@@ -207,28 +214,27 @@ public class CosmosImpl implements Cosmos {
     public CosmosContainerResponse readCollection(String db, String coll) throws CosmosException {
 
 
-        var database = this.clientV4.getDatabase(db);
+        var database = this.client.getDatabase(db);
         try {
-            var response = database.getContainer(coll).read();
-            var policy = UniqueKeyUtil.toCommonUniqueKeyPolicy(response.getProperties().getUniqueKeyPolicy());
-            return new CosmosContainerResponse(policy);
-
-        } catch (com.azure.cosmos.CosmosException ce) {
-            if (isResourceNotFoundException(ce)) {
+            var collection =  database.getCollection(coll);
+            log.info("indexes:" + collection.listIndexes());
+            return new io.github.thunderz99.cosmos.dto.CosmosContainerResponse();
+        } catch (MongoException me) {
+            if (isResourceNotFoundException(me)) {
                 return null;
             }
-            throw ce;
+            throw new CosmosException(me);
         }
     }
 
 
     /**
-     * Get Official cosmos db sdk(v4)'s CosmosClient instance
+     * Get Official MongoClient instance
      *
-     * @return official cosmosdb sdk client(v4)
+     * @return official mongodb client
      */
-    public CosmosClient getClientV4() {
-        return this.clientV4;
+    public MongoClient getClient() {
+        return this.client;
     }
 
     /**
@@ -240,7 +246,7 @@ public class CosmosImpl implements Cosmos {
         var uniqueKeyPolicy = new UniqueKeyPolicy();
         return uniqueKeyPolicy;
     }
-
+    
 
     /**
      * Generate database link format used in cosmosdb
@@ -276,9 +282,9 @@ public class CosmosImpl implements Cosmos {
     }
 
     public static boolean isResourceNotFoundException(Exception e) {
-        if (e instanceof CosmosException) {
-            var ce = (CosmosException) e;
-            return ce.getStatusCode() == 404;
+        if (e instanceof MongoException) {
+            var me = (MongoException) e;
+            return me.getCode() == 404;
         }
         return StringUtils.contains(e.getMessage(), "Resource Not Found") ? true : false;
     }

@@ -4,12 +4,16 @@ import java.util.Map;
 import java.util.Set;
 
 import io.github.thunderz99.cosmos.util.EnvUtil;
+import io.github.thunderz99.cosmos.util.UniqueKeyUtil;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CosmosImplTest {
+
+    static String dbName = "CosmosDB";
+    static String coll = "UnitTest";
 
     @Test
     void testCreateAndDeleteCollection() throws Exception {
@@ -37,14 +41,6 @@ class CosmosImplTest {
         }
 
     }
-    static String dbName = "CosmosDB";
-    static String coll = "UnitTest";
-
-    @Test
-    void test_toUniqueKey_should_work() throws Exception {
-        var uniqueKey = CosmosImpl.toUniqueKey("/users/title");
-        assertThat(uniqueKey.getPaths()).hasSize(1).containsExactly("/users/title");
-    }
 
     @Test
     void testCreateAndDeleteCollection_withUniqueKey() throws Exception {
@@ -56,11 +52,11 @@ class CosmosImplTest {
         var db = cosmos.getDatabase(dbName);
 
         try {
-            var uniqueKeyPolicy = CosmosImpl.getUniqueKeyPolicy(Set.of("/_uniqueKey1", "/_uniqueKey2"));
+            var uniqueKeyPolicy = UniqueKeyUtil.getUniqueKeyPolicy(Set.of("/_uniqueKey1", "/_uniqueKey2"));
             cosmos.createIfNotExist(dbName, testColl, uniqueKeyPolicy);
 
             var collection = cosmos.readCollection(dbName, testColl);
-            var uniqueKeys = collection.getProperties().getUniqueKeyPolicy().getUniqueKeys();
+            var uniqueKeys = collection.getUniqueKeyPolicy().uniqueKeys;
             assertThat(uniqueKeys).hasSize(2);
 
             for (var uniqueKey : uniqueKeys) {
