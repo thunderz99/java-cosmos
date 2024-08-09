@@ -9,6 +9,7 @@ import io.github.thunderz99.cosmos.CosmosDatabase;
 import io.github.thunderz99.cosmos.CosmosDatabaseTest;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
@@ -19,14 +20,13 @@ import org.slf4j.LoggerFactory;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@Disabled
 class MongoDatabaseImplTest {
 
     static Cosmos cosmos;
     static CosmosDatabase db;
 
-    static String dbName = "MongoDB";
-    static String coll = "UnitTest_Mongo";
+    static String clusterName = "Databases";
+    static String host = "UnitTest_Mongo_" + RandomStringUtils.randomAlphanumeric(4);
 
     static FullNameUser user1 = null;
     static FullNameUser user2 = null;
@@ -53,7 +53,7 @@ class MongoDatabaseImplTest {
 	@BeforeAll
 	public static void beforeAll() throws Exception {
         cosmos = new CosmosBuilder().withDatabaseType("mongodb").withConnectionString(EnvUtil.get("MONGODB_CONNECTION_STRING")).build();
-        db = cosmos.createIfNotExist(dbName, coll);
+        db = cosmos.createIfNotExist(host, "colls");
 
         initFamiliesData();
         initData4ComplexQuery();
@@ -62,28 +62,28 @@ class MongoDatabaseImplTest {
 
 	@AfterAll
 	public static void afterAll() throws Exception {
+        deleteFamiliesData();
         deleteData4ComplexQuery();
+        cosmos.deleteDatabase(host);
     }
 
-
-
-	@Test
+    @Test
 	void create_and_read_should_work() throws Exception {
 
 		var user = new User("unittest_create_01", "first01", "last01");
-		db.delete(coll, user.id, "Users");
+        db.delete(host, user.id, "Users");
 
 		try {
-			var created = db.create(coll, user, "Users").toObject(User.class);
+            var created = db.create(host, user, "Users").toObject(User.class);
 			assertThat(created.id).isEqualTo(user.id);
 			assertThat(created.firstName).isEqualTo(user.firstName);
 
-			var read = db.read(coll, user.id, "Users").toObject(User.class);
+            var read = db.read(host, user.id, "Users").toObject(User.class);
 			assertThat(read.id).isEqualTo(user.id);
 			assertThat(read.firstName).isEqualTo(user.firstName);
 
 		} finally {
-			db.delete(coll, user.id, "Users");
+            db.delete(host, user.id, "Users");
 		}
 
 	}
@@ -158,7 +158,7 @@ class MongoDatabaseImplTest {
 	@Test
 	void create_should_throw_when_data_is_null() throws Exception {
 		User user = null;
-		assertThatThrownBy(() -> db.create(coll, user, "Users")).isInstanceOf(IllegalArgumentException.class)
+        assertThatThrownBy(() -> db.create(host, user, "Users")).isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("create data UnitTest");
 
 	}
@@ -167,10 +167,10 @@ class MongoDatabaseImplTest {
 	void update_should_work() throws Exception {
 
 		var user = new User("unittest_update_01", "first01", "last01");
-		db.delete(coll, user.id, "Users");
+        db.delete(host, user.id, "Users");
 
 		try {
-			db.create(coll, user, "Users").toObject(User.class);
+            db.create(host, user, "Users").toObject(User.class);
 
 			var update1 = Map.of("lastName", "lastUpdated");
 //			// partial update
@@ -182,14 +182,14 @@ class MongoDatabaseImplTest {
 			// full update
 			user.firstName = "fullUpdateFirst";
 			user.lastName = "fullUpdateLast";
-			var updated2 = db.update(coll, user, "Users").toObject(User.class);
+            var updated2 = db.update(host, user, "Users").toObject(User.class);
 
 			assertThat(updated2.id).isEqualTo(user.id);
 			assertThat(updated2.firstName).isEqualTo(user.firstName);
 			assertThat(updated2.lastName).isEqualTo(user.lastName);
 
 		} finally {
-			db.delete(coll, user.id, "Users");
+            db.delete(host, user.id, "Users");
 		}
 
 	}
@@ -197,23 +197,23 @@ class MongoDatabaseImplTest {
 	@Test
 	void upsert_should_work() throws Exception {
 		var user = new User("unittest_upsert_01", "first01", "last01");
-		db.delete(coll, user.id, "Users");
+        db.delete(host, user.id, "Users");
 
 		try {
-            var upserted = db.upsert(coll, user, "Users").toObject(User.class);
+            var upserted = db.upsert(host, user, "Users").toObject(User.class);
             assertThat(upserted.id).isEqualTo(user.id);
             assertThat(upserted.firstName).isEqualTo(user.firstName);
 
             var upsert1 = new User(user.id, "firstUpsert", "lastUpsert");
 
             // full upsert
-            var upserted1 = db.upsert(coll, upsert1, "Users").toObject(User.class);
+            var upserted1 = db.upsert(host, upsert1, "Users").toObject(User.class);
             assertThat(upserted1.id).isEqualTo(upsert1.id);
             assertThat(upserted1.firstName).isEqualTo(upsert1.firstName);
             assertThat(upserted1.lastName).isEqualTo(upsert1.lastName);
 
         } finally {
-            db.delete(coll, user.id, "Users");
+            db.delete(host, user.id, "Users");
         }
 
     }
@@ -276,7 +276,7 @@ class MongoDatabaseImplTest {
 
 	@Test
 	void get_database_name_should_work() throws Exception {
-		assertThat(db.getDatabaseName()).isEqualTo(dbName);
+        assertThat(db.getDatabaseName()).isEqualTo(host);
 	}
 
 
@@ -292,14 +292,14 @@ class MongoDatabaseImplTest {
         var data = Map.of("id", id, "age", age, formId, formContent, "sheet-2", Map.of("skills", Set.of("Java", "Python")));
 
         try {
-            var upserted = db.upsert(coll, data, partition).toMap();
+            var upserted = db.upsert(host, data, partition).toMap();
 
             assertThat(upserted).containsKeys("id", "age", formId).doesNotContainKey("sort");
 
             {
                 // normal update partial
                 var partialMap = Map.of("name", "Jim", "sort", 99);
-                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                var patched = db.updatePartial(host, id, partialMap, partition).toMap();
                 assertThat(patched).containsEntry("name", "Jim")
                         .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
                         .containsEntry("_partition", partition)
@@ -309,7 +309,7 @@ class MongoDatabaseImplTest {
             {
                 // nested update partial
                 var partialMap = Map.of("name", "Jane", "sheet-2", Map.of("skills", List.of("Java", "JavaScript")));
-                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                var patched = db.updatePartial(host, id, partialMap, partition).toMap();
                 assertThat(patched).containsEntry("name", "Jane")
                         .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
                         .containsEntry("_partition", partition);
@@ -324,7 +324,7 @@ class MongoDatabaseImplTest {
                 IntStream.range(0, 10).forEach(i -> formMap.put("key" + i, i));
                 var partialMap = Map.of("name", "Kate", formId, formMap);
 
-                var patched = db.updatePartial(coll, id, partialMap, partition).toMap();
+                var patched = db.updatePartial(host, id, partialMap, partition).toMap();
                 assertThat(patched).containsEntry("name", "Kate")
                         .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
                         .containsEntry("_partition", partition);
@@ -335,7 +335,7 @@ class MongoDatabaseImplTest {
             }
 
         } finally {
-            db.delete(coll, id, partition);
+            db.delete(host, id, partition);
         }
 
     }
@@ -350,11 +350,16 @@ class MongoDatabaseImplTest {
             var family1 = JsonUtil.toMap(is1);
             var family2 = JsonUtil.toMap(is2);
 
-            db.upsert(coll, family1, partition);
-            db.upsert(coll, family2, partition);
+            db.upsert(host, family1, partition);
+            db.upsert(host, family2, partition);
         }
 
     }
+
+    static void deleteFamiliesData() {
+        cosmos.deleteCollection(host, "Families");
+    }
+
 
     static void initData4ComplexQuery() throws Exception {
         user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "2020-10-01", "Blanco");
@@ -363,19 +368,19 @@ class MongoDatabaseImplTest {
         user4 = new FullNameUser("id_find_filter4", "Andy", "Henry", 45, "2020-12-01", "Javascript", "Java");
 
         // prepare
-        db.upsert(coll, user1, "Users");
-        db.upsert(coll, user2, "Users");
-        db.upsert(coll, user3, "Users");
+        db.upsert(host, user1, "Users");
+        db.upsert(host, user2, "Users");
+        db.upsert(host, user3, "Users");
         // different partition
-        db.upsert(coll, user4, "Users2");
+        db.upsert(host, user4, "Users2");
     }
 
     static void deleteData4ComplexQuery() throws Exception {
         if (db != null) {
-            db.delete(coll, user1.id, "Users");
-            db.delete(coll, user2.id, "Users");
-            db.delete(coll, user3.id, "Users");
-            db.delete(coll, user4.id, "Users2");
+            db.delete(host, user1.id, "Users");
+            db.delete(host, user2.id, "Users");
+            db.delete(host, user3.id, "Users");
+            db.delete(host, user4.id, "Users2");
         }
     }
 

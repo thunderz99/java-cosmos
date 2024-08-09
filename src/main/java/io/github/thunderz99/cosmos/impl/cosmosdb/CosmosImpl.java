@@ -14,6 +14,7 @@ import io.github.thunderz99.cosmos.dto.CosmosContainerResponse;
 import io.github.thunderz99.cosmos.dto.UniqueKeyPolicy;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.ConnectionStringUtil;
+import io.github.thunderz99.cosmos.util.LinkFormatUtil;
 import io.github.thunderz99.cosmos.util.UniqueKeyUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -165,7 +166,7 @@ public class CosmosImpl implements Cosmos {
             cosmosDatabase.delete();
         } catch (com.azure.cosmos.CosmosException ce) {
             if (isResourceNotFoundException(ce)) {
-                log.info("delete Database not exist. Ignored:{}, account:{}", getDatabaseLink(db), this.account);
+                log.info("delete Database not exist. Ignored:{}, account:{}", LinkFormatUtil.getDatabaseLink(db), this.account);
             } else {
                 throw ce;
             }
@@ -188,7 +189,7 @@ public class CosmosImpl implements Cosmos {
         } catch (com.azure.cosmos.CosmosException ce) {
             // If not exist
             if (isResourceNotFoundException(ce)) {
-                log.info("delete Collection not exist. Ignored:{}, account:{}", getCollectionLink(db, coll), this.account);
+                log.info("delete Collection not exist. Ignored:{}, account:{}", LinkFormatUtil.getCollectionLink(db, coll), this.account);
             } else {
                 // Throw any other Exception
                 throw ce;
@@ -211,7 +212,7 @@ public class CosmosImpl implements Cosmos {
         try {
             var response = database.getContainer(coll).read();
             var policy = UniqueKeyUtil.toCommonUniqueKeyPolicy(response.getProperties().getUniqueKeyPolicy());
-            return new CosmosContainerResponse(policy);
+            return new CosmosContainerResponse(coll, policy);
 
         } catch (com.azure.cosmos.CosmosException ce) {
             if (isResourceNotFoundException(ce)) {
@@ -239,40 +240,6 @@ public class CosmosImpl implements Cosmos {
     public static UniqueKeyPolicy getDefaultUniqueKeyPolicy() {
         var uniqueKeyPolicy = new UniqueKeyPolicy();
         return uniqueKeyPolicy;
-    }
-
-
-    /**
-     * Generate database link format used in cosmosdb
-     *
-     * @param db db name
-     * @return databaseLink
-     */
-    public static String getDatabaseLink(String db) {
-        return String.format("/dbs/%s", db);
-    }
-
-    /**
-     * Generate database link format used in cosmosdb
-     *
-     * @param db   db name
-     * @param coll collection name
-     * @return collection link
-     */
-    public static String getCollectionLink(String db, String coll) {
-        return String.format("/dbs/%s/colls/%s", db, coll);
-    }
-
-    /**
-     * Generate document link format used in cosmosdb
-     *
-     * @param db   db name
-     * @param coll collection name
-     * @param id   document id
-     * @return document link
-     */
-    public static String getDocumentLink(String db, String coll, String id) {
-        return String.format("/dbs/%s/colls/%s/docs/%s", db, coll, id);
     }
 
     public static boolean isResourceNotFoundException(Exception e) {

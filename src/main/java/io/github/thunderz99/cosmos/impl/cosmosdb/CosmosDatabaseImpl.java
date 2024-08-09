@@ -15,10 +15,7 @@ import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
-import io.github.thunderz99.cosmos.util.Checker;
-import io.github.thunderz99.cosmos.util.JsonUtil;
-import io.github.thunderz99.cosmos.util.NumberUtil;
-import io.github.thunderz99.cosmos.util.RetryUtil;
+import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
@@ -84,7 +81,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         // add partition info
         objectMap.put(CosmosImpl.getDefaultPartitionKey(), partition);
 
-        var collectionLink = CosmosImpl.getCollectionLink(db, coll);
+        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
         checkValidId(objectMap);
 
@@ -170,7 +167,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
 
-        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
+        var documentLink = LinkFormatUtil.getDocumentLink(db, coll, id);
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
@@ -252,7 +249,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         Checker.checkNotBlank(id, "id");
         checkValidId(id);
 
-        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
+        var documentLink = LinkFormatUtil.getDocumentLink(db, coll, id);
 
         // add partition info
         map.put(CosmosImpl.getDefaultPartitionKey(), partition);
@@ -314,7 +311,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      * see <a href="https://devblogs.microsoft.com/cosmosdb/partial-document-update-ga/">partial update official docs</a>
      * </p>
      * <p>
-     * If you want more complex partial update / patch features, please use patch(TODO) method, which supports ADD / SET / REPLACE / DELETE / INCREMENT and etc.
+     * If you want more complex partial update / patch features, please use patch method, which supports ADD / SET / REPLACE / DELETE / INCREMENT and etc.
      * </p>
      *
      * @param coll      collection name
@@ -375,7 +372,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      */
     CosmosDocument updatePartialByMerge(String coll, String id, Map<String, Object> data, String partition, PartialUpdateOption option) throws Exception {
 
-        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
+        var documentLink = LinkFormatUtil.getDocumentLink(db, coll, id);
 
         var map = RetryUtil.executeWithRetry(() -> {
                     // we will not retry if checkETag is true, this will result in an OCC.
@@ -427,7 +424,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      */
     Map<String, Object> replaceDocumentWithRefreshingEtag(String coll, String id, Map<String, Object> data, int maxRetry, String partition) throws Exception {
 
-        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
+        var documentLink = LinkFormatUtil.getDocumentLink(db, coll, id);
 
         var retriedCount = 0;
 
@@ -497,7 +494,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotNull(data, "upsert data " + coll + " " + partition);
 
-        var collectionLink = CosmosImpl.getCollectionLink(db, coll);
+        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
         // add partition info
         map.put(CosmosImpl.getDefaultPartitionKey(), partition);
@@ -542,7 +539,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         Checker.checkNotBlank(id, "id");
         Checker.checkNotBlank(partition, "partition");
 
-        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
+        var documentLink = LinkFormatUtil.getDocumentLink(db, coll, id);
 
         try {
 
@@ -609,7 +606,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      */
     CosmosDocumentList find(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
 
-        var collectionLink = CosmosImpl.getCollectionLink(db, coll);
+        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
         var queryRequestOptions = new CosmosQueryRequestOptions();
 
@@ -910,7 +907,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
     public int count(String coll, Condition cond, String partition) throws Exception {
 
-        var collectionLink = CosmosImpl.getCollectionLink(db, coll);
+        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
         var queryRequestOptions = new CosmosQueryRequestOptions();
 
@@ -957,7 +954,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      */
     public CosmosDocument increment(String coll, String id, String path, int value, String partition) throws Exception {
 
-        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
+        var documentLink = LinkFormatUtil.getDocumentLink(db, coll, id);
 
         Checker.checkNotNull(this.clientV4, String.format("SDK v4 must be enabled to use increment method. docLink:%s", documentLink));
 
@@ -1005,7 +1002,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      */
     public CosmosDocument patch(String coll, String id, PatchOperations operations, String partition) throws Exception {
 
-        var documentLink = CosmosImpl.getDocumentLink(db, coll, id);
+        var documentLink = LinkFormatUtil.getDocumentLink(db, coll, id);
 
         Checker.checkNotNull(this.clientV4, String.format("SDK v4 must be enabled to use patch method. docLink:%s", documentLink));
         Checker.checkNotEmpty("id", "id");

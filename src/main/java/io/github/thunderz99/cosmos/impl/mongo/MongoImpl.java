@@ -13,6 +13,7 @@ import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosContainerResponse;
 import io.github.thunderz99.cosmos.dto.UniqueKeyPolicy;
 import io.github.thunderz99.cosmos.util.Checker;
+import io.github.thunderz99.cosmos.util.LinkFormatUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.bson.Document;
 import org.bson.json.JsonWriterSettings;
@@ -132,7 +133,6 @@ public class MongoImpl implements Cosmos {
             //do nothing
         } else {
             mongoDatabase.getCollection(coll);
-            //mongoDatabase.createCollection(coll);
         }
 
         // TODO
@@ -172,7 +172,7 @@ public class MongoImpl implements Cosmos {
             mongoDatabase.drop();
         } catch (MongoException me) {
             if (isResourceNotFoundException(me)) {
-                log.info("delete Database not exist. Ignored:{}, account:{}", getDatabaseLink(db), this.account);
+                log.info("delete Database not exist. Ignored:{}, account:{}", LinkFormatUtil.getDatabaseLink(db), this.account);
             } else {
                 throw new CosmosException(me);
             }
@@ -195,7 +195,7 @@ public class MongoImpl implements Cosmos {
         } catch (MongoException me) {
             // If not exist
             if (isResourceNotFoundException(me)) {
-                log.info("delete Collection not exist. Ignored:{}, account:{}", getCollectionLink(db, coll), this.account);
+                log.info("delete Collection not exist. Ignored:{}, account:{}", LinkFormatUtil.getCollectionLink(db, coll), this.account);
             } else {
                 // Throw any other Exception
                 throw new CosmosException(me);
@@ -218,7 +218,7 @@ public class MongoImpl implements Cosmos {
         try {
             var collection =  database.getCollection(coll);
             log.info("indexes:" + collection.listIndexes());
-            return new io.github.thunderz99.cosmos.dto.CosmosContainerResponse();
+            return new io.github.thunderz99.cosmos.dto.CosmosContainerResponse(collection.getNamespace().getCollectionName());
         } catch (MongoException me) {
             if (isResourceNotFoundException(me)) {
                 return null;
@@ -246,40 +246,6 @@ public class MongoImpl implements Cosmos {
         var uniqueKeyPolicy = new UniqueKeyPolicy();
         return uniqueKeyPolicy;
     }
-    
-
-    /**
-     * Generate database link format used in cosmosdb
-     *
-     * @param db db name
-     * @return databaseLink
-     */
-    public static String getDatabaseLink(String db) {
-        return String.format("/dbs/%s", db);
-    }
-
-    /**
-     * Generate database link format used in cosmosdb
-     *
-     * @param db   db name
-     * @param coll collection name
-     * @return collection link
-     */
-    public static String getCollectionLink(String db, String coll) {
-        return String.format("/dbs/%s/colls/%s", db, coll);
-    }
-
-    /**
-     * Generate document link format used in cosmosdb
-     *
-     * @param db   db name
-     * @param coll collection name
-     * @param id   document id
-     * @return document link
-     */
-    public static String getDocumentLink(String db, String coll, String id) {
-        return String.format("/dbs/%s/colls/%s/docs/%s", db, coll, id);
-    }
 
     public static boolean isResourceNotFoundException(Exception e) {
         if (e instanceof MongoException) {
@@ -289,6 +255,11 @@ public class MongoImpl implements Cosmos {
         return StringUtils.contains(e.getMessage(), "Resource Not Found") ? true : false;
     }
 
+
+    public String getAccount() throws CosmosException {
+        return account;
+    }
+
     /**
      * get the default partition key
      *
@@ -296,10 +267,6 @@ public class MongoImpl implements Cosmos {
      */
     public static String getDefaultPartitionKey() {
         return "_partition";
-    }
-
-    public String getAccount() throws CosmosException {
-        return account;
     }
 
 }
