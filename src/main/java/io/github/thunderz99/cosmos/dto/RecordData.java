@@ -3,7 +3,7 @@ package io.github.thunderz99.cosmos.dto;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 
 /**
- * A simple bean class with built in hashCode/equals/toString implement
+ * A simple bean class with built-in hashCode/equals/toString implement
  */
 public abstract class RecordData {
 
