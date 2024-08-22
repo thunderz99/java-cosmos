@@ -70,7 +70,7 @@ public class SimpleExpression implements Expression {
         // fullName.last -> @param001_fullName__last
         // or
         // "829cc727-2d49-4d60-8f91-b30f50560af7.name" -> @param001_wg31gsa.name
-        var paramName = getParamNameFromKey(this.key, paramIndex.get());
+        var paramName = getParamNameFromKey(this.key, paramIndex.getAndIncrement());
 
         var paramValue = this.value;
 
@@ -88,7 +88,6 @@ public class SimpleExpression implements Expression {
             // array equals or not
             if (Set.of("=", "!=").contains(this.operator)) {
                 // use = or !=
-                paramIndex.getAndIncrement();
                 ret.setQueryText(String.format(" (%s %s %s)", Condition.getFormattedKey(this.key), this.operator, paramName));
                 params.add(Condition.createSqlParameter(paramName, paramValue));
             } else {
@@ -99,32 +98,41 @@ public class SimpleExpression implements Expression {
                     ret.setQueryText(" (1=0)");
 				} else {
 					// use ARRAY_CONTAINS by default to minimize the sql length
-					paramIndex.getAndIncrement();
 					ret.setQueryText(buildArrayContains(this.key, paramName, coll, params));
 				}
 			}
 
 		} else {
-			// single param value
+            // single param value
 
-			if (StringUtils.isEmpty(this.operator)) {
-				// set the default operator for scalar value
-				this.operator = "=";
-			}
-
-			paramIndex.getAndIncrement();
-			// other types
-			var formattedKey = Condition.getFormattedKey(this.key);
-            if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >, LIKE
-                //use c["key"] for cosmosdb reserved words
-                ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, paramName));
-            } else if (Condition.typeCheckFunctionPattern.asMatchPredicate().test(this.operator)) { // type check funcs: IS_DEFINED|IS_NUMBER|IS_PRIMITIVE, etc
-                ret.setQueryText(String.format(" (%s(%s) = %s)", this.operator, formattedKey, paramName));
-            } else { // other binary funcs. e.g. STARTSWITH, CONTAINS, ARRAY_CONTAINS
-                ret.setQueryText(String.format(" (%s(%s, %s))", this.operator, formattedKey, paramName));
+            if (StringUtils.isEmpty(this.operator)) {
+                // set the default operator for scalar value
+                this.operator = "=";
             }
 
-			params.add(Condition.createSqlParameter(paramName, paramValue));
+            // paramName or fieldName
+            var valuePart = "";
+
+            if (paramValue instanceof FieldKey) {
+                // valuePart should be "mail2" for "c.mail != c.mail2"
+                valuePart = Condition.getFormattedKey(((FieldKey) paramValue).keyName);
+            } else {
+                // valuePart should be "@param001_wg31gsa"
+                valuePart = paramName;
+                params.add(Condition.createSqlParameter(paramName, paramValue));
+            }
+
+            // other types
+            var formattedKey = Condition.getFormattedKey(this.key);
+            if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >, LIKE
+                //use c["key"] for cosmosdb reserved words
+                ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, valuePart));
+            } else if (Condition.typeCheckFunctionPattern.asMatchPredicate().test(this.operator)) { // type check funcs: IS_DEFINED|IS_NUMBER|IS_PRIMITIVE, etc
+                ret.setQueryText(String.format(" (%s(%s) = %s)", this.operator, formattedKey, valuePart));
+            } else { // other binary funcs. e.g. STARTSWITH, CONTAINS, ARRAY_CONTAINS
+                ret.setQueryText(String.format(" (%s(%s, %s))", this.operator, formattedKey, valuePart));
+            }
+
 		}
 
 		ret.setParameters(params);

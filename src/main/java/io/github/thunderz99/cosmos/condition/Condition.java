@@ -961,4 +961,15 @@ public class Condition {
         return JsonUtil.toJson(this.rawQuerySpec);
     }
 
+    /**
+     * Return a FieldKey obj representing a keyName in json documents of db
+     *
+     * @param keyName
+     * @return fieldKey obj
+     */
+    public static FieldKey key(String keyName) {
+        return new FieldKey(keyName);
+    }
+
+
 }

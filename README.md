@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.6.7</version>
+    <version>0.6.8</version>
 </dependency>
 ```
 
@@ -254,6 +254,7 @@ The main difference between Partial update and Patch is that:
         "firstName STARTSWITH","H", // see cosmosdb STARTSWITH
         "desciption CONTAINS","Project manager",// see cosmosdb CONTAINS
         "fullName.last RegexMatch","[A-Z]{1}ank\\w+$", // see cosmosdb RegexMatch
+        "mail !=",Condition.key("mail2"), // using field a compares to field b
         "certificates IS_DEFINED",true, // see cosmosdb IS_DEFINED
         "families.villa IS_DEFINED",false, // see cosmosdb IS_DEFINED
         "age IS_NUMBER",true, // see cosmosdb type check functions
