@@ -821,6 +821,25 @@ class CosmosDatabaseTest {
     }
 
     @Test
+    public void regex_should_work_with_filter() throws Exception {
+
+        // test regex match
+        {
+            var cond = Condition.filter("fullName.last RegexMatch", "[A-Z]{1}ank\\w+$", //
+                            "fullName.first", "Elise" //
+                    ).sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+            assertThat(users.size()).isEqualTo(1);
+            assertThat(users.get(0)).hasToString(user1.toString());
+        }
+
+    }
+    
+    @Test
     void aggregate_should_work() throws Exception {
         // test aggregate(simple)
         {

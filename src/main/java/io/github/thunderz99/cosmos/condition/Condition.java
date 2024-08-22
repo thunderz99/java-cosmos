@@ -97,7 +97,7 @@ public class Condition {
 
 
     public static final Pattern simpleExpressionPattern = Pattern
-            .compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|LIKE|IN|" + TYPE_CHECK_FUNCTIONS + "|=|!=|<|<=|>|>=)\\s*$");
+            .compile("(.+)\\s(STARTSWITH|ENDSWITH|CONTAINS|ARRAY_CONTAINS|LIKE|IN|RegexMatch|" + TYPE_CHECK_FUNCTIONS + "|=|!=|<|<=|>|>=)\\s*$");
 
     public static final Pattern typeCheckFunctionPattern = Pattern
             .compile(TYPE_CHECK_FUNCTIONS);
