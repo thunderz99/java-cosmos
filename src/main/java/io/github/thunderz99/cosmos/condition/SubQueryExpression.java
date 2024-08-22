@@ -52,7 +52,7 @@ public class SubQueryExpression implements Expression {
     }
 
     @Override
-    public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
+    public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex, String selectAlias) {
 
         var ret = new CosmosSqlQuerySpec();
         var params = new ArrayList<CosmosSqlParameter>();

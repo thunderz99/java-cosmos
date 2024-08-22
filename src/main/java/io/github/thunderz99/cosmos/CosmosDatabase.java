@@ -877,7 +877,9 @@ public class CosmosDatabase {
             queryRequestOptions.setPartitionKey(new com.azure.cosmos.models.PartitionKey(partition));
         }
 
-        var querySpec = cond.toQuerySpec(aggregate);
+        var querySpec = aggregate == null ?
+                cond.toQuerySpec() : // normal query
+                cond.toQuerySpecForAggregate(aggregate); // aggregate query//
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 

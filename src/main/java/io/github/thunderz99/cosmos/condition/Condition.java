@@ -257,7 +257,45 @@ public class Condition {
      * @return query spec which can be used in official DocumentClient
      */
     public CosmosSqlQuerySpec toQuerySpec() {
-        return toQuerySpec(null);
+        // When rawSql is set, other filter / limit / offset / sort will be ignored.
+        if (rawQuerySpec != null) {
+            return rawQuerySpec;
+        }
+
+        var select = generateSelect();
+
+        var initialText = String.format("SELECT %s FROM c", select);
+        var initialParams = new ArrayList<CosmosSqlParameter>();
+        var initialConditionIndex = new AtomicInteger(0);
+        var initialParamIndex = new AtomicInteger(0);
+
+        var filterQuery = generateFilterQuery(initialText, initialParams, initialConditionIndex, initialParamIndex, "c");
+
+        var queryText = filterQuery.queryText;
+        var params = filterQuery.params;
+
+        // sort
+        if (!CollectionUtils.isEmpty(sort) && sort.size() > 1) {
+            var sortMap = new LinkedHashMap<String, String>();
+            for (int i = 0; i < sort.size(); i++) {
+                if (i % 2 == 0) {
+                    sortMap.put(sort.get(i), sort.get(i + 1));
+                }
+            }
+            var sorts = sortMap.entrySet().stream()
+                    .map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
+                    .collect(Collectors.joining(",", " ORDER BY", ""));
+
+            queryText.append(sorts);
+        }
+
+        // offset and limit
+        queryText.append(String.format(" OFFSET %d LIMIT %d", offset, limit));
+
+        log.info("queryText:{}", queryText);
+
+        return new CosmosSqlQuerySpec(queryText.toString(), params);
+
     }
 
     /**
@@ -267,66 +305,63 @@ public class Condition {
      */
     public CosmosSqlQuerySpec toQuerySpecForCount() {
         var agg = Aggregate.function("COUNT(1)");
-        return toQuerySpec(agg);
+        return toQuerySpecForAggregate(agg);
     }
 
+    /**
+     * Generate a query spec for aggregation
+     *
+     * @param aggregate
+     * @return query spec that do aggregation
+     */
+    public CosmosSqlQuerySpec toQuerySpecForAggregate(Aggregate aggregate) {
 
-    public CosmosSqlQuerySpec toQuerySpec(Aggregate aggregate) {
+        Checker.checkNotNull(aggregate, "aggregate");
 
-        // When rawSql is set, other filter / limit / offset / sort will be ignored.
+        // When rawSql is set, other filter / limit / offset / sort / aggregate will be ignored.
         if (rawQuerySpec != null) {
             return rawQuerySpec;
         }
 
-        var select = aggregate != null ? generateAggregateSelect(aggregate) : generateSelect();
+        var select = generateAggregateSelect(aggregate);
 
         var initialText = String.format("SELECT %s FROM c", select);
         var initialParams = new ArrayList<CosmosSqlParameter>();
         var initialConditionIndex = new AtomicInteger(0);
         var initialParamIndex = new AtomicInteger(0);
 
-        var filterQuery = generateFilterQuery(initialText, initialParams, initialConditionIndex, initialParamIndex);
+        var filterQuery = generateFilterQuery(initialText, initialParams, initialConditionIndex, initialParamIndex, "c");
 
         var queryText = filterQuery.queryText;
         var params = filterQuery.params;
 
         // group by
-        if (aggregate != null && !CollectionUtils.isEmpty(aggregate.groupBy)) {
+        if (!CollectionUtils.isEmpty(aggregate.groupBy)) {
             var groupBy = aggregate.groupBy.stream().map(g -> getFormattedKey(g)).collect(Collectors.joining(", "));
             queryText.append(" GROUP BY ").append(groupBy);
         }
 
-        // special logic for aggregate with cross-partition=true and sort is empty
-        // We have to add a default sort to overcome a bug.
-        // see https://social.msdn.microsoft.com/Forums/en-US/535c7e4a-f5cb-4aa3-90f5-39a2c8024191/group-by-fails-for-crosspartition-queries?forum=azurecosmosdb
+        // sort (inner sort will be ignored for aggregate)
+        // no need to deal with
 
-        if (this.crossPartition && CollectionUtils.isEmpty(sort) && aggregate != null && CollectionUtils.isNotEmpty(aggregate.groupBy)) {
-            // use the groupBy's first field to sort
-            sort = new ArrayList<String>();
-            sort.add(aggregate.groupBy.stream().collect(Collectors.toList()).get(0));
-            sort.add("ASC");
+        // offset and limit will be set and the following condition
+        // 1. groupBy is enabled
+        // 2. outer query is null. if outer query is enabled, setting inner offset / limit will cause sql exception in cosmosdb
+        if (CollectionUtils.isNotEmpty(aggregate.groupBy) && aggregate.condAfterAggregate == null) {
+            queryText.append(String.format(" OFFSET %d LIMIT %d", offset, limit));
         }
 
-        // sort
-        if (!CollectionUtils.isEmpty(sort) && sort.size() > 1) {
+        // condition after aggregation
+        FilterQuery filterQueryAgg = null;
+        if (aggregate.condAfterAggregate != null) {
 
-            var sortMap = new LinkedHashMap<String, String>();
+            // only works when groupBy is enabled
+            if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
 
-            for (int i = 0; i < sort.size(); i++) {
-                if (i % 2 == 0) {
-                    sortMap.put(sort.get(i), sort.get(i + 1));
-                }
-            }
+                var condAfter = aggregate.condAfterAggregate;
+                // select
 
-            var sorts = "";
-
-            if (aggregate == null) {
-                sorts = sortMap.entrySet().stream()
-                        .map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
-                        .collect(Collectors.joining(",", " ORDER BY", ""));
-
-            } else if (!CollectionUtils.isEmpty(aggregate.groupBy)) {
-                //when GROUP BY, the ORDER BY must be added as an outer query
+                //After GROUP BY, the WHERE / ORDER BY / LIMIT must be added as an outer query
                 /** e.g
                  *  SELECT * FROM (SELECT COUNT(1) AS facetCount, c.status, c.createdBy FROM c
                  *  WHERE c._partition = "Accounts" AND c.name LIKE "%Tom%" GROUP BY c.status, c.createdBy) agg ORDER BY agg.status
@@ -335,20 +370,51 @@ public class Condition {
                 //use "agg" as outer select clause's collection alias
                 queryText.append(") agg");
 
-                sorts = sortMap.entrySet().stream()
-                        .map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey(), "agg"), entry.getValue().toUpperCase()))
-                        .collect(Collectors.joining(",", " ORDER BY", ""));
-            } else {
-                //we have aggregate but without groupBy, so just ignore sort
+                // filter after agg
+
+                var initialConditionIndexAgg = new AtomicInteger();
+
+                filterQueryAgg = condAfter.generateFilterQuery(queryText.toString(), params, initialConditionIndexAgg, initialParamIndex, "agg");
+
+                // special logic for aggregate with cross-partition=true and sort is empty
+                // We have to add a default sort to overcome a bug.
+                // see https://social.msdn.microsoft.com/Forums/en-US/535c7e4a-f5cb-4aa3-90f5-39a2c8024191/group-by-fails-for-crosspartition-queries?forum=azurecosmosdb
+
+
+                if (this.crossPartition && CollectionUtils.isEmpty(condAfter.sort)) {
+                    // use the groupBy's first field to sort
+                    condAfter.sort = new ArrayList<>();
+                    condAfter.sort.add(aggregate.groupBy.stream().collect(Collectors.toList()).get(0));
+                    condAfter.sort.add("ASC");
+                }
+
+                // sort after agg
+                // Note that only field like "status" "name" can be sort after group by.
+                // aggregation value like "count" cannot be used in sort after group by.
+                if (!CollectionUtils.isEmpty(condAfter.sort) && condAfter.sort.size() > 1) {
+                    var sortMap = new LinkedHashMap<String, String>();
+
+                    for (int i = 0; i < condAfter.sort.size(); i++) {
+                        if (i % 2 == 0) {
+                            sortMap.put(condAfter.sort.get(i), condAfter.sort.get(i + 1));
+                        }
+                    }
+                    var sorts = sortMap.entrySet().stream()
+                            .map(entry -> String.format(" %s %s", getFormattedKey(entry.getKey(), "agg"), entry.getValue().toUpperCase()))
+                            .collect(Collectors.joining(",", " ORDER BY", ""));
+
+                    filterQueryAgg.queryText.append(sorts);
+                }
+
+                // offset and limit after agg
+                filterQueryAgg.queryText.append(String.format(" OFFSET %d LIMIT %d", condAfter.offset, condAfter.limit));
             }
 
-            queryText.append(sorts);
         }
 
-        // offset and limit
-        if (aggregate == null || !CollectionUtils.isEmpty(aggregate.groupBy)) {
-            //if not aggregate or not having group by, we do not need offset and  limit. Because the items will be only 1.
-            queryText.append(String.format(" OFFSET %d LIMIT %d", offset, limit));
+        if (filterQueryAgg != null) {
+            queryText = filterQueryAgg.queryText;
+            params = filterQueryAgg.params;
         }
 
         log.info("queryText:{}", queryText);
@@ -361,11 +427,12 @@ public class Condition {
     /**
      * filter parts
      *
-     * @param selectPart queryText
-     * @param params     params
+     * @param selectPart  queryText
+     * @param params      params
+     * @param selectAlias "c.xxx"
      */
     FilterQuery generateFilterQuery(String selectPart, List<CosmosSqlParameter> params,
-                                    AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+                                    AtomicInteger conditionIndex, AtomicInteger paramIndex, String selectAlias) {
 
         // process raw sql
         if (this.rawQuerySpec != null) {
@@ -407,14 +474,14 @@ public class Condition {
                 var subQueries = extractSubQueries(entry.getValue());
                 var subQueryWithNot = Condition.filter(SubConditionType.AND, subQueries).not();
                 // recursively generate the filterQuery with negative flag true
-                var filterQueryWithNot = subQueryWithNot.generateFilterQuery("", params, conditionIndex, paramIndex);
+                var filterQueryWithNot = subQueryWithNot.generateFilterQuery("", params, conditionIndex, paramIndex, selectAlias);
                 subFilterQueryToAdd = " " + removeConnectPart(filterQueryWithNot.queryText.toString());
                 saveOriginJoinCondition(subFilterQueryToAdd);
                 subFilterQueryToAdd=toJoinQueryText( subFilterQueryToAdd,  subFilterQueryToAdd,  paramIndex);
             } else {
                 // normal expression
                 var exp = parse(entry.getKey(), entry.getValue());
-                var expQuerySpec = exp.toQuerySpec(paramIndex);
+                var expQuerySpec = exp.toQuerySpec(paramIndex, selectAlias);
                 subFilterQueryToAdd = expQuerySpec.getQueryText();
                 saveOriginJoinCondition(subFilterQueryToAdd);
                 subFilterQueryToAdd = toJoinQueryText(entry.getKey(), subFilterQueryToAdd,paramIndex);
@@ -542,7 +609,7 @@ public class Condition {
 
         for (var subCond : conds) {
             var subFilterQuery = subCond.generateFilterQuery("", params, conditionIndex,
-                    paramIndex);
+                    paramIndex, "c");
 
             var originSubText = removeConnectPart(subFilterQuery.queryText.toString());
             subTexts.add(toJoinQueryText(originSubText, originSubText, paramIndex));

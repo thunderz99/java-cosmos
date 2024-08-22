@@ -9,45 +9,62 @@ import java.util.Set;
  */
 public class Aggregate {
 
-	/**
-	 * Default constructor
-	 */
-	public Aggregate() {
-	}
+    /**
+     * Default constructor
+     */
+    public Aggregate() {
+    }
 
-	public String function = "";
+    public String function = "";
 
-	public Set<String> groupBy = new LinkedHashSet<>();
-
-	/**
-	 * set function
-	 *
-	 * <p>
-	 *     aggregate functions like: COUNT, AVG, SUM, MAX, MIN <br>
-	 *     see <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/sql-query-aggregate-functions">cosmosdb aggregate functions</a>
-	 * </p>
-	 *
-	 *
-	 * @param function aggregate functions like:
-	 * @return Aggregate
-	 */
-	public static Aggregate function(String function) {
-		
-		Aggregate ret = new Aggregate();
-		ret.function = function;
-
-		return ret;
-	}
+    public Set<String> groupBy = new LinkedHashSet<>();
 
 
-	public Aggregate groupBy(String... fields) {
+    /**
+     * condition for the result of aggregation
+     */
+    public Condition condAfterAggregate = null;
 
-		if (fields == null || fields.length == 0) {
-			return this;
-		}
+    /**
+     * set function
+     *
+     * <p>
+     * aggregate functions like: COUNT, AVG, SUM, MAX, MIN <br>
+     * see <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/sql-query-aggregate-functions">cosmosdb aggregate functions</a>
+     * </p>
+     *
+     * @param function aggregate functions like:
+     * @return Aggregate
+     */
+    public static Aggregate function(String function) {
 
-		this.groupBy = new LinkedHashSet<>(List.of(fields));
-		return this;
-	}
+        Aggregate ret = new Aggregate();
+        ret.function = function;
+
+        return ret;
+    }
+
+
+    public Aggregate groupBy(String... fields) {
+
+        if (fields == null || fields.length == 0) {
+            return this;
+        }
+
+        this.groupBy = new LinkedHashSet<>(List.of(fields));
+        return this;
+    }
+
+    /**
+     * Add filter / sort / limit that applies to the result of aggregation
+     *
+     * @param condAfterAggregate
+     * @return aggregate obj self
+     */
+    public Aggregate conditionAfterAggregate(Condition condAfterAggregate) {
+        this.condAfterAggregate = condAfterAggregate;
+        return this;
+    }
+
 
 }

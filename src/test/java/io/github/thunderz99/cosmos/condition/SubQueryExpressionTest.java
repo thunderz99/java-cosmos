@@ -124,11 +124,12 @@ class SubQueryExpressionTest {
     @Test
     void toQuerySpec_should_work() throws Exception {
 
+        var selectAlias = "c";
         {
             //ARRAY_CONTAINS_ANY
             var exp = new SubQueryExpression("tags", "name", List.of("react", "java"), "ARRAY_CONTAINS_ANY");
             var paramIndex = new AtomicInteger(1);
-            var querySpec = exp.toQuerySpec(paramIndex);
+            var querySpec = exp.toQuerySpec(paramIndex, selectAlias);
 
             assertThat(querySpec.getQueryText()).isEqualTo(" (EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE ARRAY_CONTAINS(@param001_tags__name, x[\"name\"])))");
             var params = querySpec.getParameters();
@@ -141,7 +142,7 @@ class SubQueryExpressionTest {
             //ARRAY_CONTAINS_ALL
             var exp = new SubQueryExpression("tags", "name", List.of("react", "java"), "ARRAY_CONTAINS_ALL");
             var paramIndex = new AtomicInteger(1);
-            var querySpec = exp.toQuerySpec(paramIndex);
+            var querySpec = exp.toQuerySpec(paramIndex, selectAlias);
 
             assertThat(querySpec.getQueryText()).isEqualTo(" (EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE x[\"name\"] = @param001_tags__name__0) AND EXISTS(SELECT VALUE x FROM x IN c[\"tags\"] WHERE x[\"name\"] = @param001_tags__name__1))");
             var params = querySpec.getParameters();

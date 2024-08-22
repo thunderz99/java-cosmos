@@ -522,24 +522,24 @@ class ConditionTest {
 	public void buildQuerySpec_should_work_for_aggregate() {
 
 		{
-			//pure aggregate
-			var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
-			var q = Condition.filter() //
-					.toQuerySpec(aggregate);
+            //pure aggregate
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
+            var q = Condition.filter() //
+                    .toQuerySpecForAggregate(aggregate);
 
-			assertThat(q.getQueryText().trim()).isEqualTo(
-					"SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
+            assertThat(q.getQueryText().trim()).isEqualTo(
+                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
 
-			var params = List.copyOf(q.getParameters());
-			assertThat(params).isEmpty();
+            var params = List.copyOf(q.getParameters());
+            assertThat(params).isEmpty();
 
-		}
+        }
 
         {
             // with filter
             var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
             var q = Condition.filter("age >=", 20) //
-                    .toQuerySpec(aggregate);
+                    .toQuerySpecForAggregate(aggregate);
 
             assertThat(q.getQueryText().trim()).isEqualTo(
                     "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
@@ -551,10 +551,10 @@ class ConditionTest {
         }
 
         {
-            // with offset / limit
+            // with inner offset / limit
             var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
             var q = Condition.filter("age >=", 20).offset(5).limit(10) //
-                    .toQuerySpec(aggregate);
+                    .toQuerySpecForAggregate(aggregate);
 
             assertThat(q.getQueryText().trim()).isEqualTo(
                     "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 5 LIMIT 10");
@@ -566,42 +566,107 @@ class ConditionTest {
         }
 
         {
-            // with order by
+            // with order by. inner order by will be ignored
             var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
             var q = Condition.filter("age >=", 20).sort("status", "ASC") //
-                    .toQuerySpec(aggregate);
+                    .toQuerySpecForAggregate(aggregate);
 
             assertThat(q.getQueryText().trim()).isEqualTo(
-                    "SELECT * FROM (SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"]) agg ORDER BY agg[\"status\"] ASC OFFSET 0 LIMIT 100");
+                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
 
             var params = List.copyOf(q.getParameters());
             assertThat(params).hasSize(1);
             assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_age", 20).toJson());
 
         }
-	}
+    }
 
-	@Test
-	public void isTrueFalseCondition_should_work() {
-		{
-			//true condition
-			assertThat(Condition.isTrueCondition(Condition.filter())).isFalse();
-			assertThat(Condition.isTrueCondition(Condition.filter("q", "1"))).isFalse();
-			assertThat(Condition.isTrueCondition(Condition.rawSql("c.id = 001"))).isFalse();
-			assertThat(Condition.isTrueCondition(Condition.rawSql(Condition.COND_SQL_FALSE))).isFalse();
-			assertThat(Condition.isTrueCondition(Condition.rawSql(Condition.COND_SQL_TRUE))).isTrue();
+    @Test
+    public void buildQuerySpec_should_work_for_aggregate_with_conditionAfterAgg() {
 
-		}
-		{
-			//false condition
-			assertThat(Condition.isFalseCondition(Condition.filter())).isFalse();
-			assertThat(Condition.isFalseCondition(Condition.filter("q", "1"))).isFalse();
-			assertThat(Condition.isFalseCondition(Condition.rawSql("c.id = 001"))).isFalse();
-			assertThat(Condition.isFalseCondition(Condition.rawSql(Condition.COND_SQL_TRUE))).isFalse();
-			assertThat(Condition.isFalseCondition(Condition.rawSql(Condition.COND_SQL_FALSE))).isTrue();
+        {
+            // with filter and filter after agg
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount")
+                    .groupBy("status", "location")
+                    .conditionAfterAggregate(Condition.filter("facetCount >", 1)); // outer filter
+            var q = Condition.filter("age >=", 20) // inner filter
+                    .toQuerySpecForAggregate(aggregate);
 
-		}
-	}
+            assertThat(q.getQueryText().trim()).isEqualTo(
+                    "SELECT * FROM (SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"]) agg WHERE (agg[\"facetCount\"] > @param001_facetCount) OFFSET 0 LIMIT 100");
+
+            var params = List.copyOf(q.getParameters());
+            assertThat(params).hasSize(2);
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_age", 20).toJson());
+            assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_facetCount", 1).toJson());
+
+        }
+
+        {
+            // with filter and filter after agg, with outer order by
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount")
+                    .groupBy("status", "location")
+                    .conditionAfterAggregate(Condition.filter("facetCount >", 1) // outer filter
+                            .sort("facetCount", "DESC") // add sort
+                    );
+            var q = Condition.filter("age >=", 20) // inner filter
+                    .toQuerySpecForAggregate(aggregate);
+
+            assertThat(q.getQueryText().trim()).isEqualTo(
+                    "SELECT * FROM (SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"]) agg WHERE (agg[\"facetCount\"] > @param001_facetCount) ORDER BY agg[\"facetCount\"] DESC OFFSET 0 LIMIT 100");
+
+            var params = List.copyOf(q.getParameters());
+            assertThat(params).hasSize(2);
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_age", 20).toJson());
+            assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_facetCount", 1).toJson());
+
+        }
+
+        {
+            // with filter and filter after agg, with offset / limit
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount")
+                    .groupBy("status", "location")
+                    .conditionAfterAggregate(Condition.filter("facetCount >", 1)
+                            .sort("facetCount", "DESC")
+                            .offset(5).limit(10) // add offset / limit
+                    );
+            var q = Condition.filter("age >=", 20) // outer filter
+                    .toQuerySpecForAggregate(aggregate);
+
+            assertThat(q.getQueryText().trim()).isEqualTo(
+                    "SELECT * FROM (SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"]) agg WHERE (agg[\"facetCount\"] > @param001_facetCount) ORDER BY agg[\"facetCount\"] DESC OFFSET 5 LIMIT 10");
+
+            var params = List.copyOf(q.getParameters());
+            assertThat(params).hasSize(2);
+            assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_age", 20).toJson());
+            assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_facetCount", 1).toJson());
+
+        }
+
+
+    }
+
+    @Test
+    public void isTrueFalseCondition_should_work() {
+        {
+            //true condition
+            assertThat(Condition.isTrueCondition(Condition.filter())).isFalse();
+            assertThat(Condition.isTrueCondition(Condition.filter("q", "1"))).isFalse();
+            assertThat(Condition.isTrueCondition(Condition.rawSql("c.id = 001"))).isFalse();
+            assertThat(Condition.isTrueCondition(Condition.rawSql(Condition.COND_SQL_FALSE))).isFalse();
+            assertThat(Condition.isTrueCondition(Condition.rawSql(Condition.COND_SQL_TRUE))).isTrue();
+
+        }
+        {
+            //false condition
+            assertThat(Condition.isFalseCondition(Condition.filter())).isFalse();
+            assertThat(Condition.isFalseCondition(Condition.filter("q", "1"))).isFalse();
+            assertThat(Condition.isFalseCondition(Condition.rawSql("c.id = 001"))).isFalse();
+            assertThat(Condition.isFalseCondition(Condition.rawSql(Condition.COND_SQL_TRUE))).isFalse();
+            assertThat(Condition.isFalseCondition(Condition.rawSql(Condition.COND_SQL_FALSE))).isTrue();
+
+        }
+    }
 
 	@Test
 	public void extractSubQueries_should_work() {
@@ -805,7 +870,7 @@ class ConditionTest {
 
         var filterQuery = Condition.rawSql("\"tokyo\" IN c.cities") //
                 .not() // negative will have no effect for a whole rawSql
-                .generateFilterQuery("", Lists.newArrayList(), new AtomicInteger(), new AtomicInteger());
+                .generateFilterQuery("", Lists.newArrayList(), new AtomicInteger(), new AtomicInteger(), "c");
 
         assertThat(filterQuery.queryText.toString()).isEqualTo(
                 " NOT(\"tokyo\" IN c.cities)");

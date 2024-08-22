@@ -62,7 +62,7 @@ public class SimpleExpression implements Expression {
     }
 
     @Override
-    public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
+    public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex, String selectAlias) {
 
         var ret = new CosmosSqlQuerySpec();
         var params = new ArrayList<CosmosSqlParameter>();
@@ -88,7 +88,7 @@ public class SimpleExpression implements Expression {
             // array equals or not
             if (Set.of("=", "!=").contains(this.operator)) {
                 // use = or !=
-                ret.setQueryText(String.format(" (%s %s %s)", Condition.getFormattedKey(this.key), this.operator, paramName));
+                ret.setQueryText(String.format(" (%s %s %s)", Condition.getFormattedKey(this.key, selectAlias), this.operator, paramName));
                 params.add(Condition.createSqlParameter(paramName, paramValue));
             } else {
                 //the default operator for collection
@@ -115,7 +115,7 @@ public class SimpleExpression implements Expression {
 
             if (paramValue instanceof FieldKey) {
                 // valuePart should be "mail2" for "c.mail != c.mail2"
-                valuePart = Condition.getFormattedKey(((FieldKey) paramValue).keyName);
+                valuePart = Condition.getFormattedKey(((FieldKey) paramValue).keyName, selectAlias);
             } else {
                 // valuePart should be "@param001_wg31gsa"
                 valuePart = paramName;
@@ -123,7 +123,7 @@ public class SimpleExpression implements Expression {
             }
 
             // other types
-            var formattedKey = Condition.getFormattedKey(this.key);
+            var formattedKey = Condition.getFormattedKey(this.key, selectAlias);
             if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >, LIKE
                 //use c["key"] for cosmosdb reserved words
                 ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, valuePart));

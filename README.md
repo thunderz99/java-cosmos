@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.6.8</version>
+    <version>0.6.9</version>
 </dependency>
 ```
 
@@ -293,14 +293,19 @@ The main difference between Partial update and Patch is that:
 
 ```java
     // support aggregate function: COUNT, AVG, SUM, MAX, MIN
-    // see https://docs.microsoft.com/en-us/azure/cosmos-db/sql-query-aggregate-functions
-    var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
+// see https://docs.microsoft.com/en-us/azure/cosmos-db/sql-query-aggregate-functions
+    var aggregate=Aggregate.function("COUNT(1) AS facetCount").groupBy("location","gender");
 
-    var result = db.aggregate("Collection1", aggregate, Condition.filter("age >=", 20));
+    var result=db.aggregate("Collection1",aggregate,Condition.filter("age >=",20));
 
     // will generate a sql like this:
     /* SELECT COUNT(1) as facetCount, c.location, c.gender WHERE age >= 20 GROUP BY c.location, c.gender
-    */
+     */
+
+    // Also supports filtering the aggregation result
+    var aggregate=Aggregate.function("COUNT(1) AS facetCount").groupBy("location","gender")
+    .conditionAfterAggregate(Condition.filter("facetCount >",1)) // filter after aggregation
+    ;
 ```
 
 ### Increment

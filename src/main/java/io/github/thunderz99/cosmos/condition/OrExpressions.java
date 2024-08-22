@@ -44,7 +44,7 @@ public class OrExpressions implements Expression {
     }
 
     @Override
-    public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex) {
+    public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex, String selectAlias) {
 
         var ret = new CosmosSqlQuerySpec();
 
@@ -55,10 +55,10 @@ public class OrExpressions implements Expression {
         var indexForQuery = paramIndex;
         var indexForParam = new AtomicInteger(paramIndex.get());
 
-        var queryText = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForQuery).getQueryText())
+        var queryText = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForQuery, selectAlias).getQueryText())
                 .collect(Collectors.joining(" OR", " (", " )"));
 
-        var params = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForParam).getParameters())
+        var params = simpleExps.stream().map(exp -> exp.toQuerySpec(indexForParam, selectAlias).getParameters())
                 .reduce(new ArrayList<>(), (sum, elm) -> {
                     sum.addAll(elm);
                     return sum;
