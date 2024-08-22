@@ -6,11 +6,13 @@ import java.util.regex.Pattern;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.condition.FieldKey;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.bson.BsonDocument;
 import org.bson.BsonValue;
+import org.bson.Document;
 import org.bson.conversions.Bson;
 
 /**
@@ -18,10 +20,19 @@ import org.bson.conversions.Bson;
  */
 public class ConditionUtil {
 
-    public static final List<String> binaryOperators = List.of(
+    static final List<String> binaryOperators = List.of(
             "LIKE", "IN", "=", "!=", "<", "<=", ">", ">=",
             "STARTSWITH", "ENDSWITH", "CONTAINS", "RegexMatch",
             "ARRAY_CONTAINS", "ARRAY_CONTAINS_ANY", "ARRAY_CONTAINS_ALL"
+    );
+
+    static final Map<String, String> OPERATOR_MAPPINGS = Map.of(
+            "=", "$eq",
+            "!=", "$ne",
+            ">=", "$gte",
+            "<=", "$lte",
+            ">", "$gt",
+            "<", "$lt"
     );
 
     // Generate the regex pattern using binaryOperators
@@ -43,7 +54,7 @@ public class ConditionUtil {
 
         for (var entry : map.entrySet()) {
             var key = entry.getKey();
-            
+
             var value = entry.getValue();
 
             if (StringUtils.isEmpty(key)) {
@@ -58,22 +69,12 @@ public class ConditionUtil {
 
                 switch (operator) {
                     case "=":
-                        filters.add(Filters.eq(field, value));
-                        break;
                     case "!=":
-                        filters.add(Filters.ne(field, value));
-                        break;
                     case ">=":
-                        filters.add(Filters.gte(field, value));
-                        break;
                     case "<=":
-                        filters.add(Filters.lte(field, value));
-                        break;
                     case ">":
-                        filters.add(Filters.gt(field, value));
-                        break;
                     case "<":
-                        filters.add(Filters.lt(field, value));
+                        filters.add(generateExpression(field, operator, value));
                         break;
                     case "LIKE":
                         // Convert SQL-like wildcards to MongoDB regex equivalents
@@ -131,13 +132,64 @@ public class ConditionUtil {
                     var coll = (Collection<?>) value;
                     filters.add(Filters.in(key, coll));
                 } else {
-                    // normal eq filter
-                    filters.add(Filters.eq(key, value));
+                    // normal eq filter. and support $fieldA = $fieldB case
+                    filters.add(generateExpression(key, "=", value));
                 }
             }
         }
 
         return filters.size() == 1 ? filters.get(0) : Filters.and(filters);
+    }
+
+    /**
+     * Generate bson filter from field, operator and value. Supports "$fieldA != $fieldB"
+     *
+     * @param field
+     * @param operator
+     * @param value
+     * @return bson filter
+     */
+    static Bson generateExpression(String field, String operator, Object value) {
+
+        Bson ret = null;
+
+        if (value instanceof FieldKey) {
+            // support $fieldA != $fieldB
+            var processField = "$" + field;
+            var processedOperator = OPERATOR_MAPPINGS.get(operator);
+            var processedValue = "$" + ((FieldKey) value).keyName;
+
+            /*
+            $expr is required for "$fieldA != $fieldB" case
+            $expr: {
+                $ne: ["$user.fieldA", "$user.fieldB"]
+            }
+            */
+            ret = Filters.expr(new Document(processedOperator, List.of(processField, processedValue)));
+        } else {
+            // normal simple queries
+            switch (operator) {
+                case "=":
+                    ret = Filters.eq(field, value);
+                    break;
+                case "!=":
+                    ret = Filters.ne(field, value);
+                    break;
+                case ">=":
+                    ret = Filters.gte(field, value);
+                    break;
+                case "<=":
+                    ret = Filters.lte(field, value);
+                    break;
+                case ">":
+                    ret = Filters.gt(field, value);
+                    break;
+                case "<":
+                    ret = Filters.lt(field, value);
+                    break;
+            }
+        }
+        return ret;
     }
 
     /**

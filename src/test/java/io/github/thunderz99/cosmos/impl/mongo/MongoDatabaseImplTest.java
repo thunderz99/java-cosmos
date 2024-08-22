@@ -751,7 +751,7 @@ class MongoDatabaseImplTest {
 
     }
 
-    @Disabled
+    @Test
     public void field_a_equals_field_b_should_work_with_filter() throws Exception {
 
         // test condition that use field a and field b
@@ -765,7 +765,7 @@ class MongoDatabaseImplTest {
 
             db.upsert(host, data1, partition);
             db.upsert(host, data2, partition);
-
+            
             {
                 // equal
                 var cond = Condition.filter("mail", Condition.key("uniqueKey") //
