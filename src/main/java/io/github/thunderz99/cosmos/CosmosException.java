@@ -1,6 +1,9 @@
 package io.github.thunderz99.cosmos;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.mongodb.MongoClientException;
+import com.mongodb.MongoCommandException;
+import com.mongodb.MongoException;
 
 /**
  * Original Exception thrown by java-cosmos. Wrapping v2 DocumentClientException and v4 CosmosException.
@@ -10,7 +13,7 @@ public class CosmosException extends RuntimeException {
     static final long serialVersionUID = 1L;
 
     @JsonIgnore
-    private com.azure.cosmos.CosmosException ce;
+    private Exception e;
 
     /**
      * http status code
@@ -29,12 +32,21 @@ public class CosmosException extends RuntimeException {
 
     public CosmosException(com.azure.cosmos.CosmosException ce) {
         super(ce.getMessage(), ce);
-        this.ce = ce;
+        this.e = ce;
         this.statusCode = ce.getStatusCode();
         // can not get CosmosException's code yet.
         this.code = "";
         this.retryAfterInMilliseconds = ce.getRetryAfterDuration().toMillis();
     }
+
+    public CosmosException(MongoException me) {
+        super(me.getMessage(), me);
+        this.e = me;
+        this.statusCode = (me instanceof MongoCommandException || me instanceof MongoClientException) ? 400 : 500;
+        this.code = String.valueOf(me.getCode());
+        this.retryAfterInMilliseconds = 0;
+    }
+
 
     /**
      * Constructor using statusCode and message
@@ -52,6 +64,21 @@ public class CosmosException extends RuntimeException {
     /**
      * Constructor using statusCode and message
      *
+     * @param statusCode cosmos exception's httpStatusCode
+     * @param code       string error code
+     * @param message    detail message
+     * @param cause      cause exception
+     */
+    public CosmosException(int statusCode, String code, String message, Exception cause) {
+        super(message);
+        this.statusCode = statusCode;
+        this.code = code;
+        this.e = cause;
+    }
+
+    /**
+     * Constructor using statusCode and message
+     *
      * @param statusCode               cosmos exception's httpStatusCode
      * @param code                     string error code
      * @param message                  detail message
@@ -63,6 +90,8 @@ public class CosmosException extends RuntimeException {
         this.code = code;
         this.retryAfterInMilliseconds = retryAfterInMilliseconds;
     }
+
+
 
     /**
      * Get the exception's status code. e.g. 404 / 429 / 403

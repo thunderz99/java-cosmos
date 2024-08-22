@@ -4,6 +4,7 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 
 import com.google.common.collect.Sets;
+import com.mongodb.MongoException;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
 import org.slf4j.Logger;
@@ -77,6 +78,8 @@ public class RetryUtil {
             } catch (com.azure.cosmos.CosmosException ce) {
                 // deal with sdkv4's CosmosException
                 cosmosException = new CosmosException(ce);
+            } catch (MongoException me) {
+                cosmosException = new CosmosException(me);
             } catch (CosmosException ce) {
                 // deal with java-cosmos's CosmosException
                 cosmosException = ce;

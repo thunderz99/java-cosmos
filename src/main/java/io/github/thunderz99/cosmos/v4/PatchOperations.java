@@ -13,12 +13,11 @@ import com.google.common.collect.Lists;
  * A bean class representing a serials of patch operations
  *
  * <p>
- *     Compared to the offical CosmosPatchOperations, this class offers smarter error check and getSize methods.
+ * Compared to the official CosmosPatchOperations, this class offers smarter error check and getSize methods.
  * </p>
  * <p>
- *  For more details, see <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update-getting-started?tabs=java">CosmosPatchOperations official doc</a>
+ * For more details, see <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/partial-document-update-getting-started?tabs=java">CosmosPatchOperations official doc</a>
  * </p>
- *
  */
 public class PatchOperations {
 
@@ -152,13 +151,28 @@ public class PatchOperations {
 
     /**
      * Get patchOperations' size
+     *
      * @return size of patch operations
      */
     public int size() {
         return operations.size();
     }
 
-    public CosmosPatchOperations getCosmosPatchOperations(){
+    /**
+     * Get the cosmosPatchOperations
+     *
+     * @return cosmosPatchOperations
+     */
+    public CosmosPatchOperations getCosmosPatchOperations() {
         return this.cosmosPatchOperations;
+    }
+
+    /**
+     * Get the list of operations
+     *
+     * @return operations list
+     */
+    public List<PatchOperation> getPatchOperations() {
+        return this.operations;
     }
 }
