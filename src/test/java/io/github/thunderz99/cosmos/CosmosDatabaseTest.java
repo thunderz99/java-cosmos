@@ -838,7 +838,64 @@ class CosmosDatabaseTest {
         }
 
     }
-    
+
+    @Test
+    public void field_a_equals_field_b_should_work_with_filter() throws Exception {
+
+        // test condition that use field a and field b
+        var id1 = "field_a_equals_field_b_should_work_with_filter1";
+        var id2 = "field_a_equals_field_b_should_work_with_filter2";
+        var partition = "FieldTest";
+        try {
+
+            var data1 = Map.of("id", id1, "mail", "mail1", "uniqueKey", "aaa");
+            var data2 = Map.of("id", id2, "mail", "mail2", "uniqueKey", "mail2");
+
+            db.upsert(coll, data1, partition);
+            db.upsert(coll, data2, partition);
+
+            {
+                // equal
+                var cond = Condition.filter("mail", Condition.key("uniqueKey") //
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var results = db.find(coll, cond, partition).toMap();
+
+                assertThat(results.size()).isEqualTo(1);
+                assertThat(results.get(0)).containsEntry("id", id2);
+            }
+            {
+                // not equal
+                var cond = Condition.filter("mail !=", Condition.key("uniqueKey") //
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var results = db.find(coll, cond, partition).toMap();
+
+                assertThat(results.size()).isEqualTo(1);
+                assertThat(results.get(0)).containsEntry("id", id1);
+            }
+            {
+                // greater than
+                var cond = Condition.filter("mail >=", Condition.key("uniqueKey") //
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var results = db.find(coll, cond, partition).toMap();
+
+                assertThat(results.size()).isEqualTo(2);
+            }
+        } finally {
+            db.delete(coll, id1, partition);
+            db.delete(coll, id2, partition);
+        }
+
+    }
+
     @Test
     void aggregate_should_work() throws Exception {
         // test aggregate(simple)

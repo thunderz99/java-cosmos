@@ -425,8 +425,8 @@ class ConditionTest {
 		{
 			var q = Condition.filter("id", List.of(), "name", "Tom").toQuerySpec();
 
-			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (1=0) AND (c[\"name\"] = @param000_name) OFFSET 0 LIMIT 100");
-			assertThat(q.getParameters()).hasSize(1);
+			assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM c WHERE (1=0) AND (c[\"name\"] = @param001_name) OFFSET 0 LIMIT 100");
+            assertThat(q.getParameters()).hasSize(1);
 		}
 
 		{
