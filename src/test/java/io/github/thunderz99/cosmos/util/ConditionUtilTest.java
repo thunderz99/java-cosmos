@@ -236,14 +236,13 @@ public class ConditionUtilTest {
         List<String> sort = List.of();
         var bsonSort = ConditionUtil.toBsonSort(sort);
 
-        assertThat(bsonSort.toBsonDocument()).isEqualTo(new Document().toBsonDocument());
+        assertThat(bsonSort).isNull();
     }
 
     @Test
-    public void nullSort_should_return_emptyDocument() {
+    public void nullSort_should_return_null() {
         var bsonSort = ConditionUtil.toBsonSort(null);
-
-        assertThat(bsonSort.toBsonDocument()).isEqualTo(new Document().toBsonDocument());
+        assertThat(bsonSort).isNull();
     }
 
     @Test

@@ -459,10 +459,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // TODO crossPartition query
 
-        var filterBeforeProcess = ConditionUtil.toBsonFilter(cond);
-
         // process top $not filter to $nor for mongo
-        var filter = ConditionUtil.processNor(filterBeforeProcess);
+        var filter = ConditionUtil.processNor(ConditionUtil.toBsonFilter(cond));
 
         // process sort
         var sort = ConditionUtil.toBsonSort(cond.sort);
@@ -701,11 +699,32 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         }
 
         // 4. Add optional offset, limit if specified in Condition
-        // We do not need offset and limit in aggregate
+        // We do not need inner offset and limit in aggregate. Please set them in condAfterAggregate
 
         // 5. Add a final project stage to flatten the _id and rename fields
         var finalProjectStage = AggregateUtil.createFinalProjectStage(aggregate);
         pipeline.add(finalProjectStage);
+
+        // 6. add filter / sort / offset / limit using condAfterAggregate
+
+        var condAfter = aggregate.condAfterAggregate;
+        if (condAfter != null) {
+            // 6.1 filter
+            var filterAfter = ConditionUtil.processNor(ConditionUtil.toBsonFilter(condAfter));
+            if (filterAfter != null) {
+                pipeline.add(Aggregates.match(filterAfter));
+            }
+
+            // 6.2 sort
+            var sort = ConditionUtil.toBsonSort(condAfter.sort);
+            if (sort != null) {
+                pipeline.add(Aggregates.sort(sort));
+            }
+
+            // 6.3 offset / limit
+            pipeline.add(Aggregates.skip(condAfter.offset));
+            pipeline.add(Aggregates.limit(condAfter.limit));
+        }
 
         // Execute the aggregation pipeline
         var results = container.aggregate(pipeline).into(new ArrayList<>());

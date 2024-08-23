@@ -888,27 +888,6 @@ class MongoDatabaseImplTest {
 
         }
 
-        // test aggregate(with order by)
-        // TODO order by
-//        {
-//            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last");
-//
-//            var cond = Condition.filter("age <", 100).sort("last", "DESC");
-//
-//            // test find
-//            var result = db.aggregate(host, aggregate, cond, "Users").toMap();
-//            assertThat(result).hasSize(2);
-//
-//            var last1 = result.get(0).getOrDefault("last", "").toString();
-//            assertThat(last1).isEqualTo("Henry");
-//            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
-//
-//            var last2 = result.get(1).getOrDefault("last", "").toString();
-//            assertThat(last2).isEqualTo("Hanks");
-//            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(2);
-//
-//        }
-
         // test aggregate(sum)
         {
             var aggregate = Aggregate.function("SUM(c.age) AS ageSum").groupBy("fullName.last");
@@ -926,6 +905,76 @@ class MongoDatabaseImplTest {
             var lastName2 = result.get(1).getOrDefault("last", "").toString();
             assertThat(result.get(1).get("ageSum")).isEqualTo(expect.get(lastName2));
 
+        }
+    }
+
+    @Test
+    public void aggregate_should_work_with_condition_afterwards() throws Exception {
+
+        // test aggregate with afterwards filter
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount")
+                    .groupBy("fullName.last")
+                    .conditionAfterAggregate(Condition.filter("facetCount >", 1) // only find the group by result that facetCount > 1
+                            .sort("last", "DESC")
+                            // Note that only field like "status" "name" can be sort after group by.
+                            // aggregation value like "count" cannot be used in sort after group by.
+                            .offset(0).limit(2)); // sort
+
+            // test find
+            var result = db.aggregate(host, aggregate, "Users").toMap();
+            assertThat(result).hasSize(1);
+
+            // Hanks family has 2 members
+            var expect = Map.of("Hanks", 2);
+
+            var lastName1 = result.get(0).getOrDefault("last", "").toString();
+            assertThat(result.get(0).get("last")).isEqualTo("Hanks");
+            // the result of count should be integer
+            assertThat(result.get(0).get("facetCount")).isInstanceOf(Integer.class).isEqualTo(expect.get(lastName1));
+        }
+        // test aggregate(with order by)
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("fullName.last")
+                    .conditionAfterAggregate(Condition.filter().sort("last", "ASC"));
+
+            // test find
+            var result = db.aggregate(host, aggregate, Condition.filter(), "Users").toMap();
+            assertThat(result).hasSize(2);
+
+            var last1 = result.get(0).getOrDefault("last", "").toString();
+            assertThat(last1).isEqualTo("Hanks");
+            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(2);
+
+            var last2 = result.get(1).getOrDefault("last", "").toString();
+            assertThat(last2).isEqualTo("Henry");
+            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+
+        }
+
+        // test aggregate with multiple group by
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount")
+                    .groupBy("fullName.last", "age")
+                    .conditionAfterAggregate(Condition.filter().sort("age", "DESC"));
+
+            // test find
+            var result = db.aggregate(host, aggregate, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+            /*
+            The first element should be:
+            {
+              "facetCount" : 1,
+              "last" : "Henry",
+              "age" : 45
+             }
+             */
+
+            var lastName1 = result.get(0).getOrDefault("last", "").toString();
+            assertThat(lastName1).isEqualTo("Henry");
+            // the result of count should be integer
+            assertThat(result.get(0).get("age")).isInstanceOf(Integer.class).isEqualTo(45);
         }
     }
 

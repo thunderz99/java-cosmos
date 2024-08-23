@@ -616,7 +616,9 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
             queryRequestOptions.setPartitionKey(new PartitionKey(partition));
         }
 
-        var querySpec = cond.toQuerySpec(aggregate);
+        var querySpec = aggregate == null ?
+                cond.toQuerySpec() : // normal query
+                cond.toQuerySpecForAggregate(aggregate); // aggregate query//
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 

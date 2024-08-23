@@ -219,6 +219,9 @@ public class ConditionUtil {
      * @return bson filter
      */
     public static Bson toBsonFilter(Condition cond) {
+        if (cond == null) {
+            return null;
+        }
         if (!cond.negative) {
             // a normal filter
             return toBsonFilter(cond.filter);
@@ -239,7 +242,7 @@ public class ConditionUtil {
      */
     public static Bson toBsonSort(List<String> sort) {
         if (sort == null || sort.isEmpty()) {
-            return new org.bson.BsonDocument(); // Empty sort
+            return null; // Empty sort
         }
 
         List<Bson> bsonSortList = new ArrayList<>();
@@ -270,7 +273,7 @@ public class ConditionUtil {
      */
     public static Bson processNor(Bson filter) {
         if (filter == null) {
-            return filter;
+            return null;
         }
 
         BsonDocument bsonDoc = filter.toBsonDocument();
