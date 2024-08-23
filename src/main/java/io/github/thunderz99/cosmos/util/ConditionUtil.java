@@ -7,6 +7,7 @@ import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.FieldKey;
+import io.github.thunderz99.cosmos.dto.FilterOptions;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -46,6 +47,16 @@ public class ConditionUtil {
      * @return bson filter
      */
     public static Bson toBsonFilter(Map<String, Object> map) {
+        return toBsonFilter(map, FilterOptions.create());
+    }
+    /**
+     * Convert condition's map filter to bson filter for mongo
+     *
+     * @param map
+     * @param filterOptions
+     * @return bson filter
+     */
+    public static Bson toBsonFilter(Map<String, Object> map, FilterOptions filterOptions) {
         if (MapUtils.isEmpty(map)) {
             return new BsonDocument();
         }
@@ -61,104 +72,8 @@ public class ConditionUtil {
                 // Ignore when key is empty
                 continue;
             }
+            filters.add(toBsonFilter(key, value, filterOptions));
 
-            var matcher = simpleExpressionPattern.matcher(key);
-            if (matcher.matches()) {
-                var field = matcher.group(1).trim();
-                var operator = matcher.group(2).trim();
-
-                switch (operator) {
-                    case "=":
-                    case "!=":
-                    case ">=":
-                    case "<=":
-                    case ">":
-                    case "<":
-                        filters.add(generateExpression(field, operator, value));
-                        break;
-                    case "LIKE":
-                        // Convert SQL-like wildcards to MongoDB regex equivalents
-                        String regexValue = value.toString()
-                                .replace("%", ".*")  // % to match any number of characters
-                                .replace("_", ".");  // _ to match exactly one character
-                        filters.add(Filters.regex(field, regexValue));
-                        break;
-                    case "STARTSWITH":
-                        filters.add(Filters.regex(field, "^" + Pattern.quote(value.toString())));
-                        break;
-                    case "ENDSWITH":
-                        filters.add(Filters.regex(field, Pattern.quote(value.toString()) + "$"));
-                        break;
-                    case "CONTAINS":
-                        filters.add(Filters.regex(field, ".*" + Pattern.quote(value.toString()) + ".*"));
-                        break;
-                    case "RegexMatch":
-                        filters.add(Filters.regex(field, value.toString()));
-                        break;
-                    case "IS_DEFINED":
-                        filters.add(Filters.exists(field, Boolean.valueOf(value.toString())));
-                        break;
-                    case "IS_NULL":
-                        if (Boolean.valueOf(value.toString())) {
-                            // IS_NULL = true
-                            // IS_NULL means "field exists" AND "value is null"
-                            filters.add(Filters.and(Filters.exists(field, true), Filters.eq(field, null)));
-                        } else {
-                            // IS_NULL = false
-                            // "IS_NULL= false" means "field not exists" OR "value not null"
-                            filters.add(Filters.or(Filters.exists(field, false), Filters.ne(field, null)));
-                        }
-                        break;
-                    case "IS_NUMBER":
-                        if (Boolean.valueOf(value.toString())) {
-                            // IS_NUMBER = true
-                            filters.add(Filters.type(field, "number"));
-                        } else {
-                            // IS_NUMBER = false
-                            filters.add(Filters.not(Filters.type(field, "number")));
-                        }
-                        break;
-                    case "ARRAY_CONTAINS":
-                        // eq does the job
-                        // https://www.mongodb.com/docs/manual/tutorial/query-arrays/?msockid=07d12f08b23369f53c0f3b60b31168fe#query-an-array-for-an-element
-                        filters.add(Filters.eq(field, value));
-                        break;
-                    case "ARRAY_CONTAINS_ANY":
-                        filters.add(Filters.in(field, (Collection<?>) value));
-                        break;
-                    case "ARRAY_CONTAINS_ALL":
-                        filters.add(Filters.all(field, (Collection<?>) value));
-                        break;
-                    case "IN":
-                        filters.add(Filters.in(field, (Collection<?>) value));
-                        break;
-                    default:
-                        break;
-                }
-            } else if (key.startsWith("$OR")) {
-                filters.add(Filters.or(toBsonFilters((List<Map<String, Object>>) value)));
-            } else if (key.startsWith("$AND")) {
-                filters.add(Filters.and(toBsonFilters((List<Map<String, Object>>) value)));
-            } else if (key.startsWith("$NOT")) {
-                if (value instanceof Collection<?>) {
-                    filters.add(Filters.not(Filters.and(toBsonFilters((Collection<?>) value))));
-                } else if (value instanceof Condition) {
-                    filters.add(Filters.not(toBsonFilter((Condition) value)));
-                } else if (value instanceof Map<?, ?>) {
-                    filters.add(Filters.not(toBsonFilter((Map<String, Object>) value)));
-                } else {
-                    throw new IllegalArgumentException("$NOT 's filter is not correct. expect Collection/Map/Condition:" + value);
-                }
-            } else {
-                if (value instanceof Collection<?>) {
-                    // the same as IN
-                    var coll = (Collection<?>) value;
-                    filters.add(Filters.in(key, coll));
-                } else {
-                    // normal eq filter. and support $fieldA = $fieldB case
-                    filters.add(generateExpression(key, "=", value));
-                }
-            }
         }
 
         return filters.size() == 1 ? filters.get(0) : Filters.and(filters);
@@ -173,8 +88,23 @@ public class ConditionUtil {
      * @return bson filter
      */
     static Bson generateExpression(String field, String operator, Object value) {
+        return generateExpression(field, operator, value, FilterOptions.create());
+    }
+
+    /**
+     * Generate bson filter from field, operator and value. Supports "$fieldA != $fieldB"
+     *
+     * @param field
+     * @param operator
+     * @param value
+     * @param filterOptions whether this filter is used in an innerCond. Or if this is used in join. In innerCond $eq is a must for(key = value)
+     * @return bson filter
+     */
+    static Bson generateExpression(String field, String operator, Object value, FilterOptions filterOptions) {
 
         Bson ret = null;
+
+        var innerCond = filterOptions.innerCond;
 
         if (value instanceof FieldKey) {
             // support $fieldA != $fieldB
@@ -193,22 +123,22 @@ public class ConditionUtil {
             // normal simple queries
             switch (operator) {
                 case "=":
-                    ret = Filters.eq(field, value);
+                    ret = innerCond ? new Document("$eq", List.of(field, value)) : Filters.eq(field, value);
                     break;
                 case "!=":
-                    ret = Filters.ne(field, value);
+                    ret = innerCond ? new Document("$ne", List.of(field, value)) : Filters.ne(field, value);
                     break;
                 case ">=":
-                    ret = Filters.gte(field, value);
+                    ret = innerCond ? new Document("$gte", List.of(field, value)) : Filters.gte(field, value);
                     break;
                 case "<=":
-                    ret = Filters.lte(field, value);
+                    ret = innerCond ? new Document("$lte", List.of(field, value)) : Filters.lte(field, value);
                     break;
                 case ">":
-                    ret = Filters.gt(field, value);
+                    ret = innerCond ? new Document("$gt", List.of(field, value)) : Filters.gt(field, value);
                     break;
                 case "<":
-                    ret = Filters.lt(field, value);
+                    ret = innerCond ? new Document("$lt", List.of(field, value)) : Filters.lt(field, value);
                     break;
             }
         }
@@ -216,18 +146,174 @@ public class ConditionUtil {
     }
 
     /**
+     * Generate a single bson filter by key / value. return null if invalid
+     *
+     * @param key
+     * @param value
+     * @param filterOptions
+     * @return single bson filter
+     */
+    public static Bson toBsonFilter(String key, Object value, FilterOptions filterOptions) {
+
+        Bson ret = null;
+
+        if (StringUtils.isEmpty(key)) {
+            // Ignore when key is empty
+            return null;
+        }
+
+        // preprocess for JOIN
+        // convert "area.city.street.rooms.floor" to "floor" to get ready for "$elemMatch";
+        var originKey = key;
+        var joinKey = filterOptions.join.stream().filter( joinPart -> StringUtils.startsWith(originKey, joinPart)).findFirst();
+
+        var elemMatch = false;
+        if(joinKey.isPresent()){
+            key = StringUtils.removeStart(key, joinKey.get() + ".");
+            elemMatch = true;
+        }
+
+        var matcher = simpleExpressionPattern.matcher(key);
+        if (matcher.matches()) {
+            var field = matcher.group(1).trim();
+            var operator = matcher.group(2).trim();
+
+            switch (operator) {
+                case "=":
+                case "!=":
+                case ">=":
+                case "<=":
+                case ">":
+                case "<":
+                    ret = generateExpression(field, operator, value, filterOptions);
+                    break;
+                case "LIKE":
+                    // Convert SQL-like wildcards to MongoDB regex equivalents
+                    String regexValue = value.toString()
+                            .replace("%", ".*")  // % to match any number of characters
+                            .replace("_", ".");  // _ to match exactly one character
+                    ret = Filters.regex(field, regexValue);
+                    break;
+                case "STARTSWITH":
+                    ret = Filters.regex(field, "^" + Pattern.quote(value.toString()));
+                    break;
+                case "ENDSWITH":
+                    ret = Filters.regex(field, Pattern.quote(value.toString()) + "$");
+                    break;
+                case "CONTAINS":
+                    ret = Filters.regex(field, ".*" + Pattern.quote(value.toString()) + ".*");
+                    break;
+                case "RegexMatch":
+                    ret = Filters.regex(field, value.toString());
+                    break;
+                case "IS_DEFINED":
+                    ret = Filters.exists(field, Boolean.valueOf(value.toString()));
+                    break;
+                case "IS_NULL":
+                    if (Boolean.valueOf(value.toString())) {
+                        // IS_NULL = true
+                        // IS_NULL means "field exists" AND "value is null"
+                        ret = Filters.and(Filters.exists(field, true), Filters.eq(field, null));
+                    } else {
+                        // IS_NULL = false
+                        // "IS_NULL= false" means "field not exists" OR "value not null"
+                        ret = Filters.or(Filters.exists(field, false), Filters.ne(field, null));
+                    }
+                    break;
+                case "IS_NUMBER":
+                    if (Boolean.valueOf(value.toString())) {
+                        // IS_NUMBER = true
+                        ret = Filters.type(field, "number");
+                    } else {
+                        // IS_NUMBER = false
+                        ret = Filters.not(Filters.type(field, "number"));
+                    }
+                    break;
+                case "ARRAY_CONTAINS":
+                    // eq does the job
+                    // https://www.mongodb.com/docs/manual/tutorial/query-arrays/?msockid=07d12f08b23369f53c0f3b60b31168fe#query-an-array-for-an-element
+                    ret = Filters.eq(field, value);
+                    break;
+                case "ARRAY_CONTAINS_ANY":
+                    if(value instanceof Collection){
+                        ret = Filters.in(field, (Collection<?>) value);
+                    } else {
+                        ret = Filters.in(field, List.of(value));
+                    }
+                    break;
+                case "ARRAY_CONTAINS_ALL":
+                    ret = Filters.all(field, (Collection<?>) value);
+                    break;
+                case "IN":
+                    ret = Filters.in(field, (Collection<?>) value);
+                    break;
+                default:
+                    break;
+            }
+        } else if (key.startsWith("$OR")) {
+            if (value instanceof Collection<?>) {
+                ret = Filters.or(toBsonFilters((Collection<?>) value, filterOptions));
+            } else if (value instanceof Condition) {
+                ret = Filters.or(toBsonFilters(List.of(value), filterOptions));
+            } else if (value instanceof Map<?, ?>) {
+                ret = Filters.or(toBsonFilters(List.of(value), filterOptions));
+            } else {
+                throw new IllegalArgumentException("$OR 's filter is not correct. expect Collection/Map/Condition:" + value);
+            }
+        } else if (key.startsWith("$AND")) {
+            if (value instanceof Collection<?>) {
+                ret = Filters.and(toBsonFilters((Collection<?>) value, filterOptions));
+            } else if (value instanceof Condition) {
+                ret = Filters.and(toBsonFilters(List.of(value), filterOptions));
+            } else if (value instanceof Map<?, ?>) {
+                ret = Filters.and(toBsonFilters(List.of(value), filterOptions));
+            } else {
+                throw new IllegalArgumentException("$AND 's filter is not correct. expect Collection/Map/Condition:" + value);
+            }
+
+        } else if (key.startsWith("$NOT")) {
+            if (value instanceof Collection<?>) {
+                ret = Filters.not(Filters.and(toBsonFilters((Collection<?>) value, filterOptions)));
+            } else if (value instanceof Condition) {
+                ret = Filters.not(toBsonFilter((Condition) value, filterOptions));
+            } else if (value instanceof Map<?, ?>) {
+                ret = Filters.not(toBsonFilter((Map<String, Object>) value, filterOptions));
+            } else {
+                throw new IllegalArgumentException("$NOT 's filter is not correct. expect Collection/Map/Condition:" + value);
+            }
+        } else {
+            if (value instanceof Collection<?>) {
+                // the same as IN
+                var coll = (Collection<?>) value;
+                ret = Filters.in(key, coll);
+            } else {
+                // normal eq filter. and support $fieldA = $fieldB case
+                ret = generateExpression(key, "=", value, filterOptions);
+            }
+        }
+
+        // finally add "$elemMatch" for JOIN
+        if(elemMatch && ret != null){
+            ret = Filters.elemMatch(joinKey.get(), ret);
+        }
+
+        return ret;
+    }
+
+
+    /**
      * convert list of maps for nested queries
      *
      * @param subFilters
      * @return bson filters
      */
-    static List<Bson> toBsonFilters(Collection<?> subFilters) {
+    static List<Bson> toBsonFilters(Collection<?> subFilters, FilterOptions filterOptions) {
         List<Bson> bsonFilters = new ArrayList<>();
         for (var filter : subFilters) {
             if (filter instanceof Condition) {
-                bsonFilters.add(toBsonFilter((Condition) filter));
+                bsonFilters.add(toBsonFilter((Condition) filter, filterOptions));
             } else if (filter instanceof Map<?, ?>) {
-                bsonFilters.add(toBsonFilter((Map<String, Object>) filter));
+                bsonFilters.add(toBsonFilter((Map<String, Object>) filter, filterOptions));
             } else {
                 throw new IllegalArgumentException("subFilters' type is not valid. expect Condition or Map<String, Object: " + subFilters);
             }
@@ -245,14 +331,39 @@ public class ConditionUtil {
         if (cond == null) {
             return null;
         }
+
+        var filterOptions = FilterOptions.create().join(cond.join);
+
         if (!cond.negative) {
             // a normal filter
-            return toBsonFilter(cond.filter);
+            return toBsonFilter(cond.filter, filterOptions);
         } else {
             // process a NOT filter
-            return Filters.not(toBsonFilter(cond.filter));
+            return Filters.not(toBsonFilter(cond.filter, filterOptions));
         }
     }
+
+    /**
+     * Convert cond obj to bson filter for mongo
+     *
+     * @param cond
+     * @param filterOptions
+     * @return bson filter
+     */
+    public static Bson toBsonFilter(Condition cond, FilterOptions filterOptions) {
+        if (cond == null) {
+            return null;
+        }
+
+        if (!cond.negative) {
+            // a normal filter
+            return toBsonFilter(cond.filter, filterOptions);
+        } else {
+            // process a NOT filter
+            return Filters.not(toBsonFilter(cond.filter, filterOptions));
+        }
+    }
+
 
     /**
      * Convert List.of("id", "DESC") or List.of("_ts", "ASC") to bson sort for mongo
@@ -347,6 +458,27 @@ public class ConditionUtil {
             ret.add(field);
         }
         return ret;
+    }
+
+    /**
+     * Generate a nested structure for $mergeObjects
+     *
+     * @param fieldName
+     * @param replaceFieldName
+     * @return the result bson representing the nested parts
+     */
+    public static Bson generateMergeObjects(String fieldName, String replaceFieldName) {
+
+        var fields = List.of(fieldName.split("\\.")); // Split fieldName into its parts
+
+        // Start with the replace field
+        var current = new Document(fields.get(fields.size() - 1), "$" + replaceFieldName);
+
+        // Build the nested structure from the bottom up
+        for (int i = fields.size() - 2; i >= 0; i--) {
+            current = new Document(fields.get(i), current);
+        }
+        return current;
     }
 }
 

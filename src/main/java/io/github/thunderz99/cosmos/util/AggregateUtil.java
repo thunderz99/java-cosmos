@@ -58,11 +58,12 @@ public class AggregateUtil {
 
     /**
      * Replace dot "." to "__" because aggregate pipeline does not allow field including "."
+     *
      * @param field
      * @return field name without dot
      */
-    static String convertFieldNameIncludingDot(String field) {
-        if(StringUtils.isEmpty(field)){
+    public static String convertFieldNameIncludingDot(String field) {
+        if (StringUtils.isEmpty(field)) {
             return field;
         }
 

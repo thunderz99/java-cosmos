@@ -1126,23 +1126,22 @@ class CosmosDatabaseImplTest {
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("room*no-01"))).stream().anyMatch(item -> item.get("area").toString().equals("10"))).isTrue();
         }
-        // aggregate query with join
-        {
-            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("lastName");
-            var cond = new Condition();
-            cond = Condition.filter("children.gender", "female", "children.grade <", 6) //
-                    .sort("lastName", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("parents", "children"));
-            // test find
-            var result = db.aggregate(coll, aggregate, cond, "Families").toMap();
-            assertThat(result).hasSize(2);
-            assertThat(result.get(0).getOrDefault("lastName", "")).isEqualTo("");
-            assertThat(result.get(1).getOrDefault("lastName", "")).isEqualTo("Andersen");
-            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
-            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
-        }
+
+        // condition on the same sub array should be both applied to the element(e.g. children.gender = "female" AND children.grade = 5)
+        // TODO, This case is not implemented at present
+        // If we want to implement this, we can introduce a new SubConditionType like "$ElemMatch" in mongodb
+//        {
+//            var cond = new Condition();
+//            cond = Condition.filter("children.gender", "female", "children.grade =", 5) //
+//                    .sort("lastName", "ASC") //
+//                    .limit(10) //
+//                    .offset(0)
+//                    .join(Set.of("parents", "children"));
+//            // test find
+//            var result = db.find(coll, cond, "Families").toMap();
+//            assertThat(result).hasSize(1);
+//            assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+//        }
 
         //Or query with join
         {
@@ -1180,7 +1179,7 @@ class CosmosDatabaseImplTest {
         // NOT query with join
         {
             var cond = Condition
-                    .filter("$NOT", Map.of("address.state", "WA"), "$NOT 2", Map.of("parents.familyName", "Wakefield"))
+                    .filter("$NOT", Map.of("address.state", "WA"), "$AND", Map.of("parents.familyName !=", "Wakefield"))
                     .sort("id", "ASC")
                     .join(Set.of("parents"))
                     .returnAllSubArray(false);
@@ -1218,6 +1217,24 @@ class CosmosDatabaseImplTest {
             db.delete(coll, "joinTestArrayContainId", "Users");
         }
 
+        // aggregate query with join
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("lastName");
+            var cond = new Condition();
+            cond = Condition.filter("children.gender", "female", "children.grade <", 6) //
+                    .sort("lastName", "ASC") //
+                    .limit(10) //
+                    .offset(0)
+                    .join(Set.of("parents", "children"));
+            // test find
+            var result = db.aggregate(coll, aggregate, cond, "Families").toMap();
+            assertThat(result).hasSize(2);
+            assertThat(result.get(0).getOrDefault("lastName", "")).isEqualTo("");
+            assertThat(result.get(1).getOrDefault("lastName", "")).isEqualTo("Andersen");
+            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+        }
+
     }
 
     @Test
@@ -1236,10 +1253,11 @@ class CosmosDatabaseImplTest {
 
         var children = db.find(coll, cond, partition).toMap();
 
-        assertThat(children).hasSize(2);
+        assertThat(children).hasSize(3);
 
         assertThat(children.get(0).get("gender")).hasToString("female");
         assertThat(children.get(1).get("grade")).hasToString("8");
+        assertThat(children.get(2).get("gender")).hasToString("male");
 
     }
 

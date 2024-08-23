@@ -19,7 +19,14 @@
         "familyName": "Miller",
          "givenName": "Lisa",
          "gender": "female",
-         "grade": 8 }
+         "grade": 8
+      },
+      {
+          "familyName": "Miller",
+          "givenName": "Tom",
+          "gender": "male",
+          "grade": 5
+      }
   ],
   "address": { "state": "NY", "county": "Manhattan", "city": "NY" },
   "creationDate": 1431620462,

@@ -5,6 +5,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import com.azure.cosmos.CosmosContainer;
+import com.azure.cosmos.implementation.guava25.collect.Lists;
 import com.azure.cosmos.models.CosmosBatch;
 import com.azure.cosmos.models.CosmosBatchOperationResult;
 import com.azure.cosmos.models.CosmosQueryRequestOptions;
@@ -15,10 +16,7 @@ import com.mongodb.client.model.*;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
-import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
-import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
-import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
-import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.dto.*;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
@@ -455,6 +453,11 @@ public class MongoDatabaseImpl implements CosmosDatabase {
      */
 
     public CosmosDocumentList find(String coll, Condition cond, String partition) throws Exception {
+
+        if (cond == null) {
+            cond = new Condition();
+        }
+
         var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
         // TODO crossPartition query
@@ -488,6 +491,153 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         }
 
         return ret;
+
+    }
+
+    /**
+     * Find documents when join is used. In mongo this is implemented by aggregate pipeline and $unwind stage
+     * <p>
+     *     Not work. This will be deleted soon
+     * </p>
+     *
+     * @param coll
+     * @param cond
+     * @param partition
+     * @return documents
+     */
+    @Deprecated
+    CosmosDocumentList findWithJoin_deprecated(String coll, Condition cond, String partition) {
+
+        Checker.check(CollectionUtils.isNotEmpty(cond.join), "join cannot be empty in findWithJoin");
+        Checker.check(!cond.negative, "Top negative of find with join is not supported");
+
+        var filterCondition = FilterOptions.create().join(cond.join).innerCond(true);
+
+        var container = this.client.getDatabase(coll).getCollection(partition);
+
+        // Split the condition.filter to 2 types:
+        // LEFT: filter that has no relationship to JOIN, which can be executed at the very beginning
+        // RIGHT: filter whose field is part of JOIN, which must be executed in the $project's $filter parts
+
+        var pair = JoinUtil.splitFilters(cond.filter, cond.join);
+
+        // Create the aggregation pipeline stages
+        var pipeline = new ArrayList<Bson>();
+
+        // 1. Add the first $match stage based on the LEFT filter, which narrows the pipeline significantly.
+        // Process the condition into a BSON filter
+        var leftFilter = ConditionUtil.toBsonFilter(pair.getLeft(), filterCondition);
+
+        // Add the match stage based on the left filter
+        if (leftFilter != null) {
+            pipeline.add(Aggregates.match(leftFilter));
+        }
+
+        // 2. Add the $project stage to filter(using $filter) values in arrays specified by cond.join
+        var projectFields = new Document();
+        projectFields.append("original", "$$ROOT");
+
+        var rightFilter = pair.getRight();
+
+        for (var joinField : cond.join) {
+            // Generate a new field for each join-related field with the matching logic
+            var matchingFieldName = "matching_" + AggregateUtil.convertFieldNameIncludingDot(joinField);
+            var fieldNameInDocument = "$" + joinField;
+
+            // extract the joinFilter starts with the same joinField
+            var joinFilter = rightFilter.entrySet().stream()
+                    .filter(entry -> entry.getKey().startsWith(joinField))
+                    .collect(Collectors.toMap(
+                            entry -> entry.getKey().substring(joinField.length() + 1), // Remove the joinField prefix
+                            Map.Entry::getValue
+                    ));
+
+            // Create the BSON expression for the filtered field
+
+            // Construct the filter condition as needed
+            var filterConditions = new ArrayList<Bson>();
+            joinFilter.forEach((key, value) -> {
+                var singleFilter = ConditionUtil.toBsonFilter("$$this." + key, value, filterCondition);
+                if (singleFilter != null) {
+                    filterConditions.add(singleFilter);
+                }
+            });
+
+            // Assuming only one condition to match, you can use $and or just directly the condition
+            projectFields.append(matchingFieldName, new Document("$filter",
+                    new Document("input", fieldNameInDocument)
+                            .append("cond", filterConditions.size() == 1 ? filterConditions.get(0) : Filters.and(filterConditions))
+            ));
+        }
+
+        pipeline.add(Aggregates.project(projectFields));
+
+        // 3. Add the $match stage to match only documents where there are non-empty AND non-null matched elements
+        var matchConditions = new ArrayList<Bson>();
+        for (var joinField : cond.join) {
+            var matchingFieldName = "matching_" + AggregateUtil.convertFieldNameIncludingDot(joinField);
+            matchConditions.add(Filters.and(
+                    Filters.ne(matchingFieldName, null),
+                    Filters.ne(matchingFieldName, List.of())
+            ));
+        }
+        if (!matchConditions.isEmpty()) {
+            pipeline.add(Aggregates.match(Filters.and(matchConditions)));
+        }
+
+        // 4. Merge the original document with the new fields using $replaceRoot and $mergeObjects
+        var mergeObjectsFields = new ArrayList<>();
+        mergeObjectsFields.add("$original");
+        for (var joinField : cond.join) {
+            var matchingFieldName = "matching_" + AggregateUtil.convertFieldNameIncludingDot(joinField);
+            mergeObjectsFields.add(new Document(matchingFieldName, "$" + matchingFieldName));
+        }
+
+        pipeline.add(Aggregates.replaceRoot(new Document("$mergeObjects", mergeObjectsFields)));
+
+
+        // 5. if returnAllSubArray is false, replace the original documents' array with matched elements only
+        /*
+        // Use $replaceWith to replace nested fields
+          {
+            $replaceWith: {
+              $mergeObjects: [
+                "$$ROOT",
+                {
+                  area: {
+                    city: {
+                      street: {
+                        name: "$area.city.street.name",  // Preserve original street name
+                        rooms: "$matching_area__city__street__name"  // Replace rooms with matched rooms
+                      }
+                    }
+                  }
+                },
+                {
+                  "room*no-01": "$matching_room*no-01"  // Replace room*no-01 with matched elements
+                }
+              ]
+            }
+          }
+         */
+        if(!cond.returnAllSubArray){
+
+            List<Object> mergesTargets = Lists.newArrayList("$$ROOT");
+
+            for(var joinField : cond.join){
+                mergesTargets.add(ConditionUtil.generateMergeObjects(joinField, "matching_" + AggregateUtil.convertFieldNameIncludingDot(joinField)));
+            }
+
+            // add a replaceWith stage
+            pipeline.add(Aggregates.replaceWith(new Document("$mergeObjects", mergesTargets)));
+
+        }
+
+        // Execute the aggregation pipeline
+        var results = container.aggregate(pipeline).into(new ArrayList<>());
+
+        // Return the results as CosmosDocumentList
+        return new CosmosDocumentList(results);
 
     }
 
@@ -572,38 +722,6 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         }
 
         return result;
-    }
-
-    /**
-     * Init the select part of join
-     *
-     * @param cond      condition
-     * @param querySpec query spec
-     * @param keyMap    join part map
-     * @return select part
-     */
-    private String initJoinSelectPart(Condition cond, CosmosSqlQuerySpec querySpec, Map<String, String[]> keyMap) {
-        StringBuilder queryText = new StringBuilder();
-
-        var originSelectPart = querySpec.getQueryText().substring(0, querySpec.getQueryText().indexOf("WHERE"));
-        queryText.append(String.format("SELECT DISTINCT (%s) c", originSelectPart));
-
-        int count = 0;
-
-        for (Map.Entry<String, List<String>> condText : cond.joinCondText.entrySet()) {
-            var condList = condText.getValue();
-            var joinPart = condText.getKey();
-            var aliasName = "s" + count++;
-            var condStr = condList.stream().map(item -> item.replace(getFormattedKey(joinPart), "s")).collect(Collectors.joining(" AND "));
-
-            keyMap.put(aliasName, condText.getKey().split("\\."));
-            queryText.append(String.format(", ARRAY(SELECT VALUE s FROM s IN %s WHERE %s) %s", getFormattedKey(condText.getKey()), condStr, aliasName));
-        }
-
-        int startIndex = querySpec.getQueryText().indexOf("FROM c");
-        queryText.append(querySpec.getQueryText().substring(startIndex - 1));
-
-        return queryText.toString();
     }
 
     /**
