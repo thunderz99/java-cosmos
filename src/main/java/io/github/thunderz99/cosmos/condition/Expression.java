@@ -6,6 +6,6 @@ import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 
 public interface Expression {
 
-    public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex);
+    public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex, String selectAlias);
 
 }
