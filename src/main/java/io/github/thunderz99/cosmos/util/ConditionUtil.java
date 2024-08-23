@@ -23,7 +23,8 @@ public class ConditionUtil {
     static final List<String> binaryOperators = List.of(
             "LIKE", "IN", "=", "!=", "<", "<=", ">", ">=",
             "STARTSWITH", "ENDSWITH", "CONTAINS", "RegexMatch",
-            "ARRAY_CONTAINS", "ARRAY_CONTAINS_ANY", "ARRAY_CONTAINS_ALL"
+            "ARRAY_CONTAINS", "ARRAY_CONTAINS_ANY", "ARRAY_CONTAINS_ALL",
+            "IS_DEFINED", "IS_NULL", "IS_NUMBER" // TODO IS_ARRAY, IS_STRING, etc
     );
 
     static final Map<String, String> OPERATOR_MAPPINGS = Map.of(
@@ -37,7 +38,6 @@ public class ConditionUtil {
 
     // Generate the regex pattern using binaryOperators
     public static final Pattern simpleExpressionPattern = Pattern.compile("(.+?)\\s*(" + String.join("|", binaryOperators) + ")\\s*$");
-    ;
 
     /**
      * Convert condition's map filter to bson filter for mongo
@@ -94,6 +94,29 @@ public class ConditionUtil {
                         break;
                     case "RegexMatch":
                         filters.add(Filters.regex(field, value.toString()));
+                        break;
+                    case "IS_DEFINED":
+                        filters.add(Filters.exists(field, Boolean.valueOf(value.toString())));
+                        break;
+                    case "IS_NULL":
+                        if (Boolean.valueOf(value.toString())) {
+                            // IS_NULL = true
+                            // IS_NULL means "field exists" AND "value is null"
+                            filters.add(Filters.and(Filters.exists(field, true), Filters.eq(field, null)));
+                        } else {
+                            // IS_NULL = false
+                            // "IS_NULL= false" means "field not exists" OR "value not null"
+                            filters.add(Filters.or(Filters.exists(field, false), Filters.ne(field, null)));
+                        }
+                        break;
+                    case "IS_NUMBER":
+                        if (Boolean.valueOf(value.toString())) {
+                            // IS_NUMBER = true
+                            filters.add(Filters.type(field, "number"));
+                        } else {
+                            // IS_NUMBER = false
+                            filters.add(Filters.not(Filters.type(field, "number")));
+                        }
                         break;
                     case "ARRAY_CONTAINS":
                         // eq does the job

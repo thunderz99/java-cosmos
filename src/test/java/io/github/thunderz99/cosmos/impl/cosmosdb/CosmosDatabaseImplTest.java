@@ -1419,7 +1419,7 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
-    void dynamic_field_with_hyphen_should_work() throws Exception {
+    void dynamic_field_and_is_defined_should_work() throws Exception {
         var partition = "SheetConents";
 
         var id = "D001"; // form with content
@@ -1433,13 +1433,16 @@ class CosmosDatabaseImplTest {
         var data2 = Map.of("id", id2, formId, formContent2);
 
         var id3 = "D003"; // form is undefined
-        var data3 = Map.of("id", id3);
-
+        var data3 = Map.of("id", id3);  // formContent is undefined
 
         try {
             db.upsert(coll, data, partition);
             db.upsert(coll, data2, partition);
             db.upsert(coll, data3, partition);
+
+            // add a nullValue to document for further test
+            var operations = PatchOperations.create().set("/nullField", null);
+            db.patch(coll, id3, operations, partition);
 
             {
                 // dynamic fields
@@ -1483,13 +1486,49 @@ class CosmosDatabaseImplTest {
             }
 
             {
-                // use rawSql to implement IS_NUMBER
-                var cond1 = Condition.filter("id", id);
-                var cond2 = Condition.rawSql("IS_NUMBER(c.test) = false");
-                var cond = Condition.filter(SubConditionType.AND, List.of(cond1, cond2));
-                var items = db.find(coll, cond, partition).toMap();
-                assertThat(items).hasSize(1);
-                assertThat(items.get(0).get("id")).isEqualTo(id);
+                // IS_NULL = true
+                {   // not exist field
+                    // IS_NULL means "field exists" AND "value is null"
+                    var cond = Condition.filter("id", id, "notExistField IS_NULL", true);
+                    var items = db.find(coll, cond, partition).toMap();
+                    assertThat(items).hasSize(0);
+                }
+                {   // null field
+                    var cond = Condition.filter("nullField IS_NULL", true);
+                    var items = db.find(coll, cond, partition).toMap();
+                    assertThat(items).hasSize(1);
+                    assertThat(items.get(0)).containsEntry("id", id3);
+                }
+
+                {  // not null field
+                    var cond = Condition.filter("id", id, "age IS_NULL", true);
+                    var items = db.find(coll, cond, partition).toMap();
+                    assertThat(items).hasSize(0);
+                }
+            }
+
+            {   // IS_NULL = false
+                {
+                    // notExist field
+                    var cond = Condition.filter("id", id, "notExist IS_NULL", false);
+                    var items = db.find(coll, cond, partition).toMap();
+                    assertThat(items).hasSize(1);
+                    assertThat(items.get(0).get("id")).isEqualTo(id);
+                }
+                {
+                    // null field
+                    var cond = Condition.filter("id", id3, "nullField IS_NULL", false);
+                    var items = db.find(coll, cond, partition).toMap();
+                    assertThat(items).hasSize(0);
+                }
+
+                {  // not null field
+                    var cond = Condition.filter("id", id, "age IS_NULL", false);
+                    var items = db.find(coll, cond, partition).toMap();
+                    assertThat(items).hasSize(1);
+                    assertThat(items.get(0).get("id")).isEqualTo(id);
+                }
+
             }
 
             {
@@ -1527,7 +1566,6 @@ class CosmosDatabaseImplTest {
                 var map2 = JsonUtil.toMap(JsonUtil.toJson(items.get(0).get("sheet-2")));
                 assertThat(map2).containsKey("skills");
                 assertThat(map2.values().toString()).contains("Java", "Python");
-
 
             }
 

@@ -485,14 +485,14 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      */
     public CosmosDocument upsert(String coll, Object data, String partition) throws Exception {
 
-        var map = JsonUtil.toMap(data);
-        var id = map.getOrDefault("id", "").toString();
-
-        Checker.checkNotBlank(id, "id");
-        checkValidId(id);
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotNull(data, "upsert data " + coll + " " + partition);
+
+        var map = JsonUtil.toMap(data);
+        var id = map.getOrDefault("id", "").toString();
+        Checker.checkNotBlank(id, "id");
+        checkValidId(id);
 
         var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
