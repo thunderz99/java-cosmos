@@ -515,6 +515,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     CosmosDocumentList findWithJoin(String coll, Condition cond, String partition) {
 
         Checker.check(CollectionUtils.isNotEmpty(cond.join), "join cannot be empty in findWithJoin");
+        Checker.check(!cond.negative, "Top negative condition is not supported for findWithJoin");
         Checker.check(!cond.returnAllSubArray, "findWithJoin should be used when returnAllSubArray = false");
 
         var container = this.client.getDatabase(coll).getCollection(partition);

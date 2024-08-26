@@ -1268,22 +1268,22 @@ class CosmosDatabaseImplTest {
     public void find_should_work_with_join_using_limit_and_fields() throws Exception {
 
         // find with join, small limit
-//        {
-//            var cond = Condition.filter(SubConditionType.OR, List.of( //
-//                            Condition.filter("parents.firstName", "Thomas"), //
-//                            Condition.filter("id", "WakefieldFamily"))) //
-//                    .sort("id", "ASC")//
-//                    .join(Set.of("parents", "children"))
-//                    .returnAllSubArray(false)
-//                    .offset(0)
-//                    .limit(1);
-//
-//            var result = db.find(coll, cond, "Families").toMap();
-//            assertThat(result).hasSize(1);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
-//            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
-//
-//        }
+        {
+            var cond = Condition.filter(SubConditionType.OR, List.of( //
+                            Condition.filter("parents.firstName", "Thomas"), //
+                            Condition.filter("id", "WakefieldFamily"))) //
+                    .sort("id", "ASC")//
+                    .join(Set.of("parents", "children"))
+                    .returnAllSubArray(false)
+                    .offset(0)
+                    .limit(1);
+
+            var result = db.find(coll, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
+            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
+
+        }
 
         // find with join, set offset
         {
@@ -1304,28 +1304,28 @@ class CosmosDatabaseImplTest {
         }
 
         // find with join, fields
-//        {
-//            var cond = Condition.filter(SubConditionType.OR, List.of( //
-//                            Condition.filter("parents.firstName", "Thomas"), //
-//                            Condition.filter("id", "WakefieldFamily"))) //
-//                    .sort("id", "ASC")//
-//                    .join(Set.of("parents", "children"))
-//                    .returnAllSubArray(false)
-//                    .offset(1)
-//                    .limit(1)
-//                    .fields("id", "parents", "address");
-//
-//            var result = db.find(coll, cond, "Families").toMap();
-//            assertThat(result).hasSize(1);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(2);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("givenName", "Robin");
-//            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
-//            assertThat(result.get(0).get("address")).isNotNull();
-//
-//            // fields excluded
-//            assertThat(result.get(0).get("children")).isNull();
-//            assertThat(result.get(0).get("lastName")).isNull();
-//    }
+        {
+            var cond = Condition.filter(SubConditionType.OR, List.of( //
+                            Condition.filter("parents.firstName", "Thomas"), //
+                            Condition.filter("id", "WakefieldFamily"))) //
+                    .sort("id", "ASC")//
+                    .join(Set.of("parents", "children"))
+                    .returnAllSubArray(false)
+                    .offset(1)
+                    .limit(1)
+                    .fields("id", "parents", "address");
+
+            var result = db.find(coll, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(2);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("givenName", "Robin");
+            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
+            assertThat(result.get(0).get("address")).isNotNull();
+
+            // fields excluded
+            assertThat(result.get(0).get("children")).isNull();
+            assertThat(result.get(0).get("lastName")).isNull();
+        }
 
     }
 
