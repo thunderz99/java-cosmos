@@ -162,13 +162,18 @@ public class ConditionUtil {
             return null;
         }
 
+        // preprocess for "fieldA OR fieldB"
+        if (key.contains(" OR ")) {
+            return generateOrExpression(key, value, filterOptions);
+        }
+
         // preprocess for JOIN
         // convert "area.city.street.rooms.floor" to "floor" to get ready for "$elemMatch";
         var originKey = key;
-        var joinKey = filterOptions.join.stream().filter( joinPart -> StringUtils.startsWith(originKey, joinPart)).findFirst();
+        var joinKey = filterOptions.join.stream().filter(joinPart -> StringUtils.startsWith(originKey, joinPart)).findFirst();
 
         var elemMatch = false;
-        if(joinKey.isPresent()){
+        if (joinKey.isPresent()) {
             key = StringUtils.removeStart(key, joinKey.get() + ".");
             elemMatch = true;
         }
@@ -354,13 +359,52 @@ public class ConditionUtil {
         }
 
         // finally add "$elemMatch" for JOIN
-        if(elemMatch && ret != null){
+        if (elemMatch && ret != null) {
             ret = Filters.elemMatch(joinKey.get(), ret);
         }
 
         return ret;
     }
 
+    /**
+     * Generate bson filter for {"fieldA OR fieldB >=" : 10} using $or
+     *
+     * @param key
+     * @param value
+     * @param filterOptions
+     * @return bson filter for OrExpression
+     */
+    static Bson generateOrExpression(String key, Object value, FilterOptions filterOptions) {
+        if (StringUtils.isEmpty(key)) {
+            return null;
+        }
+
+        var matcher = simpleExpressionPattern.matcher(key);
+        var operator = "";
+        var keyPart = key;
+        List<Map<String, Object>> subFilters = new ArrayList<>();
+
+        if (matcher.matches()) {
+            // "fieldA OR fieldB >=" pattern
+            keyPart = matcher.group(1); // "fieldA OR fieldB"
+            operator = matcher.group(2); // ">="
+        }
+
+        var keys = keyPart.split(" OR ");
+
+        // generate sub filters for $or
+        for (var singleKey : keys) {
+            if (StringUtils.isEmpty(singleKey)) {
+                continue;
+            }
+
+            singleKey = (singleKey + " " + operator).trim();
+            subFilters.add(Map.of(singleKey, value));
+        }
+
+        return toBsonFilter(Map.of("$OR", subFilters), filterOptions);
+
+    }
 
     /**
      * convert list of maps for nested queries

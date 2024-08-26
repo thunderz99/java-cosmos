@@ -227,7 +227,7 @@ public class MongoImpl implements Cosmos {
         try {
             var collection =  database.getCollection(coll);
             log.info("indexes:" + collection.listIndexes());
-            return new io.github.thunderz99.cosmos.dto.CosmosContainerResponse(collection.getNamespace().getCollectionName());
+            return new CosmosContainerResponse(collection.getNamespace().getCollectionName());
         } catch (MongoException me) {
             if (isResourceNotFoundException(me)) {
                 return null;

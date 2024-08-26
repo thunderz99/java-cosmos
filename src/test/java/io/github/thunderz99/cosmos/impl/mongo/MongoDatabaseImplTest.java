@@ -492,6 +492,19 @@ class MongoDatabaseImplTest {
             assertThat(users.get(0)).hasToString(user1.toString());
         }
 
+        // test basic find using OR
+        {
+            var cond = Condition.filter("fullName.first OR fullName.last", "Elise" //
+                    ).sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var users = db.find(host, cond, "Users").toList(FullNameUser.class);
+
+            assertThat(users.size()).isEqualTo(1);
+            assertThat(users.get(0)).hasToString(user1.toString());
+        }
+
         // test reserved word find("end")
         {
             var cond = Condition.filter("fullName.last", "Hanks", //
