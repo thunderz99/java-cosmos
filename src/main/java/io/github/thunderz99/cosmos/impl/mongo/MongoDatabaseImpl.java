@@ -30,7 +30,6 @@ import org.slf4j.LoggerFactory;
 
 import static com.mongodb.client.model.Filters.eq;
 import static com.mongodb.client.model.Projections.*;
-import static io.github.thunderz99.cosmos.condition.Condition.getFormattedKey;
 
 /**
  * Class representing a database instance.
@@ -458,6 +457,12 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             cond = new Condition();
         }
 
+        if (CollectionUtils.isNotEmpty(cond.join) && !cond.returnAllSubArray) {
+            // When doing join and only return the matching part of subArray,
+            // we have to use findWithJoin method, which do a special aggregate pipeline to achieve this
+            return findWithJoin(coll, cond, partition);
+        }
+
         var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
         // TODO crossPartition query
@@ -495,9 +500,11 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     }
 
     /**
-     * Find documents when join is used. In mongo this is implemented by aggregate pipeline and $unwind stage
+     * Find documents when JOIN is used and returnAllSubArray is false.
+     * In mongo this is implemented by aggregate pipeline and using $project stage and $filter
+     *
      * <p>
-     *     Not work. This will be deleted soon
+     * For further information, look at "docs/find-with-join.md"
      * </p>
      *
      * @param coll
@@ -505,8 +512,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
      * @param partition
      * @return documents
      */
-    @Deprecated
-    CosmosDocumentList findWithJoin_deprecated(String coll, Condition cond, String partition) {
+    CosmosDocumentList findWithJoin(String coll, Condition cond, String partition) {
 
         Checker.check(CollectionUtils.isNotEmpty(cond.join), "join cannot be empty in findWithJoin");
         Checker.check(!cond.negative, "Top negative of find with join is not supported");
