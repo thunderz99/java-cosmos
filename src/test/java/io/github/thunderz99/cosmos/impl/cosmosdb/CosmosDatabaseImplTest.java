@@ -20,12 +20,14 @@ import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
 
 class CosmosDatabaseImplTest {
 
@@ -1101,7 +1103,9 @@ class CosmosDatabaseImplTest {
                     .sort("id", "ASC") //
                     .limit(10) //
                     .offset(0)
-                    .join(Set.of("area.city.street.rooms"));
+                    .join(Set.of("area.city.street.rooms"))
+                    .returnAllSubArray(true)
+            ;
 
             result = db.find(coll, cond, "Families").toMap();
             assertThat(result).hasSize(1);
@@ -1125,24 +1129,6 @@ class CosmosDatabaseImplTest {
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("gender").toString().equals("female"))).isTrue();
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
             assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("room*no-01"))).stream().anyMatch(item -> item.get("area").toString().equals("10"))).isTrue();
-        }
-
-        // condition on the same sub array should be both applied to the element(e.g. children.gender = "female" AND children.grade = 5)
-        // TODO, This case is not implemented at present
-        // If we want to implement this, we can introduce a new SubConditionType like "$ElemMatch" in mongodb
-        {
-//            var cond = new Condition();
-//            cond = Condition.filter("children.gender", "female", "children.grade =", 5) //
-//                    .sort("lastName", "ASC") //
-//                    .limit(10) //
-//                    .offset(0)
-//                    .join(Set.of("parents", "children"))
-//                    .returnAllSubArray(false)
-//            ;
-//            // test find
-//            var result = db.find(coll, cond, "Families").toMap();
-//            assertThat(result).hasSize(1);
-//            assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
         }
 
         //Or query with join
@@ -1194,31 +1180,157 @@ class CosmosDatabaseImplTest {
             assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
         }
 
-        var user = new User("joinTestArrayContainId", "firstNameJoin", "lostNameJoin");
-        var userMap = JsonUtil.toMap(user);
-        userMap.put("rooms", List.of(Map.of("no", List.of(1, 2, 3)), Map.of("no", List.of(1, 2, 4))));
-        db.upsert(coll, userMap, "Users").toObject(User.class);
+    }
+
+    @Test
+    public void find_should_work_with_join_using_array_contains() throws Exception {
 
         // ARRAY_CONTAINS query with join
+
+        var id1 = "joinTestArrayContainId";
+        var id2 = "joinTestArrayContainId2";
+        var partition = "Users";
+
+        try {
+            var user = new User(id1, "firstNameJoin", "lastNameJoin");
+            var userMap = JsonUtil.toMap(user);
+            userMap.put("rooms", List.of(Map.of("no", List.of(1, 2, 3)), Map.of("no", List.of(1, 2, 4))));
+            db.upsert(coll, userMap, partition);
+
+
+            var user2 = new User(id2, "firstNameJoin2", "lastNameJoin2");
+            var userMap2 = JsonUtil.toMap(user2);
+            userMap2.put("rooms", List.of(Map.of("no", List.of(4, 5, 6)), Map.of("no", List.of(6, 7, 8))));
+            db.upsert(coll, userMap2, partition);
+
+            {
+                // simple ARRAY_CONTAINS
+                var cond = Condition.filter("rooms.no ARRAY_CONTAINS", 3) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("rooms"))
+                        .returnAllSubArray(false);
+
+                // test find
+                var items = db.find(coll, cond, "Users").toMap();
+
+                assertThat(items).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asInstanceOf(LIST).contains(3);
+                assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
+            }
+            {
+                // ARRAY_CONTAINS_ANY
+                var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", List.of(3, 9)) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("rooms"))
+                        .returnAllSubArray(false);
+
+                // test find
+                var items = db.find(coll, cond, "Users").toMap();
+
+                assertThat(items).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asInstanceOf(LIST).contains(3);
+                assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
+
+            }
+
+            {
+                // ARRAY_CONTAINS_ALL
+                var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ALL", List.of(2, 3)) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("rooms"))
+                        .returnAllSubArray(false);
+
+                // test find
+                var items = db.find(coll, cond, "Users").toMap();
+
+                assertThat(items).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asInstanceOf(LIST).contains(3);
+                assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
+
+            }
+
+        } finally {
+            db.delete(coll, id1, partition);
+            db.delete(coll, id2, partition);
+        }
+    }
+
+    @Test
+    public void find_should_work_with_join_using_limit_and_fields() throws Exception {
+
+        // find with join, small limit
+//        {
+//            var cond = Condition.filter(SubConditionType.OR, List.of( //
+//                            Condition.filter("parents.firstName", "Thomas"), //
+//                            Condition.filter("id", "WakefieldFamily"))) //
+//                    .sort("id", "ASC")//
+//                    .join(Set.of("parents", "children"))
+//                    .returnAllSubArray(false)
+//                    .offset(0)
+//                    .limit(1);
+//
+//            var result = db.find(coll, cond, "Families").toMap();
+//            assertThat(result).hasSize(1);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
+//            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
+//
+//        }
+
+        // find with join, set offset
         {
-            var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", 3) //
-                    .sort("id", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("rooms"))
-                    .returnAllSubArray(false);
+            var cond = Condition.filter(SubConditionType.OR, List.of( //
+                            Condition.filter("parents.firstName", "Thomas"), //
+                            Condition.filter("id", "WakefieldFamily"))) //
+                    .sort("id", "ASC")//
+                    .join(Set.of("parents", "children"))
+                    .returnAllSubArray(false)
+                    .offset(1)
+                    .limit(10);
 
-            // test find
-            var items = db.find(coll, cond, "Users").toMap();
-
-            assertThat(items).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asList().contains(3);
-            assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
-
-            db.delete(coll, "joinTestArrayContainId", "Users");
+            var result = db.find(coll, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(2);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("givenName", "Robin");
+            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
         }
 
+        // find with join, fields
+//        {
+//            var cond = Condition.filter(SubConditionType.OR, List.of( //
+//                            Condition.filter("parents.firstName", "Thomas"), //
+//                            Condition.filter("id", "WakefieldFamily"))) //
+//                    .sort("id", "ASC")//
+//                    .join(Set.of("parents", "children"))
+//                    .returnAllSubArray(false)
+//                    .offset(1)
+//                    .limit(1)
+//                    .fields("id", "parents", "address");
+//
+//            var result = db.find(coll, cond, "Families").toMap();
+//            assertThat(result).hasSize(1);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(2);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("givenName", "Robin");
+//            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
+//            assertThat(result.get(0).get("address")).isNotNull();
+//
+//            // fields excluded
+//            assertThat(result.get(0).get("children")).isNull();
+//            assertThat(result.get(0).get("lastName")).isNull();
+//    }
+
+    }
+
+    @Test
+    public void find_should_work_with_join_together_with_aggregate() throws Exception {
         // aggregate query with join
         {
             var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("lastName");
@@ -1236,7 +1348,29 @@ class CosmosDatabaseImplTest {
             assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
             assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
         }
+    }
 
+    @Disabled
+    /**
+     * TODO, This case is not implemented at present
+     */
+    void find_should_work_with_join_using_elem_match() throws Exception {
+        // condition on the same sub array should be both applied to the element(e.g. children.gender = "female" AND children.grade = 5)
+        // If we want to implement this, we can introduce a new SubConditionType like "$ElemMatch" in mongodb
+        {
+            var cond = new Condition();
+            cond = Condition.filter("children.gender", "female", "children.grade =", 5) //
+                    .sort("lastName", "ASC") //
+                    .limit(10) //
+                    .offset(0)
+                    .join(Set.of("parents", "children"))
+                    .returnAllSubArray(false)
+            ;
+            // test find
+            var result = db.find(coll, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+        }
     }
 
     @Test

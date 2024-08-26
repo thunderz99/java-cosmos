@@ -522,23 +522,30 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // Create the aggregation pipeline stages
         var pipeline = new ArrayList<Bson>();
 
-        // 1. Add the first $match stage based on filter,  which narrows the pipeline significantly.
+        // 1.1 match stage
+        // Add the first $match stage based on filter,  which narrows the pipeline significantly.
         // Process the condition into a BSON filter
+        // @see docs/find-with-join.md
         var filter = ConditionUtil.processNor(ConditionUtil.toBsonFilter(cond));
-
         // Add the match stage based on the filter
         if (filter != null) {
             pipeline.add(Aggregates.match(filter));
         }
 
-        // 2. Add the $project stage to filter(using $filter) values in arrays specified by cond.join
+        // 1.2 sort stage
+        var sort = ConditionUtil.toBsonSort(cond.sort);
+        if (sort != null) {
+            pipeline.add(Aggregates.sort(sort));
+        }
 
-        // Split the condition.filter to 2 types:
-        // LEFT: filter that has no relationship to JOIN, which can be executed at the very beginning
-        // RIGHT: filter whose field is part of JOIN, which must be executed in the $project's $filter parts
+        // 1.3 skip / limit stage
+        pipeline.add(Aggregates.skip(cond.offset));
+        pipeline.add(Aggregates.limit(cond.limit));
 
+        // 2. project stage
+        // Add the $project stage to filter(using $filter) values in arrays specified by cond.join
+        // extract the filters related to join in order to get the matching array elements
         var joinRelatedFilters = JoinUtil.extractJoinFilters(cond.filter, cond.join);
-
 
         var projectStage = new Document();
         projectStage.append("original", "$$ROOT");
@@ -576,20 +583,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         pipeline.add(Aggregates.project(projectStage));
 
-        // 3. Add the $match stage to match only documents where there are non-empty AND non-null matched elements
-        var matchConditions = new ArrayList<Bson>();
-        for (var joinField : cond.join) {
-            var matchingFieldName = "matching_" + AggregateUtil.convertFieldNameIncludingDot(joinField);
-            matchConditions.add(Filters.and(
-                    Filters.ne(matchingFieldName, null),
-                    Filters.ne(matchingFieldName, List.of())
-            ));
-        }
-        if (!matchConditions.isEmpty()) {
-            pipeline.add(Aggregates.match(Filters.and(matchConditions)));
-        }
-
-        // 4. Merge the original document with the new fields using $replaceRoot and $mergeObjects
+        // 3. replaceRoot stage
+        // Merge the original document with the new fields using $replaceRoot and $mergeObjects
         var mergeObjectsFields = new ArrayList<>();
         mergeObjectsFields.add("$original");
         for (var joinField : cond.join) {
@@ -599,8 +594,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         pipeline.add(Aggregates.replaceRoot(new Document("$mergeObjects", mergeObjectsFields)));
 
-
-        // 5. Because returnAllSubArray is false, replace the original documents' array with matched elements only
+        // 4. replaceWith stage
+        // Because returnAllSubArray is false, replace the original documents' array with matched elements only
         /*
         // Use $replaceWith to replace nested fields
           {
@@ -634,12 +629,12 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         pipeline.add(Aggregates.replaceWith(new Document("$mergeObjects", mergesTargets)));
 
 
-        // process sort
-        var sort = ConditionUtil.toBsonSort(cond.sort);
-
-        // process offset / limit
-
-        // process fields
+        // 5 project stage to extract specific fields only
+        var fields = ConditionUtil.processFields(cond.fields);
+        if (!fields.isEmpty()) {
+            // process fields
+            pipeline.add(Aggregates.project(Projections.fields(excludeId(), include(fields))));
+        }
 
         // Execute the aggregation pipeline
         var results = container.aggregate(pipeline).into(new ArrayList<>());

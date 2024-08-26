@@ -230,19 +230,80 @@ public class ConditionUtil {
                     }
                     break;
                 case "ARRAY_CONTAINS":
-                    // eq does the job
-                    // https://www.mongodb.com/docs/manual/tutorial/query-arrays/?msockid=07d12f08b23369f53c0f3b60b31168fe#query-an-array-for-an-element
-                    ret = Filters.eq(field, value);
-                    break;
-                case "ARRAY_CONTAINS_ANY":
-                    if(value instanceof Collection){
-                        ret = Filters.in(field, (Collection<?>) value);
+                    if (filterOptions.innerCond) {
+                        ret = new Document("$in", List.of(value, field));
                     } else {
-                        ret = Filters.in(field, List.of(value));
+                        // eq does the job
+                        // https://www.mongodb.com/docs/manual/tutorial/query-arrays/?msockid=07d12f08b23369f53c0f3b60b31168fe#query-an-array-for-an-element
+                        ret = Filters.eq(field, value);
                     }
                     break;
+                case "ARRAY_CONTAINS_ANY":
+                    Collection<?> collectionValue = null;
+                    if (value instanceof Collection) {
+                        collectionValue = (Collection<?>) value;
+                    } else {
+                        collectionValue = List.of(value);
+                    }
+
+                    if (filterOptions.innerCond) {
+                        // under an inner cond for aggregate pipelines
+                        // $in does not work for aggregation, we have to utilize $setIntersection
+                        /* e.g.
+                        $project: {
+                          original: "$$ROOT",  // Include all original fields
+                          // Filter the "rooms" array to include only those elements with a 'no' array containing 3 or 5
+                          matchingRooms: {
+                            $filter: {
+                              input: "$rooms",
+                              cond: {
+                                $gt: [
+                                  { $size: { $setIntersection: ["$$this.no", [3, 5]] } },
+                                  0
+                                ]  // Check if the intersection of the 'no' array and [3, 5] has more than 0 elements
+                              }
+                            }
+                          }
+                        }
+                         */
+                        ret = new Document("$gt", List.of(new Document("$size",
+                                new Document("$setIntersection", List.of(field, collectionValue))), 0));
+                    } else {
+                        // normal query filter
+                        ret = Filters.in(field, collectionValue);
+                    }
+
+                    break;
                 case "ARRAY_CONTAINS_ALL":
-                    ret = Filters.all(field, (Collection<?>) value);
+                    Collection<?> collectionValueAll = null;
+                    if (value instanceof Collection) {
+                        collectionValueAll = (Collection<?>) value;
+                    } else {
+                        collectionValueAll = List.of(value);
+                    }
+
+                    if (filterOptions.innerCond) {
+                        // under an inner cond for aggregate pipelines
+                        // $in does not work for aggregation, we have to utilize $setIsSubset
+                        /* e.g.
+                        $project: {
+                          original: "$$ROOT",  // Include all original fields
+                          // Filter the "rooms" array to include only those elements with a 'no' array containing both 2 and 3
+                          matchingRooms: {
+                            $filter: {
+                              input: "$rooms",
+                              cond: {
+                                $setIsSubset: [[2, 3], "$$this.no"]  // Check if [2, 3] is a subset of the 'no' array
+                              }
+                            }
+                          }
+                        }
+                         */
+                        ret = new Document("$setIsSubset", List.of(collectionValueAll, field));
+                    } else {
+                        // normal query filter
+                        ret = Filters.all(field, collectionValueAll);
+                    }
                     break;
                 case "IN":
                     ret = Filters.in(field, (Collection<?>) value);

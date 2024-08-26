@@ -14,7 +14,7 @@ public class FilterOptions extends RecordData{
     public Set<String> join = new LinkedHashSet<>();
 
     /**
-     * If we are in a inner condition for an aggregate pipeline's $filter / cond
+     * If we are in an inner condition for an aggregate pipeline's $filter / cond
      */
     public boolean innerCond = false;
 

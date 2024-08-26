@@ -155,35 +155,24 @@ db.Families.aggregate([
     $project: {
       original: "$$ROOT",  // Include all original fields
       // Keep the full "area.city.street.rooms" array and filter for the matched elements using $$this
-      matching_area__city__street__rooms: {
+      "matching_area__city__street__rooms": {
         $filter: {
           input: "$area.city.street.rooms",
           cond: {
-            $and: [
+            $or: [
               { $eq: ["$$this.area", 10] },  // Using $$this to match rooms with area 10
-              { $lt: ["$$this.floor", 5] }    // Condition to match rooms where floor < 5
+              { $eq: ["$id", "WakefieldFamily"] }    
             ]
           }
         }
       },
       // Keep the full "room*no-01" array and filter for the matched elements
-      matching_room*no-01: {
+      "matching_room*no-01": {
         $filter: {
           input: "$room*no-01",
           cond: { $eq: ["$$this.area", 10] }  // Using $$this to match rooms with area 10
         }
       }
-    }
-  },
-  // Match only documents where there are non-empty matched elements
-  {
-    $match: {
-      $and: [
-        { matching_area__city__street__rooms: { $ne: null } },  // Check that matchingRooms is not null
-        { matching_area__city__street__rooms: { $ne: [] } },    // Check that matchingRooms is not empty
-        { matching_room*no-01: { $ne: null } },  // Check that matchingRoomNo01 is not null
-        { matching_room*no-01: { $ne: [] } }     // Check that matchingRoomNo01 is not empty
-      ]
     }
   },
   // Merge the original document with the new fields using $replaceRoot and $mergeObjects
@@ -192,8 +181,8 @@ db.Families.aggregate([
       newRoot: {
         $mergeObjects: [
           "$original",  // Include all original fields
-          { matching_area__city__street__rooms: "$matching_area__city__street__rooms" },  // Add the filtered "matching_area__city__street__rooms"
-          { matching_room*no-01: "$matching_room*no-01" }  // Add the filtered "matching_room*no-01"
+          { "matching_area__city__street__rooms": "$matching_area__city__street__rooms" },  // Add the filtered "matching_area__city__street__rooms"
+          { "matching_room*no-01": "$matching_room*no-01" }  // Add the filtered "matching_room*no-01"
         ]
       }
     }
@@ -217,6 +206,16 @@ db.Families.aggregate([
           "room*no-01": "$matching_room*no-01"  // Replace room*no-01 with matched elements
         }
       ]
+    }
+  },
+  // Final project stage to include only specific fields
+  {
+    $project: {
+      id: 1,
+      lastName: 1,
+      parents: 1,
+      children: 1,
+      address: 1
     }
   }
 ]);
