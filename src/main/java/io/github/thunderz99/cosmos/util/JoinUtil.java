@@ -1,10 +1,11 @@
 package io.github.thunderz99.cosmos.util;
 
-import java.util.HashMap;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.lang3.tuple.Pair;
+import io.github.thunderz99.cosmos.condition.Condition;
 
 /**
  * util class that help to generate query bson involving JOIN for mongodb
@@ -12,16 +13,19 @@ import org.apache.commons.lang3.tuple.Pair;
 public class JoinUtil {
 
     /**
-     * Split the condition's filter to 2 types:
-     * LEFT: filter that has no relationship to JOIN, which can be executed at the very beginning
-     * RIGHT: filter whose field is part of JOIN, which must be executed in the $project's $filter parts
+     * Extract the filters used in join, so that we can get the only matching elements in sub array.
+     *
      * @param filter e.g. Map.of("lastName !=", "Andersen", "area.city.street.rooms.no =", "001", "tags.id", 10)
-     * @param join e.g. Set.of("area.city.street.rooms", "tags")
-     * @return pair of filters
+     * @param join   e.g. Set.of("area.city.street.rooms", "tags")
+     * @return filters that is related to join TODO add unit test
      */
-    public static Pair<Map<String, Object>, Map<String, Object>> splitFilters(Map<String, Object> filter, Set<String> join) {
-        var leftFilters = new HashMap<String, Object>();
-        var rightFilters = new HashMap<String, Object>();
+    public static Map<String, Object> extractJoinFilters(Map<String, Object> filter, Set<String> join) {
+
+        var joinRelatedFilters = new LinkedHashMap<String, Object>();
+
+        if (filter == null || join == null) {
+            return joinRelatedFilters;
+        }
 
         // Iterate over each entry in the filter map
         for (Map.Entry<String, Object> entry : filter.entrySet()) {
@@ -32,12 +36,44 @@ public class JoinUtil {
             boolean isJoinRelated = join.stream().anyMatch(field::startsWith);
 
             if (isJoinRelated) {
-                rightFilters.put(field, value);
+                joinRelatedFilters.put(field, value);
             } else {
-                leftFilters.put(field, value);
+                // for nested queries
+                if (value instanceof Condition) {
+                    joinRelatedFilters.putAll(extractJoinFilters(((Condition) value).filter, join));
+                } else if (value instanceof Collection<?>) {
+                    for (var subFilter : (Collection<?>) value) {
+                        joinRelatedFilters.putAll(extractJoinFilters((Collection<?>) value, join));
+                    }
+                } else if (value instanceof Map<?, ?>) {
+                    joinRelatedFilters.putAll(extractJoinFilters((Map<String, Object>) value, join));
+                }
+            }
+        }
+        return joinRelatedFilters;
+    }
+
+    /**
+     * extract join related filter from a collection of sub filters
+     *
+     * @param subFilters
+     * @param join
+     * @return join related filter
+     */
+    static Map<String, Object> extractJoinFilters(Collection<?> subFilters, Set<String> join) {
+
+        var ret = new LinkedHashMap<String, Object>();
+
+        for (var filter : subFilters) {
+            if (filter instanceof Condition) {
+                ret.putAll(extractJoinFilters(((Condition) filter).filter, join));
+            } else if (filter instanceof Collection<?>) {
+                ret.putAll(extractJoinFilters((Collection<?>) filter, join));
+            } else if (filter instanceof Map<?, ?>) {
+                ret.putAll(extractJoinFilters((Map<String, Object>) filter, join));
             }
         }
 
-        return Pair.of(leftFilters, rightFilters);
+        return ret;
     }
 }

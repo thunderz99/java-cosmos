@@ -515,35 +515,33 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     CosmosDocumentList findWithJoin(String coll, Condition cond, String partition) {
 
         Checker.check(CollectionUtils.isNotEmpty(cond.join), "join cannot be empty in findWithJoin");
-        Checker.check(!cond.negative, "Top negative of find with join is not supported");
-
-        var filterCondition = FilterOptions.create().join(cond.join).innerCond(true);
+        Checker.check(!cond.returnAllSubArray, "findWithJoin should be used when returnAllSubArray = false");
 
         var container = this.client.getDatabase(coll).getCollection(partition);
+
+        // Create the aggregation pipeline stages
+        var pipeline = new ArrayList<Bson>();
+
+        // 1. Add the first $match stage based on filter,  which narrows the pipeline significantly.
+        // Process the condition into a BSON filter
+        var filter = ConditionUtil.processNor(ConditionUtil.toBsonFilter(cond));
+
+        // Add the match stage based on the filter
+        if (filter != null) {
+            pipeline.add(Aggregates.match(filter));
+        }
+
+        // 2. Add the $project stage to filter(using $filter) values in arrays specified by cond.join
 
         // Split the condition.filter to 2 types:
         // LEFT: filter that has no relationship to JOIN, which can be executed at the very beginning
         // RIGHT: filter whose field is part of JOIN, which must be executed in the $project's $filter parts
 
-        var pair = JoinUtil.splitFilters(cond.filter, cond.join);
+        var joinRelatedFilters = JoinUtil.extractJoinFilters(cond.filter, cond.join);
 
-        // Create the aggregation pipeline stages
-        var pipeline = new ArrayList<Bson>();
 
-        // 1. Add the first $match stage based on the LEFT filter, which narrows the pipeline significantly.
-        // Process the condition into a BSON filter
-        var leftFilter = ConditionUtil.toBsonFilter(pair.getLeft(), filterCondition);
-
-        // Add the match stage based on the left filter
-        if (leftFilter != null) {
-            pipeline.add(Aggregates.match(leftFilter));
-        }
-
-        // 2. Add the $project stage to filter(using $filter) values in arrays specified by cond.join
-        var projectFields = new Document();
-        projectFields.append("original", "$$ROOT");
-
-        var rightFilter = pair.getRight();
+        var projectStage = new Document();
+        projectStage.append("original", "$$ROOT");
 
         for (var joinField : cond.join) {
             // Generate a new field for each join-related field with the matching logic
@@ -551,7 +549,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             var fieldNameInDocument = "$" + joinField;
 
             // extract the joinFilter starts with the same joinField
-            var joinFilter = rightFilter.entrySet().stream()
+            var joinFilter = joinRelatedFilters.entrySet().stream()
                     .filter(entry -> entry.getKey().startsWith(joinField))
                     .collect(Collectors.toMap(
                             entry -> entry.getKey().substring(joinField.length() + 1), // Remove the joinField prefix
@@ -563,20 +561,20 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             // Construct the filter condition as needed
             var filterConditions = new ArrayList<Bson>();
             joinFilter.forEach((key, value) -> {
-                var singleFilter = ConditionUtil.toBsonFilter("$$this." + key, value, filterCondition);
+                var singleFilter = ConditionUtil.toBsonFilter("$$this." + key, value, FilterOptions.create().join(cond.join).innerCond(true));
                 if (singleFilter != null) {
                     filterConditions.add(singleFilter);
                 }
             });
 
             // Assuming only one condition to match, you can use $and or just directly the condition
-            projectFields.append(matchingFieldName, new Document("$filter",
+            projectStage.append(matchingFieldName, new Document("$filter",
                     new Document("input", fieldNameInDocument)
                             .append("cond", filterConditions.size() == 1 ? filterConditions.get(0) : Filters.and(filterConditions))
             ));
         }
 
-        pipeline.add(Aggregates.project(projectFields));
+        pipeline.add(Aggregates.project(projectStage));
 
         // 3. Add the $match stage to match only documents where there are non-empty AND non-null matched elements
         var matchConditions = new ArrayList<Bson>();
@@ -602,7 +600,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         pipeline.add(Aggregates.replaceRoot(new Document("$mergeObjects", mergeObjectsFields)));
 
 
-        // 5. if returnAllSubArray is false, replace the original documents' array with matched elements only
+        // 5. Because returnAllSubArray is false, replace the original documents' array with matched elements only
         /*
         // Use $replaceWith to replace nested fields
           {
@@ -626,18 +624,22 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             }
           }
          */
-        if(!cond.returnAllSubArray){
+        List<Object> mergesTargets = Lists.newArrayList("$$ROOT");
 
-            List<Object> mergesTargets = Lists.newArrayList("$$ROOT");
-
-            for(var joinField : cond.join){
-                mergesTargets.add(ConditionUtil.generateMergeObjects(joinField, "matching_" + AggregateUtil.convertFieldNameIncludingDot(joinField)));
-            }
-
-            // add a replaceWith stage
-            pipeline.add(Aggregates.replaceWith(new Document("$mergeObjects", mergesTargets)));
-
+        for (var joinField : cond.join) {
+            mergesTargets.add(ConditionUtil.generateMergeObjects(joinField, "matching_" + AggregateUtil.convertFieldNameIncludingDot(joinField)));
         }
+
+        // add a replaceWith stage
+        pipeline.add(Aggregates.replaceWith(new Document("$mergeObjects", mergesTargets)));
+
+
+        // process sort
+        var sort = ConditionUtil.toBsonSort(cond.sort);
+
+        // process offset / limit
+
+        // process fields
 
         // Execute the aggregation pipeline
         var results = container.aggregate(pipeline).into(new ArrayList<>());

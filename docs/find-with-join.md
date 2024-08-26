@@ -124,27 +124,50 @@ db.Families.aggregate([
   // Initial match to filter documents by lastName
   {
     $match: {
-      lastName: "Andersen"  // Filter documents where lastName is "Andersen"
+      $and: [
+        {"lastName": "Andersen"},  // Filter documents where lastName is "Andersen"
+        { 
+          "area.city.street.rooms" :{
+            $elemMatch: {
+              familyName: "Wakefield"
+            }
+          }
+        }
+      ]  
     }
+  },
+  // Sort the matched documents by a specific field, e.g., creationDate in descending order
+  {
+    $sort: {
+      creationDate: -1  // Change this field as needed for sorting
+    }
+  },
+  // Skip a certain number of documents
+  {
+    $skip: 10  // Change the number as needed to skip that many documents
+  },
+  // Limit the number of documents returned
+  {
+    $limit: 5  // Change the number as needed to limit the results
   },
   // Project the original structure and use $filter to get the matched elements
   {
     $project: {
       original: "$$ROOT",  // Include all original fields
       // Keep the full "area.city.street.rooms" array and filter for the matched elements using $$this
-      matchingRooms: {
+      matching_area__city__street__rooms: {
         $filter: {
           input: "$area.city.street.rooms",
           cond: {
             $and: [
-              { $eq: ["$$this.no", "001"] },  // Condition to match rooms with no = "001"
+              { $eq: ["$$this.area", 10] },  // Using $$this to match rooms with area 10
               { $lt: ["$$this.floor", 5] }    // Condition to match rooms where floor < 5
             ]
           }
         }
       },
       // Keep the full "room*no-01" array and filter for the matched elements
-      matchingRoomNo01: {
+      matching_room*no-01: {
         $filter: {
           input: "$room*no-01",
           cond: { $eq: ["$$this.area", 10] }  // Using $$this to match rooms with area 10
@@ -156,10 +179,10 @@ db.Families.aggregate([
   {
     $match: {
       $and: [
-        { matchingRooms: { $ne: null } },  // Check that matchingRooms is not null
-        { matchingRooms: { $ne: [] } },    // Check that matchingRooms is not empty
-        { matchingRoomNo01: { $ne: null } },  // Check that matchingRoomNo01 is not null
-        { matchingRoomNo01: { $ne: [] } }     // Check that matchingRoomNo01 is not empty
+        { matching_area__city__street__rooms: { $ne: null } },  // Check that matchingRooms is not null
+        { matching_area__city__street__rooms: { $ne: [] } },    // Check that matchingRooms is not empty
+        { matching_room*no-01: { $ne: null } },  // Check that matchingRoomNo01 is not null
+        { matching_room*no-01: { $ne: [] } }     // Check that matchingRoomNo01 is not empty
       ]
     }
   },
@@ -169,8 +192,8 @@ db.Families.aggregate([
       newRoot: {
         $mergeObjects: [
           "$original",  // Include all original fields
-          { matchingRooms: "$matchingRooms" },  // Add the filtered "matchingRooms"
-          { matchingRoomNo01: "$matchingRoomNo01" }  // Add the filtered "matchingRoomNo01"
+          { matching_area__city__street__rooms: "$matching_area__city__street__rooms" },  // Add the filtered "matching_area__city__street__rooms"
+          { matching_room*no-01: "$matching_room*no-01" }  // Add the filtered "matching_room*no-01"
         ]
       }
     }
@@ -185,13 +208,13 @@ db.Families.aggregate([
             city: {
               street: {
                 name: "$area.city.street.name",  // Preserve original street name
-                rooms: "$matchingRooms"  // Replace rooms with matched rooms
+                rooms: "$matching_area__city__street__rooms"  // Replace rooms with matched rooms
               }
             }
           }
         },
         {
-          "room*no-01": "$matchingRoomNo01"  // Replace room*no-01 with matched elements
+          "room*no-01": "$matching_room*no-01"  // Replace room*no-01 with matched elements
         }
       ]
     }

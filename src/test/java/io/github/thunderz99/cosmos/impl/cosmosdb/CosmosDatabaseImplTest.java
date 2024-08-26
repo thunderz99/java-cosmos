@@ -1130,18 +1130,20 @@ class CosmosDatabaseImplTest {
         // condition on the same sub array should be both applied to the element(e.g. children.gender = "female" AND children.grade = 5)
         // TODO, This case is not implemented at present
         // If we want to implement this, we can introduce a new SubConditionType like "$ElemMatch" in mongodb
-//        {
+        {
 //            var cond = new Condition();
 //            cond = Condition.filter("children.gender", "female", "children.grade =", 5) //
 //                    .sort("lastName", "ASC") //
 //                    .limit(10) //
 //                    .offset(0)
-//                    .join(Set.of("parents", "children"));
+//                    .join(Set.of("parents", "children"))
+//                    .returnAllSubArray(false)
+//            ;
 //            // test find
 //            var result = db.find(coll, cond, "Families").toMap();
 //            assertThat(result).hasSize(1);
 //            assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
-//        }
+        }
 
         //Or query with join
         {
