@@ -700,6 +700,23 @@ class CosmosDatabaseImplTest {
 
     }
 
+    @Test
+    public void fields_with_empty_field_should_work() throws Exception {
+        // test fields with fields ["id", ""]
+        {
+            // empty field should be ignored
+            var cond = Condition.filter().fields("id", "");
+
+            var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+            assertThat(users.size()).isGreaterThanOrEqualTo(3);
+            assertThat(users.get(0).id).isEqualTo(user1.id);
+            assertThat(users.get(0).age).isEqualTo(0);
+            assertThat(users.get(0).end).isNull();
+            assertThat(users.get(0).skills).isEmpty();
+        }
+    }
+
 
     @Test
     public void regex_should_work_with_filter() throws Exception {

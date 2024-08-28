@@ -201,7 +201,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
      */
     static CosmosDocument checkAndGetCosmosDocument(Document response) {
         if (response == null) {
-            throw new CosmosException(404, "404", "Resource Not Found");
+            throw new CosmosException(404, "404", "Resource Not Found. code: NotFound");
         }
         return new CosmosDocument(response);
     }

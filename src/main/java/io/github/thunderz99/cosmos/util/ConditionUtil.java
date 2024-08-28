@@ -560,6 +560,11 @@ public class ConditionUtil {
             if (StringUtils.containsAny(field, "{", "}", ",", "\"", "'")) {
                 throw new IllegalArgumentException("field cannot contain '{', '}', ',', '\"', \"'\", field: " + field);
             }
+            if (StringUtils.isEmpty(field)) {
+                // empty field is ignored
+                continue;
+            }
+
             ret.add(field);
         }
         return ret;

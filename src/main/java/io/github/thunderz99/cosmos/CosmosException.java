@@ -128,11 +128,12 @@ public class CosmosException extends RuntimeException {
      */
     static int convertStatusCode(MongoException me) {
 
-        if (me.getMessage().contains("DuplicateKey")) {
+        var message = me.getMessage();
+        if (message.contains("DuplicateKey") || message.contains("duplicate key") || message.contains("E11000")) {
             return 409;
         }
 
         return (me instanceof MongoCommandException || me instanceof MongoClientException) ? 400 : 500;
     }
-    
+
 }

@@ -9,7 +9,8 @@ class CosmosExceptionTest {
 
     @Test
     void convertStatusCode_should_work_for_DuplicateKey() {
-        var me = new MongoException("DuplicateKey E11000");
-        assertThat(CosmosException.convertStatusCode(me)).isEqualTo(409);
+        assertThat(CosmosException.convertStatusCode(new MongoException("duplicate key"))).isEqualTo(409);
+        assertThat(CosmosException.convertStatusCode(new MongoException("DuplicateKey"))).isEqualTo(409);
+        assertThat(CosmosException.convertStatusCode(new MongoException("E11000"))).isEqualTo(409);
     }
 }

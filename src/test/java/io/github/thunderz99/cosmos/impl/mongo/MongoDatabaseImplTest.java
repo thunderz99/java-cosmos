@@ -106,7 +106,7 @@ class MongoDatabaseImplTest {
             assertThatThrownBy(() -> db.read(host, "notExistId", "Users"))
                     .isInstanceOfSatisfying(CosmosException.class, ce -> {
                         assertThat(ce.getStatusCode()).isEqualTo(404);
-                        assertThat(ce.getMessage()).contains("Not Found");
+                        assertThat(ce.getMessage()).contains("NotFound").contains("Resource Not Found");
                     });
 
             // readSuppressing404 should return null
@@ -743,6 +743,24 @@ class MongoDatabaseImplTest {
 
             assertThat(users.size()).isEqualTo(1);
             assertThat(users.get(0).id).isEqualTo(user3.id);
+        }
+    }
+
+
+    @Test
+    public void fields_with_empty_field_should_work() throws Exception {
+        // test fields with fields ["id", ""]
+        {
+            // empty field should be ignored
+            var cond = Condition.filter().fields("id", "");
+
+            var users = db.find(host, cond, "Users").toList(FullNameUser.class);
+
+            assertThat(users.size()).isGreaterThanOrEqualTo(3);
+            assertThat(users.get(0).id).isEqualTo(user1.id);
+            assertThat(users.get(0).age).isEqualTo(0);
+            assertThat(users.get(0).end).isNull();
+            assertThat(users.get(0).skills).isEmpty();
         }
     }
 
