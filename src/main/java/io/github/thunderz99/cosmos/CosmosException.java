@@ -42,7 +42,7 @@ public class CosmosException extends RuntimeException {
     public CosmosException(MongoException me) {
         super(me.getMessage(), me);
         this.e = me;
-        this.statusCode = (me instanceof MongoCommandException || me instanceof MongoClientException) ? 400 : 500;
+        this.statusCode = convertStatusCode(me);
         this.code = String.valueOf(me.getCode());
         this.retryAfterInMilliseconds = 0;
     }
@@ -120,5 +120,19 @@ public class CosmosException extends RuntimeException {
         return retryAfterInMilliseconds;
     }
 
+    /**
+     * Convert mongo exception's error code / error message to statusCode for Restful
+     *
+     * @param me
+     * @return
+     */
+    static int convertStatusCode(MongoException me) {
 
+        if (me.getMessage().contains("DuplicateKey")) {
+            return 409;
+        }
+
+        return (me instanceof MongoCommandException || me instanceof MongoClientException) ? 400 : 500;
+    }
+    
 }

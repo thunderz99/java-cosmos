@@ -119,6 +119,8 @@ Note: When `returnAllSubArray = true`, things are simple and we can do this by a
 
 ## sample mongosh
 
+
+
 ```mongosh
 db.Families.aggregate([
   // Initial match to filter documents by lastName
@@ -139,16 +141,16 @@ db.Families.aggregate([
   // Sort the matched documents by a specific field, e.g., creationDate in descending order
   {
     $sort: {
-      creationDate: -1  // Change this field as needed for sorting
+      id: -1  // Change this field as needed for sorting
     }
   },
   // Skip a certain number of documents
   {
-    $skip: 10  // Change the number as needed to skip that many documents
+    $skip: 0  // Change the number as needed to skip that many documents
   },
   // Limit the number of documents returned
   {
-    $limit: 5  // Change the number as needed to limit the results
+    $limit: 10  // Change the number as needed to limit the results
   },
   // Project the original structure and use $filter to get the matched elements
   {
