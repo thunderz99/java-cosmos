@@ -87,7 +87,53 @@ public class MapUtilTest {
             assertThat(MapUtil.toFlatMap(map)).hasSize(3).containsEntry("/id", "ID001")
                     .containsEntry("/contents/name", "Tom")
                     .containsEntry("/contents/age", 20);
-            
+
+        }
+
+
+    }
+
+    @Test
+    void toFlatMapWithPeriod_should_work() throws Exception {
+
+        {
+            // irregular
+            assertThat(MapUtil.toFlatMapWithPeriod(null)).isNull();
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of())).isEmpty();
+        }
+        {
+            // primitives
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of("integer", 2))).hasSize(1).containsEntry("integer", 2);
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of("double.next", 2.0d))).hasSize(1).containsEntry("double.next", 2.0d);
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of("float", 2.0f))).hasSize(1).containsEntry("float", 2.0f);
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of("long", 2L))).hasSize(1).containsEntry("long", 2L);
+        }
+        {
+            //enum
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of("enum", Status.warn))).hasSize(1).containsEntry("enum", Status.warn);
+        }
+        {
+            //collections
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of("list", List.of(1, "2")))).hasSize(1).containsEntry("list", List.of(1, "2"));
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of("set", Set.of(2.0f, 3.0d)))).hasSize(1).containsEntry("set", Set.of(2.0f, 3.0d));
+            var queue = Queues.newArrayDeque(List.of(1, 2));
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of("queue", queue))).hasSize(1).containsEntry("queue", queue);
+
+        }
+        {
+            //class
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of("user", new User("Tom", 20)))).hasSize(1).containsEntry("user", new User("Tom", 20));
+        }
+
+        {
+            //nested maps
+            var map = Map.of("id", "ID001",
+                    "contents", Map.of("name", "Tom", "age", 20));
+
+            assertThat(MapUtil.toFlatMapWithPeriod(map)).hasSize(3).containsEntry("id", "ID001")
+                    .containsEntry("contents.name", "Tom")
+                    .containsEntry("contents.age", 20);
+
         }
 
 

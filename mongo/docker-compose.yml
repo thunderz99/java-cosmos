@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  mongo-replica:
+    image: mongo:5.0
+    container_name: mongo-replica
+    ports:
+      - "27017:27017"
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: "mongo --eval 'db.runCommand({ ping: 1 })' || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo-init-replica:
+    image: mongo:5.0
+    container_name: mongo-init-replica
+    depends_on:
+      mongo-replica:
+        condition: service_healthy
+    entrypoint: >
+      bash -c "
+      echo 'Waiting for MongoDB to start...' &&
+      sleep 5 &&
+      mongo --host mongo-replica:27017 --eval '
+      rs.initiate({_id: \"rs0\", members: [{ _id: 0, host: \"localhost:27017\" }]})' &&
+      echo 'Replica set initialized.'"
+

@@ -30,7 +30,7 @@ public class CosmosDocument {
     public CosmosDocument(Map<String, Object> mapObj) {
         this.mapObj = mapObj;
     }
-
+    
     public <T> T toObject(Class<T> classOfT) {
         return mapObj == null ? JsonUtil.fromJson(jsonObj.toString(), classOfT)
                 : JsonUtil.fromMap(mapObj, classOfT);
