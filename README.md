@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.6.9</version>
+    <version>0.7.1</version>
 </dependency>
 ```
 
@@ -35,7 +35,9 @@ import io.github.thunderz99.cosmos.Cosmos
 import java.util.ArrayList;
 
 public static void main(String[]args){
-        var db=new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1")
+  new CosmosBuilder().withConnectionString()).build();
+        var cosmosAccount =new CosmosBuilder().withConnectionString(System.getenv("YOUR_CONNECTION_STRING")).build();
+        var db = cosmosAccount.getDatabase("Database1");
         db.upsert("Collection1",new User("id011","Tom","Banks"))
 
         var cond=Condition.filter(
