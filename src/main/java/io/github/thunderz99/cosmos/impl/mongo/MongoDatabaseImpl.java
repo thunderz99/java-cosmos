@@ -811,7 +811,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // 2. Add the project stage to rename fields with dots
         var projectStage = AggregateUtil.createProjectStage(aggregate);
-        pipeline.add(projectStage);
+        if (!projectStage.toBsonDocument().isEmpty()) {
+            pipeline.add(projectStage);
+        }
 
         // 3. Add the group stage
         var groupStage = AggregateUtil.createGroupStage(aggregate);
@@ -848,7 +850,12 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         }
 
         // Execute the aggregation pipeline
-        var results = container.aggregate(pipeline).into(new ArrayList<>());
+        List<Document> results = container.aggregate(pipeline).into(new ArrayList<>());
+
+        // after process if a aggregate result is empty
+        if (results.isEmpty()) {
+            results = AggregateUtil.processEmptyAggregateResults(aggregate, results);
+        }
 
         // Return the results as CosmosDocumentList
         return new CosmosDocumentList(results);
