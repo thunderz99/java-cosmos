@@ -2265,19 +2265,25 @@ class CosmosDatabaseImplTest {
     @Test
     void batchDelete_should_work() throws Exception {
         int size = 100;
-        var userList = new ArrayList<>(size);
+        var userList = new ArrayList<User>(size);
         for (int i = 0; i < size; i++) {
             userList.add(new User("batchDelete_should_work_" + i, "testFirstName" + i, "testLastName" + i));
         }
 
+        var idList = userList.stream().map(u -> u.id).collect(Collectors.toList());
+
         try {
             db.batchCreate(coll, userList, "Users");
-            var deleteResult = db.batchDelete(coll, userList, "Users");
+
+            // idList can be used to do batchDelete
+            var deleteResult = db.batchDelete(coll, idList, "Users");
             assertThat(deleteResult).hasSize(size);
         } finally {
             try {
                 db.batchDelete(coll, userList, "Users");
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                // ignore the already deleted exception
+                // TODO do not throw exception for non-exist ids
             }
         }
     }
@@ -2332,22 +2338,22 @@ class CosmosDatabaseImplTest {
     @Test
     void bulkDelete_should_work() throws Exception {
         int size = 120;
-        var userList = new ArrayList<>(size);
+        var userList = new ArrayList<User>(size);
         for (int i = 0; i < size; i++) {
             userList.add(new User("bulkDelete_should_work_" + i, "testFirstName" + i, "testLastName" + i));
         }
 
+        // idList can be used to do bulkDelete
+        var idList = userList.stream().map(u -> u.id).collect(Collectors.toList());
+
         try {
             db.bulkCreate(coll, userList, "Users");
-            var deleteResult = db.bulkDelete(coll, userList, "Users");
+            var deleteResult = db.bulkDelete(coll, idList, "Users");
             assertThat(deleteResult.fatalList).hasSize(0);
             assertThat(deleteResult.retryList).hasSize(0);
             assertThat(deleteResult.successList).hasSize(size);
         } finally {
-            try {
-                db.bulkDelete(coll, userList, "Users");
-            } catch (Exception ignored) {
-            }
+            db.bulkDelete(coll, userList, "Users");
         }
     }
 

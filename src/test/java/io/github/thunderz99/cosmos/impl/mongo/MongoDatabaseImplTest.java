@@ -2,6 +2,7 @@ package io.github.thunderz99.cosmos.impl.mongo;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -1872,14 +1873,16 @@ class MongoDatabaseImplTest {
     @Test
     void batchDelete_should_work() throws Exception {
         int size = 100;
-        var userList = new ArrayList<>(size);
+        var userList = new ArrayList<User>(size);
         for (int i = 0; i < size; i++) {
             userList.add(new User("batchDelete_should_work_" + i, "testFirstName" + i, "testLastName" + i));
         }
+        var idList = userList.stream().map(u -> u.id).collect(Collectors.toList());
 
         try {
             db.batchCreate(host, userList, "Users");
-            var deleteResult = db.batchDelete(host, userList, "Users");
+            // idList can be used to do batchDelete
+            var deleteResult = db.batchDelete(host, idList, "Users");
             assertThat(deleteResult).hasSize(size);
         } finally {
             db.batchDelete(host, userList, "Users");
@@ -1936,13 +1939,17 @@ class MongoDatabaseImplTest {
     @Test
     void bulkDelete_should_work() throws Exception {
         int size = 120;
-        var userList = new ArrayList<>(size);
+        var userList = new ArrayList<User>(size);
         for (int i = 0; i < size; i++) {
             userList.add(new User("bulkDelete_should_work_" + i, "testFirstName" + i, "testLastName" + i));
         }
+
+        var idList = userList.stream().map(u -> u.id).collect(Collectors.toList());
+
         try {
             db.bulkCreate(host, userList, "Users");
-            var deleteResult = db.bulkDelete(host, userList, "Users");
+            // idList can be used to do bulkDelete
+            var deleteResult = db.bulkDelete(host, idList, "Users");
             assertThat(deleteResult.fatalList).hasSize(0);
             assertThat(deleteResult.retryList).hasSize(0);
             assertThat(deleteResult.successList).hasSize(size);

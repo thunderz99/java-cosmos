@@ -4,10 +4,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import com.azure.cosmos.CosmosContainer;
 import com.azure.cosmos.implementation.guava25.collect.Lists;
-import com.azure.cosmos.models.CosmosBatch;
-import com.azure.cosmos.models.CosmosBatchOperationResult;
 import com.azure.cosmos.models.CosmosQueryRequestOptions;
 import com.google.common.base.Preconditions;
 import com.mongodb.MongoException;
@@ -16,7 +13,10 @@ import com.mongodb.client.model.*;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
-import io.github.thunderz99.cosmos.dto.*;
+import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
+import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
+import io.github.thunderz99.cosmos.dto.FilterOptions;
+import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
@@ -121,9 +121,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         return id;
     }
 
-
-
     static String getId(Object object) {
+        // TODO, extract util method
         String id;
         if (object instanceof String) {
             id = (String) object;
@@ -1158,8 +1157,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // Extract IDs from data to be deleted
         for (var obj : data) {
-            var map = JsonUtil.toMap(obj);
-            var id = map.getOrDefault("id", "").toString();
+            var id = getId(obj);
             checkValidId(id);
             if (StringUtils.isNotEmpty(id)) {
                 ids.add(id);
@@ -1210,21 +1208,6 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         Checker.checkNotBlank(coll, "coll");
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotEmpty(data, "create data " + coll + " " + partition);
-    }
-
-    private List<CosmosDocument> doBatchWithRetry(CosmosContainer container, CosmosBatch batch) throws Exception {
-        var response = RetryUtil.executeBatchWithRetry(() ->
-                new CosmosBatchResponseWrapper(container.executeCosmosBatch(batch))
-        );
-
-        var successDocuments = new ArrayList<CosmosDocument>();
-        for (CosmosBatchOperationResult cosmosBatchOperationResult : response.cosmosBatchReponse.getResults()) {
-            var item = cosmosBatchOperationResult.getItem(mapInstance.getClass());
-            if (item == null) continue;
-            successDocuments.add(new CosmosDocument(item));
-        }
-
-        return successDocuments;
     }
 
     /**
@@ -1373,8 +1356,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // Extract IDs from data to be deleted
         for (var obj : data) {
-            var map = JsonUtil.toMap(obj);
-            var id = map.getOrDefault("id", "").toString();
+            var id = getId(obj);
             checkValidId(id);
             if (StringUtils.isNotEmpty(id)) {
                 ids.add(id);
