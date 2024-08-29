@@ -39,6 +39,8 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
     static final int MAX_BATCH_NUMBER_OF_OPERATION = 100;
 
+    static final int FIND_PREFERRED_PAGE_SIZE = 10;
+
     String db;
     CosmosClient clientV4;
 
@@ -94,7 +96,8 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
         var item = response.getItem();
 
-        log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, getId(item), partition, getAccount());
+        log.info("created Document:{}/docs/{}, partition:{}, account:{}, request charge:{}",
+                collectionLink, getId(item), partition, getAccount(), response.getRequestCharge());
 
         return new CosmosDocument(item);
     }
@@ -177,7 +180,8 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 mapInstance.getClass()
         ));
 
-        log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        log.info("read Document:{}, partition:{}, account:{}, request charge: {}",
+                documentLink, partition, getAccount(), response.getRequestCharge());
 
         return new CosmosDocument(response.getItem());
     }
@@ -263,7 +267,8 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         ));
 
 
-        log.info("updated Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        log.info("updated Document:{}, partition:{}, account:{}, request charge:{}",
+                documentLink, partition, getAccount(), response.getRequestCharge());
 
         return new CosmosDocument(response.getItem());
     }
@@ -507,7 +512,8 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 new CosmosItemRequestOptions()
         ));
 
-        log.info("upsert Document:{}/docs/{}, partition:{}, account:{}", collectionLink, id, partition, getAccount());
+        log.info("upsert Document:{}/docs/{}, partition:{}, account:{}, request charge:{}",
+                collectionLink, id, partition, getAccount(), response.getRequestCharge());
 
         return new CosmosDocument(response.getItem());
     }
@@ -551,7 +557,8 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                     new CosmosItemRequestOptions()
             ));
 
-            log.info("deleted Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+            log.info("deleted Document:{}, partition:{}, account:{}, request charge:{}",
+                    documentLink, partition, getAccount(), response.getRequestCharge());
 
         } catch (Exception e) {
             if (CosmosImpl.isResourceNotFoundException(e)) {
@@ -631,7 +638,14 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
             // process query without join
             var docs = RetryUtil.executeWithRetry(() ->
                     container.queryItems(querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass()));
-            List maps = docs.stream().collect(Collectors.toList());
+
+            if (log.isInfoEnabled()) {
+                docs.iterableByPage(FIND_PREFERRED_PAGE_SIZE).forEach(response -> {
+                    log.info("find Document:{}/docs/, partition:{}, result size:{}, request charge:{}", collectionLink, partition, response.getResults().size(), response.getRequestCharge());
+                });
+            }
+
+            var maps = docs.stream().collect(Collectors.toList());
 
             if (aggregate != null) {
                 // Process result of aggregate. convert Long value to Integer if possible.
@@ -927,7 +941,13 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 () -> container.queryItems(querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass())
         );
 
-        List<Map> maps = docs.stream().collect(Collectors.toList());
+        if (log.isInfoEnabled()) {
+            docs.iterableByPage(FIND_PREFERRED_PAGE_SIZE).forEach(response -> {
+                log.info("count Document:{}/docs/, partition:{}, result size:{}, request charge:{}", collectionLink, partition, response.getResults().size(), response.getRequestCharge());
+            });
+        }
+
+        var maps = docs.stream().collect(Collectors.toList());
 
         if (log.isInfoEnabled()) {
             log.info("count Document:{}, cond:{}, collection:{}, partition:{}, account:{}", coll, cond, collectionLink, partition, getAccount());
@@ -972,7 +992,8 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         ));
 
         var item = response.getItem();
-        log.info("increment Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        log.info("increment Document:{}, partition:{}, account:{}, request charge:{}",
+                documentLink, partition, getAccount(), response.getRequestCharge());
 
         return new CosmosDocument(item);
     }
@@ -1022,7 +1043,8 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         ));
 
         var item = response.getItem();
-        log.info("patch Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        log.info("patch Document:{}, partition:{}, account:{}, request charge:{}",
+                documentLink, partition, getAccount(), response.getRequestCharge());
 
         return new CosmosDocument(item);
     }
@@ -1130,8 +1152,13 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 new CosmosBatchResponseWrapper(container.executeCosmosBatch(batch))
         );
 
+        log.info("Document batch operations: partition key:{}, account:{}, request charge:{}",
+                Objects.nonNull(batch.getPartitionKeyValue()) ? batch.getPartitionKeyValue().toString() : "", getAccount(), response.cosmosBatchReponse.getRequestCharge());
+
         var successDocuments = new ArrayList<CosmosDocument>();
         for (CosmosBatchOperationResult cosmosBatchOperationResult : response.cosmosBatchReponse.getResults()) {
+            log.info("Document batch operation: operation type:{}, request charge:{}"
+                    , cosmosBatchOperationResult.getOperation().getOperationType().name(), cosmosBatchOperationResult.getRequestCharge());
             var item = cosmosBatchOperationResult.getItem(mapInstance.getClass());
             if (item == null) continue;
             successDocuments.add(new CosmosDocument(item));
@@ -1241,6 +1268,8 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 if (ObjectUtils.isEmpty(response)) {
                     continue;
                 }
+                log.info("Document bulk operation: operation type:{}, request charge:{}",
+                        operation.getOperationType().name(), response.getRequestCharge());
 
                 if (RetryUtil.shouldRetry(response.getStatusCode())) {
                     delay = Math.max(delay, response.getRetryAfterDuration().toMillis());
