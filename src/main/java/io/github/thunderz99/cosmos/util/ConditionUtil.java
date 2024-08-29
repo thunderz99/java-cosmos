@@ -512,13 +512,7 @@ public class ConditionUtil {
 
         var filterOptions = FilterOptions.create().join(cond.join);
 
-        if (!cond.negative) {
-            // a normal filter
-            return toBsonFilter(cond.filter, filterOptions);
-        } else {
-            // process a NOT filter
-            return Filters.not(toBsonFilter(cond.filter, filterOptions));
-        }
+        return toBsonFilter(cond, filterOptions);
     }
 
     /**
@@ -531,6 +525,15 @@ public class ConditionUtil {
     public static Bson toBsonFilter(Condition cond, FilterOptions filterOptions) {
         if (cond == null) {
             return null;
+        }
+
+        if (Condition.isTrueCondition(cond)) {
+            // SQL "(1=1)"
+            return new Document("$expr", new Document("$eq", Arrays.asList(1, 1)));
+
+        } else if (Condition.isFalseCondition(cond)) {
+            // SQL "(1=0)"
+            return new Document("$expr", new Document("$eq", Arrays.asList(1, 0)));
         }
 
         if (!cond.negative) {

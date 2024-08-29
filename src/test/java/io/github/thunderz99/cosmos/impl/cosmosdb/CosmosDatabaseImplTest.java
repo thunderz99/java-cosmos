@@ -721,6 +721,46 @@ class CosmosDatabaseImplTest {
         }
     }
 
+    @Test
+    void find_with_true_false_condition_should_work() throws Exception {
+        var partition = "Families";
+
+        {
+            // false condition AND
+            var cond = Condition.filter("lastName", "Andersen", "$AND and_test", Condition.falseCondition());
+            var docs = db.find(coll, cond, partition).toMap();
+            assertThat(docs).hasSize(0);
+        }
+        {
+            // false condition OR
+            var cond = Condition.filter("$OR", List.of(
+                    Condition.filter("lastName", "Andersen"),
+                    Condition.falseCondition())
+            );
+            var docs = db.find(coll, cond, partition).toMap();
+            assertThat(docs).hasSize(1);
+        }
+
+        {
+            // true condition AND
+            var cond = Condition.filter("lastName", "Andersen", "$AND and_test", Condition.trueCondition());
+            var docs = db.find(coll, cond, partition).toMap();
+            assertThat(docs).hasSize(1);
+
+        }
+
+        {
+            // true condition OR
+            var cond = Condition.filter("$OR", List.of(
+                    Condition.filter("lastName", "Andersen"),
+                    Condition.trueCondition())
+            );
+            var docs = db.find(coll, cond, partition).toMap();
+            // all data in partition
+            assertThat(docs).hasSizeGreaterThanOrEqualTo(2);
+
+        }
+    }
 
     @Test
     public void fields_with_empty_field_should_work() throws Exception {
