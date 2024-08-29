@@ -747,6 +747,26 @@ class MongoDatabaseImplTest {
         }
     }
 
+    @Test
+    void find_should_work_for_array_contains_any_field_query() throws Exception {
+        var partition = "Families";
+
+        {
+            // ARRAY_CONTAINS_ANY
+            // children is an array, and grade is a field of children
+            var cond = Condition.filter("children ARRAY_CONTAINS_ANY grade", List.of(5, 8));
+            var docs = db.find(host, cond, partition).toMap();
+            assertThat(docs).hasSize(2);
+        }
+
+        {
+            // ARRAY_CONTAINS_ALL
+            // children is an array, and grade is a field of children
+            var cond = Condition.filter("children ARRAY_CONTAINS_ALL grade", List.of(1, 8));
+            var docs = db.find(host, cond, partition).toMap();
+            assertThat(docs).hasSize(1);
+        }
+    }
 
     @Test
     public void fields_with_empty_field_should_work() throws Exception {

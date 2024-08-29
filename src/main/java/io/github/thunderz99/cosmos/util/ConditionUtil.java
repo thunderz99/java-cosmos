@@ -2,6 +2,7 @@ package io.github.thunderz99.cosmos.util;
 
 import java.util.*;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
@@ -348,13 +349,20 @@ public class ConditionUtil {
                 throw new IllegalArgumentException("$NOT 's filter is not correct. expect Collection/Map/Condition:" + value);
             }
         } else {
-            if (value instanceof Collection<?>) {
-                // the same as IN
-                var coll = (Collection<?>) value;
-                ret = Filters.in(key, coll);
-            } else {
-                // normal eq filter. and support $fieldA = $fieldB case
-                ret = generateExpression(key, "=", value, filterOptions);
+
+            // process "tags ARRAY_CONTAINS_ANY id" or "children ARRAY_CONTAINS_ALL grade"
+            ret = generateExpression4SubQuery(key, value, filterOptions);
+
+            if (ret == null) {
+                // normal {"key=": value} pattern 
+                if (value instanceof Collection<?>) {
+                    // the same as IN
+                    var coll = (Collection<?>) value;
+                    ret = Filters.in(key, coll);
+                } else {
+                    // normal eq filter. and support $fieldA = $fieldB case
+                    ret = generateExpression(key, "=", value, filterOptions);
+                }
             }
         }
 
@@ -364,6 +372,71 @@ public class ConditionUtil {
         }
 
         return ret;
+    }
+
+    /**
+     * generate expression that do {"children ARRAY_CONTAINS_ANY grade" : [5, 8]}
+     *
+     * @param key
+     * @param value
+     * @param filterOptions
+     */
+    static Bson generateExpression4SubQuery(String key, Object value, FilterOptions filterOptions) {
+        var matcher = Condition.subQueryExpressionPattern.matcher(key);
+
+        if (!matcher.find()) {
+            return null;
+        }
+
+        var joinKey = matcher.group(1); // children
+        var operator = matcher.group(2); // ARRAY_CONTAINS_ANY
+        var filterKey = matcher.group(3); // grade
+
+        if (StringUtils.isEmpty(filterKey)) {
+            // if just "children ARRAY_CONTAINS_ANY"
+            // this is process by other method
+            return null;
+        }
+
+        Collection<?> collectionValue = null;
+
+        if (value instanceof Collection<?>) {
+            collectionValue = (Collection<?>) value;
+        } else {
+            collectionValue = List.of(value);
+        }
+
+        Bson ret = null;
+        if (StringUtils.equals(operator, "ARRAY_CONTAINS_ANY")) {
+            /* use $elemMatch
+            db.Families.find({
+                children: {
+                    $elemMatch: {
+                        grade: { $in: [5, 8] }
+                    }
+                }
+            });
+             */
+
+            ret = Filters.elemMatch(joinKey, new Document(filterKey, new Document("$in", collectionValue)));
+        } else {
+            // "children ARRAY_CONTAINS_ALL grade"
+            /*
+            db.Families.find({
+                children: {
+                    $all: [
+                        { $elemMatch: { grade: 5 } },
+                        { $elemMatch: { grade: 8 } }
+                    ]
+                }
+            })
+             */
+            ret = Filters.all(joinKey,
+                    collectionValue.stream().map((v) -> new Document("$elemMatch", new Document(filterKey, v))).collect(Collectors.toList()));
+        }
+
+        return ret;
+
     }
 
     /**
