@@ -999,6 +999,71 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void aggregate_should_work_without_group_by() throws Exception {
+
+        // test count(without group by)
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount");
+
+            // test find
+            var result = db.aggregate(coll, aggregate,
+                    Condition.filter("lastName", "Andersen"), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+
+            var value = result.get(0).getOrDefault("facetCount", "").toString();
+
+            assertThat(Integer.parseInt(value)).isEqualTo(1);
+
+        }
+
+        // test count(without group by, no hit documents)
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount");
+
+            // test find
+            var result = db.aggregate(coll, aggregate,
+                    Condition.filter("lastName", "NotExist_LastName"), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+
+            var value = result.get(0).getOrDefault("facetCount", "").toString();
+            assertThat(Integer.parseInt(value)).isEqualTo(0);
+
+        }
+
+        // test max(without group by)
+        {
+            var aggregate = Aggregate.function("MAX(c.creationDate) AS maxDate");
+
+            // test find
+            var result = db.aggregate(coll, aggregate,
+                    Condition.filter("lastName", "Andersen"), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+
+            var value = result.get(0).getOrDefault("maxDate", "").toString();
+            assertThat(Integer.parseInt(value)).isGreaterThan(0);
+
+        }
+
+        // test max(without group by, no hit documents)
+        {
+            var aggregate = Aggregate.function("MAX(c.creationDate) AS maxDate");
+
+            // test find
+            var result = db.aggregate(coll, aggregate,
+                    Condition.filter("lastName", "NotExist"), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+
+            var value = result.get(0).getOrDefault("maxDate", "");
+            assertThat(value).isInstanceOfSatisfying(Map.class, (v) -> assertThat(v).isEmpty());
+
+        }
+    }
+
+    @Test
     public void aggregate_should_work_with_condition_afterwards() throws Exception {
 
         // test aggregate with afterwards filter

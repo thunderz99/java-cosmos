@@ -2,11 +2,14 @@ package io.github.thunderz99.cosmos.util;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 
 import com.mongodb.client.model.Accumulators;
 import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.BsonField;
 import io.github.thunderz99.cosmos.condition.Aggregate;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -40,20 +43,32 @@ public class AggregateUtil {
         // Include all fields that will be used in aggregate functions
         var functionParts = aggregate.function.split(",");
         for (var functionPart : functionParts) {
-            var function = functionPart.trim().split("\\s+AS\\s+")[0];
+            var parts = functionPart.trim().split("\\s+AS\\s+");
+            var function = parts[0];
+
+            if (StringUtils.startsWith(function, "COUNT(")) {
+                //count do not need a field "COUNT(1)"
+                continue;
+            }
+
             var field = function.substring(function.indexOf('(') + 1, function.indexOf(')')).trim();
             // Remove the heading "c." which is only used in cosmosdb
             field = StringUtils.removeStart(field, "c.");
 
             var fieldInPipeline = convertFieldNameIncludingDot(field);
-            if(!projectionSet.contains(fieldInPipeline)) {
+            if (!projectionSet.contains(fieldInPipeline)) {
                 // add the alias and field only if not added already
                 projection.append(fieldInPipeline, "$" + field);
                 projectionSet.add(fieldInPipeline);
             }
         }
 
-        return Aggregates.project(projection);
+        if (!projection.toBsonDocument().isEmpty()) {
+            return Aggregates.project(projection);
+        }
+
+        // empty projection
+        return projection;
     }
 
     /**
@@ -80,12 +95,13 @@ public class AggregateUtil {
      * @return group stage in bson
      */
     public static Bson createGroupStage(Aggregate aggregate) {
-        if (aggregate.groupBy.isEmpty() || aggregate.function.isEmpty()) {
+        if (aggregate.function.isEmpty()) {
             return null;
         }
 
-        var functionParts = aggregate.function.split(",");
         var accumulators = new ArrayList<BsonField>();
+
+        var functionParts = aggregate.function.split(",");
 
         // Add accumulators for each aggregate function
         for (var functionPart : functionParts) {
@@ -116,10 +132,18 @@ public class AggregateUtil {
         }
 
         // Create the group key based on the groupBy fields (use renamed fields where necessary)
-        var groupId = new Document();
-        for (var groupByField : aggregate.groupBy) {
-            var fieldInPipeline = convertFieldNameIncludingDot(groupByField);
-            groupId.append(fieldInPipeline, "$" + fieldInPipeline);
+        Document groupId;
+
+        if (CollectionUtils.isEmpty(aggregate.groupBy)) {
+            // mongo db allows groupId = null when there is no groupBy
+            groupId = null;
+        } else {
+            groupId = new Document();
+            for (var groupByField : aggregate.groupBy) {
+                var fieldInPipeline = convertFieldNameIncludingDot(groupByField);
+                groupId.append(fieldInPipeline, "$" + fieldInPipeline);
+
+            }
         }
 
         // Create the group stage
@@ -180,7 +204,7 @@ public class AggregateUtil {
         for (var functionPart : functionParts) {
             var funcAndAlias = functionPart.split("\\s+AS\\s+");
             var function = funcAndAlias[0];
-            if(funcAndAlias.length >1){
+            if (funcAndAlias.length > 1) {
                 // `max(c.age) AS maxAge` will be maxAge
                 var alias = funcAndAlias[1].trim();
                 projection.append(alias, 1);
@@ -204,9 +228,45 @@ public class AggregateUtil {
      * @return simple field name without "__"
      */
     static String getSimpleName(String field) {
-        if(StringUtils.isEmpty(field)){
+        if (StringUtils.isEmpty(field)) {
             return field;
         }
         return field.contains("__") ? field.substring(field.lastIndexOf("__") + 2) : field;
     }
+
+    /**
+     * If a simple count without group by, when hit is empty, convert the result from [] -> [{"count": 0}] or  [{"$1": 0}]
+     *
+     * <p>
+     * When there is no documents to aggregate, mongodb return empty. But cosmosdb returns object indicates 0 or {}
+     * </p>
+     *
+     * @param aggregate
+     * @param results
+     * @return result when hit is empty
+     */
+    public static List<Document> processEmptyAggregateResults(Aggregate aggregate, List<Document> results) {
+        
+        var ret = new Document();
+        var functionParts = aggregate.function.split(",");
+
+        for (var functionPart : functionParts) {
+
+            var funcAndAlias = functionPart.split("\\s+AS\\s+");
+            var function = funcAndAlias[0].trim();
+            var alias = funcAndAlias.length > 1 ? funcAndAlias[1].trim() : function;
+
+            if (function.startsWith("COUNT")) {
+                // empty value for count
+                ret.append(alias, 0);
+            } else {
+                // empty value for max/min/avg
+                ret.append(alias, new LinkedHashMap<String, Object>());
+            }
+        }
+
+        return List.of(ret);
+    }
+
+
 }
