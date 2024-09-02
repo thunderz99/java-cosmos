@@ -1,10 +1,14 @@
 package io.github.thunderz99.cosmos.util;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import com.azure.cosmos.implementation.patch.PatchOperationCore;
+import com.google.common.primitives.Primitives;
 import com.mongodb.client.model.PushOptions;
 import com.mongodb.client.model.Updates;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -36,7 +40,9 @@ public class JsonPatchUtil {
             var operation = (PatchOperationCore<?>) _operation;
             String op = operation.getOperationType().name();
             String path = operation.getPath();
-            Object value = operation.getResource();
+            Object rawValue = operation.getResource();
+
+            var value = getNormalizedValue(rawValue);
 
             var matcher = pattern.matcher(path);
 
@@ -65,6 +71,36 @@ public class JsonPatchUtil {
             }
         }
         return updates;
+    }
+
+    /**
+     * convert rawValue(pojo / list of pojo) to normalizedValue(map / list of map) for patch operation
+     *
+     * @param value
+     */
+    static Object getNormalizedValue(Object value) {
+
+        if (value == null) {
+            return null;
+        }
+
+        // primitive type
+        if (value instanceof String || Primitives.isWrapperType(value.getClass()) || value.getClass().isPrimitive() || value.getClass().isEnum()) {
+            return value;
+        }
+
+        if (value instanceof Map<?, ?>) {
+            // no need to convert
+            return value;
+        }
+
+        if (value instanceof Collection<?>) {
+            var collection = (Collection<?>) value;
+            return collection.stream().map(item -> JsonUtil.toMap(item)).collect(Collectors.toList());
+        }
+
+        return JsonUtil.toMap(value);
+
     }
 
     /**
