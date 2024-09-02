@@ -1331,10 +1331,10 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // generate the bulk result
         var ret = new CosmosBulkResult();
 
-        var modifiedCount = bulkWriteResult.getModifiedCount();
+        var totalModifiedCount = bulkWriteResult.getModifiedCount() + bulkWriteResult.getUpserts().size();
         var index = 0;
         for (var entry : documentsMap.entrySet()) {
-            if (index < modifiedCount) {
+            if (index < totalModifiedCount) {
                 ret.successList.add(new CosmosDocument(entry.getValue()));
             } else {
                 ret.fatalList.add(new CosmosException(500, entry.getKey(), "Failed to upsert"));

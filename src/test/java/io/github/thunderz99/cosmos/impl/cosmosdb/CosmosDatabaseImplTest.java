@@ -2521,6 +2521,35 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void bulkUpsert_should_work_containing_both_create_and_update() throws Exception {
+
+        var partition = "Users";
+        int size = 3;
+        var userList = new ArrayList<User>(size);
+
+        for (int i = 0; i < size; i++) {
+            userList.add(new User("bulkUpsert_should_work_both" + i, "testFirstName" + i, "testLastName" + i));
+        }
+        try {
+
+            // create userList[0] beforehand, so this is an upsert
+            // let userList[1] and userList[2] untouched, so these are creations
+            db.upsert(coll, userList.get(0), partition);
+
+            // prepare for upsert
+            for (int i = 0; i < size; i++) {
+                userList.get(i).firstName = "modifiedName" + i;
+            }
+
+            var result = db.bulkUpsert(coll, userList, partition);
+            assertThat(result.successList).hasSize(3);
+
+        } finally {
+            db.batchDelete(coll, userList, partition);
+        }
+    }
+
+    @Test
     void merge_should_work_for_nested_json() {
 
         var map1 = new LinkedHashMap<String, Object>();
