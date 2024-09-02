@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import com.mongodb.client.model.Accumulators;
 import com.mongodb.client.model.Aggregates;
@@ -31,11 +32,12 @@ public class AggregateUtil {
         var projectionSet = new HashSet<String>();
         // Project fields with renamed keys if necessary
         for (var groupByField : aggregate.groupBy) {
-            var fieldInPipeline = convertFieldNameIncludingDot(groupByField);
+            var dotFieldName = convertToDotFieldName(groupByField);
+            var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
 
-            if(!projectionSet.contains(fieldInPipeline)) {
+            if (!projectionSet.contains(fieldInPipeline)) {
                 // add the alias and field only if not added already
-                projection.append(fieldInPipeline, "$" + groupByField);
+                projection.append(fieldInPipeline, "$" + dotFieldName);
                 projectionSet.add(fieldInPipeline);
             }
         }
@@ -43,10 +45,10 @@ public class AggregateUtil {
         // Include all fields that will be used in aggregate functions
         var functionParts = aggregate.function.split(",");
         for (var functionPart : functionParts) {
-            var parts = functionPart.trim().split("\\s+AS\\s+");
+            var parts = functionPart.trim().split("(?i)\\s+AS\\s+");
             var function = parts[0];
 
-            if (StringUtils.startsWith(function, "COUNT(")) {
+            if (StringUtils.startsWithIgnoreCase(function, "COUNT(")) {
                 //count do not need a field "COUNT(1)"
                 continue;
             }
@@ -55,10 +57,11 @@ public class AggregateUtil {
             // Remove the heading "c." which is only used in cosmosdb
             field = StringUtils.removeStart(field, "c.");
 
-            var fieldInPipeline = convertFieldNameIncludingDot(field);
+            var dotFieldName = convertToDotFieldName(field);
+            var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
             if (!projectionSet.contains(fieldInPipeline)) {
                 // add the alias and field only if not added already
-                projection.append(fieldInPipeline, "$" + field);
+                projection.append(fieldInPipeline, "$" + dotFieldName);
                 projectionSet.add(fieldInPipeline);
             }
         }
@@ -109,23 +112,24 @@ public class AggregateUtil {
             var function = funcAndAlias[0].trim();
             var alias = funcAndAlias.length > 1 ? funcAndAlias[1].trim() : function;
 
-            if (function.startsWith("COUNT")) {
+            if (StringUtils.startsWithIgnoreCase(function, "COUNT")) {
                 accumulators.add(Accumulators.sum(alias, 1));
             } else {
-                var field = function.substring(function.indexOf('(') + 1, function.indexOf(')')).trim();
+                var field = function.substring(function.indexOf('(') + 1, function.lastIndexOf(')')).trim();
 
                 // Remove the c. prefix used in cosmosdb
                 field = StringUtils.removeStart(field, "c.");
 
-                var fieldInPipeline = convertFieldNameIncludingDot(field);
+                var fieldInPipeline = convertToDotFieldName(field);
+                fieldInPipeline = convertFieldNameIncludingDot(fieldInPipeline);
 
-                if (function.startsWith("MAX")) {
+                if (StringUtils.startsWithIgnoreCase(function, "MAX")) {
                     accumulators.add(Accumulators.max(alias, "$" + fieldInPipeline));
-                } else if (function.startsWith("MIN")) {
+                } else if (StringUtils.startsWithIgnoreCase(function, "MIN")) {
                     accumulators.add(Accumulators.min(alias, "$" + fieldInPipeline));
-                } else if (function.startsWith("SUM")) {
+                } else if (StringUtils.startsWithIgnoreCase(function, "SUM")) {
                     accumulators.add(Accumulators.sum(alias, "$" + fieldInPipeline));
-                } else if (function.startsWith("AVG")) {
+                } else if (StringUtils.startsWithIgnoreCase(function, "AVG")) {
                     accumulators.add(Accumulators.avg(alias, "$" + fieldInPipeline));
                 }
             }
@@ -193,7 +197,8 @@ public class AggregateUtil {
 
         // Extract fields from the _id and rename them
         for (var groupByField : aggregate.groupBy) {
-            var fieldInPipeline = convertFieldNameIncludingDot(groupByField);
+            var fieldInPipeline = convertToDotFieldName(groupByField);
+            fieldInPipeline = convertFieldNameIncludingDot(groupByField);
             var finalFieldName = getSimpleName(fieldInPipeline);
             projection.append(finalFieldName, "$_id." + fieldInPipeline);
         }
@@ -256,7 +261,7 @@ public class AggregateUtil {
             var function = funcAndAlias[0].trim();
             var alias = funcAndAlias.length > 1 ? funcAndAlias[1].trim() : function;
 
-            if (function.startsWith("COUNT")) {
+            if (StringUtils.startsWithIgnoreCase(function, "COUNT")) {
                 // empty value for count
                 ret.append(alias, 0);
             } else {
@@ -268,5 +273,36 @@ public class AggregateUtil {
         return List.of(ret);
     }
 
+    /**
+     * Convert "c['address']['city']['street']" to "address.city.street"
+     *
+     * @param input
+     * @return fieldName using dot
+     */
+    static String convertToDotFieldName(String input) {
+        if (input == null) {
+            return null;
+        }
+
+        // Regex to match the pattern c['key1']['key2']...
+        var pattern = Pattern.compile("\\['([^']+)'\\]");
+        var matcher = pattern.matcher(input);
+
+        var result = new StringBuilder();
+
+        while (matcher.find()) {
+            if (result.length() > 0) {
+                result.append(".");
+            }
+            result.append(matcher.group(1));
+        }
+
+        // If the result is empty and the input is a single key without brackets
+        if (result.length() == 0 && !input.contains("['")) {
+            return input;
+        }
+
+        return result.toString();
+    }
 
 }

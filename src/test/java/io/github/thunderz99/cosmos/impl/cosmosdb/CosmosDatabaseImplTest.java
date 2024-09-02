@@ -1135,6 +1135,59 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void aggregate_should_work_with_key_brackets() throws Exception {
+
+        // test MAX(c['creationDate'])
+        {
+            var aggregate = Aggregate.function("MAX(c['creationDate']) AS maxDate");
+
+            // test find
+            var result = db.aggregate(coll, aggregate,
+                    Condition.filter("lastName", "Andersen"), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+
+            var value = result.get(0).getOrDefault("maxDate", "").toString();
+            assertThat(Integer.parseInt(value)).isGreaterThan(0);
+
+        }
+    }
+
+    @Test
+    void aggregate_should_work_with_lower_cases() throws Exception {
+
+        // test count(1) as facetCount
+        {
+            var aggregate = Aggregate.function("count(1) as facetCount")
+                    .groupBy("fullName.last", "age")
+                    .conditionAfterAggregate(Condition.filter().sort("age", "DESC"));
+
+            // test find
+            var result = db.aggregate(coll, aggregate, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+        }
+    }
+
+    @Test
+    void aggregate_should_work_with_nested_functions() throws Exception {
+
+        // test ARRAY_LENGTH(c.children)
+        {
+            var aggregate = Aggregate.function("SUM(ARRAY_LENGTH(c['children'])) AS facetCount");
+
+            // test find
+            var result = db.aggregate(coll, aggregate,
+                    Condition.filter(), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+            var value = result.get(0).getOrDefault("facetCount", "").toString();
+            assertThat(Integer.parseInt(value)).isEqualTo(4);
+
+        }
+    }
+
+    @Test
     void find_should_work_when_reading_double_type() throws Exception {
 
         var id = "find_should_work_when_reading_double_type";
