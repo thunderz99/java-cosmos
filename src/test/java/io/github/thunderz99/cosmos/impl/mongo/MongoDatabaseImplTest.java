@@ -1141,6 +1141,115 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void aggregate_should_work_with_key_brackets() throws Exception {
+
+        // test MAX(c['creationDate'])
+        {
+            var aggregate = Aggregate.function("MAX(c['creationDate']) AS maxDate");
+
+            // test find
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter("lastName", "Andersen"), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+
+            var value = result.get(0).getOrDefault("maxDate", "").toString();
+            assertThat(Integer.parseInt(value)).isGreaterThan(0);
+
+        }
+    }
+
+    @Test
+    void aggregate_should_work_with_lower_cases() throws Exception {
+
+        // test count(1) as facetCount
+        {
+            var aggregate = Aggregate.function("count(1) as facetCount")
+                    .groupBy("fullName.last", "age")
+                    .conditionAfterAggregate(Condition.filter().sort("age", "DESC"));
+
+            // test find
+            var result = db.aggregate(host, aggregate, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+        }
+    }
+
+    @Test
+    void aggregate_should_work_with_sum() throws Exception {
+
+        // test sum(c.creationDate)
+        {
+            var aggregate = Aggregate.function("sum(c.creationDate) as dateSum");
+
+            // test find
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter(), "Families").toMap();
+            assertThat(result).hasSize(1);
+
+            var dateSum = result.get(0).get("dateSum");
+            if (dateSum instanceof Double) {
+                assertThat((Double) dateSum).isGreaterThan(2.8E9);
+            } else if (dateSum instanceof Long) {
+                assertThat((Long) dateSum).isGreaterThan(2_800_000_000L);
+            }
+
+        }
+    }
+
+    @Disabled
+        // not supported yet
+    void aggregate_should_work_with_array_length() throws Exception {
+
+        // test array_length(c.children)
+        {
+            var aggregate = Aggregate.function("array_length(c.children) as childrenLength")
+                    .conditionAfterAggregate(Condition.filter().sort("childrenLength", "ASC"));
+            ;
+
+            // test find
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter(), "Families").toMap();
+            assertThat(result).hasSize(2);
+
+            assertThat(result.get(0).get("childrenLength")).isEqualTo(1);
+            assertThat(result.get(1).get("childrenLength")).isEqualTo(3);
+        }
+    }
+
+    @Test
+    void aggregate_should_work_with_nested_functions() throws Exception {
+
+        // test ARRAY_LENGTH(c.area.city.street.rooms)
+        {
+            var aggregate = Aggregate.function("SUM(ARRAY_LENGTH(c['area']['city']['street']['rooms'])) AS count");
+
+            // test find
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter(), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+            var value = result.get(0).getOrDefault("count", "").toString();
+            assertThat(Integer.parseInt(value)).isEqualTo(2);
+
+        }
+
+        // test ARRAY_LENGTH(c.children)
+        {
+            var aggregate = Aggregate.function("SUM(ARRAY_LENGTH(c.children)) AS facetCount");
+
+            // test find
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter(), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+            var value = result.get(0).getOrDefault("facetCount", "").toString();
+            assertThat(Integer.parseInt(value)).isEqualTo(4);
+
+        }
+    }
+
+    @Test
     void find_should_work_when_reading_double_type() throws Exception {
 
         var id = "find_should_work_when_reading_double_type";

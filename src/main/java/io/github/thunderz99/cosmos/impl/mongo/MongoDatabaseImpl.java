@@ -817,8 +817,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // 3. Add the group stage
         var groupStage = AggregateUtil.createGroupStage(aggregate);
-        if (groupStage != null) {
-            pipeline.add(groupStage);
+        if (CollectionUtils.isNotEmpty(groupStage)) {
+            pipeline.addAll(groupStage);
         }
 
         // 4. Add optional offset, limit if specified in Condition
@@ -852,7 +852,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // Execute the aggregation pipeline
         List<Document> results = container.aggregate(pipeline).into(new ArrayList<>());
 
-        // after process if a aggregate result is empty
+        // after process if an aggregate result is empty
         if (results.isEmpty()) {
             results = AggregateUtil.processEmptyAggregateResults(aggregate, results);
         }
@@ -1324,14 +1324,14 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // Execute bulkWrite operation
         var bulkWriteResult = container.bulkWrite(bulkOperations, new BulkWriteOptions().ordered(true));
 
-        log.info("Bulk created Documents in collection:{}, partition:{}, insertedCount:{}, account:{}",
-                coll, partition, bulkWriteResult.getModifiedCount(), getAccount());
+        var totalModifiedCount = bulkWriteResult.getModifiedCount() + bulkWriteResult.getUpserts().size();
 
+        log.info("Bulk created Documents in collection:{}, partition:{}, upsertedCount:{}, account:{}",
+                coll, partition, totalModifiedCount, getAccount());
 
         // generate the bulk result
         var ret = new CosmosBulkResult();
 
-        var totalModifiedCount = bulkWriteResult.getModifiedCount() + bulkWriteResult.getUpserts().size();
         var index = 0;
         for (var entry : documentsMap.entrySet()) {
             if (index < totalModifiedCount) {
