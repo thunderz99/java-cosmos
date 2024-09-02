@@ -12,6 +12,7 @@ import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
+import io.github.thunderz99.cosmos.dto.CheckBox;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -1918,6 +1919,46 @@ class MongoDatabaseImplTest {
             db.delete(host, id, partition);
         }
 
+    }
+
+    @Test
+    void patch_should_work_with_pojo() throws Exception {
+        var partition = "PatchPojoTests";
+        var id = "patch_should_work_with_pojo";
+
+        try {
+            var data1 = Map.of("id", id, "name", "John",
+                    "contents", List.of(new CheckBox("id1", "name1", CheckBox.Align.VERTICAL)),
+                    "score", 85.5);
+            db.upsert(host, data1, partition).toMap();
+
+            {
+                // Set should work
+
+                var operations = PatchOperations.create()
+                        .set("/contents", List.of(
+                                new CheckBox("id1", "name1", CheckBox.Align.HORIZONTAL),
+                                new CheckBox("id2", "name2", CheckBox.Align.VERTICAL)
+                        )); // reset contents to a new list
+                var item = db.patch(host, id, operations, partition).toMap();
+
+                assertThat((List<Map<String, Object>>) item.get("contents")).hasSize(2);
+
+                
+                var checkboxList = JsonUtil.fromJson2List(JsonUtil.toJson(item.get("contents")), CheckBox.class);
+
+                assertThat(checkboxList).hasSize(2);
+
+                assertThat(checkboxList.get(0).id).isEqualTo("id1");
+                assertThat(checkboxList.get(0).align).isEqualTo(CheckBox.Align.HORIZONTAL);
+                assertThat(checkboxList.get(1).id).isEqualTo("id2");
+                assertThat(checkboxList.get(1).align).isEqualTo(CheckBox.Align.VERTICAL);
+
+
+            }
+        } finally {
+            db.delete(host, id, partition);
+        }
     }
 
     @Test
