@@ -55,9 +55,7 @@ public class AggregateUtil {
                 continue;
             }
 
-            var field = function.substring(function.indexOf('(') + 1, function.indexOf(')')).trim();
-            // Remove the heading "c." which is only used in cosmosdb
-            field = StringUtils.removeStart(field, "c.");
+            var field = extractFieldFromFunction(function);
 
             var dotFieldName = convertToDotFieldName(field);
             var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
@@ -105,9 +103,12 @@ public class AggregateUtil {
             return null;
         }
 
-        var subPipelines = new ArrayList<Bson>();
-
+        // accumulators for MIN/MAX/AVG/SUM/COUNT
         var accumulators = new ArrayList<BsonField>();
+
+        // preProjections for SUM(ARRAY_LENGTH(xxx))
+        var preFieldProjections = new Document();
+
         var functionParts = aggregate.function.split(",");
 
         // Add accumulators for each aggregate function
@@ -119,26 +120,19 @@ public class AggregateUtil {
             if (StringUtils.startsWithIgnoreCase(function, "COUNT")) {
                 accumulators.add(Accumulators.sum(alias, 1));
             } else if (StringUtils.startsWithIgnoreCase(function, "SUM(ARRAY_LENGTH(")) {
-                // this a special case at present. TODO: generalize this
 
-                var field = function.substring(function.indexOf("ARRAY_LENGTH(") + 13, function.lastIndexOf("))") + 1).trim();
-
-                // Remove the c. prefix used in cosmosdb
-                field = StringUtils.removeStart(field, "c.");
+                var field = extractFieldFromFunction(function);
 
                 var dotFieldName = convertToDotFieldName(field);
                 var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
 
                 // array_length projection is always before group and accumulators
                 var fieldInPipeline4ArrayLength = fieldInPipeline + "__array_length";
-                subPipelines.add(0, createArrayLengthProjectionStage(dotFieldName, fieldInPipeline4ArrayLength));
+                preFieldProjections.append(fieldInPipeline4ArrayLength, createArrayLengthProjection(fieldInPipeline));
                 accumulators.add(Accumulators.sum(alias, "$" + fieldInPipeline4ArrayLength));
 
             } else {
-                var field = function.substring(function.indexOf('(') + 1, function.lastIndexOf(')')).trim();
-
-                // Remove the c. prefix used in cosmosdb
-                field = StringUtils.removeStart(field, "c.");
+                var field = extractFieldFromFunction(function);
 
                 var dotFieldName = convertToDotFieldName(field);
                 var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
@@ -173,6 +167,12 @@ public class AggregateUtil {
             }
         }
 
+        var subPipelines = new ArrayList<Bson>();
+
+        if (!preFieldProjections.isEmpty()) {
+            subPipelines.add(Aggregates.project(preFieldProjections));
+        }
+
         if (!accumulators.isEmpty()) {
             // Create the group stage
             subPipelines.add(Aggregates.group(groupId, accumulators));
@@ -182,24 +182,43 @@ public class AggregateUtil {
     }
 
     /**
-     * Add projection stage for ARRAY_LENGTH(c.children)
+     * extract field name from SUM(ARRAY_LENGTH(c.address.city.street)) to "c.address.city.street"
      *
-     * @param dotName         "children"
-     * @param fieldInPipeline "children__array_length"
+     * @param function
      * @return
      */
-    static Bson createArrayLengthProjectionStage(String dotName, String fieldInPipeline) {
+    static String extractFieldFromFunction(String function) {
+
+        if (StringUtils.isEmpty(function)) {
+            return function;
+        }
+
+        if (StringUtils.startsWithIgnoreCase(function, "SUM(ARRAY_LENGTH(")) {
+            // this a special case at present. TODO: generalize this
+            return function.substring(function.indexOf("ARRAY_LENGTH(") + 13, function.lastIndexOf("))")).trim();
+        }
+
+        return function.substring(function.indexOf('(') + 1, function.indexOf(')')).trim();
+    }
+
+    /**
+     * Add projection stage for ARRAY_LENGTH(c.area.city.street.rooms)
+     *
+     * @param fieldInPipeline "area__city__street__rooms"
+     * @return value part of projection
+     */
+    static Document createArrayLengthProjection(String fieldInPipeline) {
         /*
           {
-            $project: {
-              children__array_length: { $size: { $ifNull: ["$children", []] } }  // Get the length of the children array, or 0 if it's null
+            $project:
+            { // this value part will be returned
+              area__city__street__rooms__array_length: { $size: { $ifNull: ["$area__city__street__rooms", []] } }  // Get the length of the children array, or 0 if it's null
             }
           },
          */
 
-        var doc = new Document(fieldInPipeline, new Document("$size", new Document("$ifNull", List.of("$" + dotName, List.of()))));
+        return new Document("$size", new Document("$ifNull", List.of("$" + fieldInPipeline, List.of())));
 
-        return Aggregates.project(doc);
     }
 
 
@@ -323,6 +342,10 @@ public class AggregateUtil {
     /**
      * Convert "c['address']['city']['street']" to "address.city.street"
      *
+     * <p>
+     * And also c.address.city.street to address.city.street
+     * </p>
+     *
      * @param input
      * @return fieldName using dot
      */
@@ -330,6 +353,9 @@ public class AggregateUtil {
         if (input == null) {
             return null;
         }
+
+        // Remove the c. prefix used in cosmosdb
+        input = StringUtils.removeStart(input, "c.");
 
         // Regex to match the pattern c['key1']['key2']...
         var pattern = Pattern.compile("\\['([^']+)'\\]");

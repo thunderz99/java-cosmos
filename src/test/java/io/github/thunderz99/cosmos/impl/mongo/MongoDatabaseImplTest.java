@@ -1220,9 +1220,23 @@ class MongoDatabaseImplTest {
     @Test
     void aggregate_should_work_with_nested_functions() throws Exception {
 
+        // test ARRAY_LENGTH(c.area.city.street.rooms)
+        {
+            var aggregate = Aggregate.function("SUM(ARRAY_LENGTH(c['area']['city']['street']['rooms'])) AS count");
+
+            // test find
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter(), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+            var value = result.get(0).getOrDefault("count", "").toString();
+            assertThat(Integer.parseInt(value)).isEqualTo(2);
+
+        }
+
         // test ARRAY_LENGTH(c.children)
         {
-            var aggregate = Aggregate.function("SUM(ARRAY_LENGTH(c['children'])) AS facetCount");
+            var aggregate = Aggregate.function("SUM(ARRAY_LENGTH(c.children)) AS facetCount");
 
             // test find
             var result = db.aggregate(host, aggregate,
