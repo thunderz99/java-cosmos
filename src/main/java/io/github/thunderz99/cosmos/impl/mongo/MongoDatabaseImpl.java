@@ -817,8 +817,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // 3. Add the group stage
         var groupStage = AggregateUtil.createGroupStage(aggregate);
-        if (groupStage != null) {
-            pipeline.add(groupStage);
+        if (CollectionUtils.isNotEmpty(groupStage)) {
+            pipeline.addAll(groupStage);
         }
 
         // 4. Add optional offset, limit if specified in Condition

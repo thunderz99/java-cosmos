@@ -20,6 +20,8 @@ import org.bson.conversions.Bson;
  */
 public class AggregateUtil {
 
+    public static final String REGEX_AS = "(?i)\\s+AS\\s+";
+
     /**
      * Project fields with renamed keys if key name contains dot "."
      *
@@ -45,7 +47,7 @@ public class AggregateUtil {
         // Include all fields that will be used in aggregate functions
         var functionParts = aggregate.function.split(",");
         for (var functionPart : functionParts) {
-            var parts = functionPart.trim().split("(?i)\\s+AS\\s+");
+            var parts = functionPart.trim().split(REGEX_AS);
             var function = parts[0];
 
             if (StringUtils.startsWithIgnoreCase(function, "COUNT(")) {
@@ -94,34 +96,52 @@ public class AggregateUtil {
 
     /**
      * Generate group stage of mongo aggregate pipeline from a Aggregate dto input
+     *
      * @param aggregate
      * @return group stage in bson
      */
-    public static Bson createGroupStage(Aggregate aggregate) {
+    public static List<Bson> createGroupStage(Aggregate aggregate) {
         if (aggregate.function.isEmpty()) {
             return null;
         }
 
-        var accumulators = new ArrayList<BsonField>();
+        var subPipelines = new ArrayList<Bson>();
 
+        var accumulators = new ArrayList<BsonField>();
         var functionParts = aggregate.function.split(",");
 
         // Add accumulators for each aggregate function
         for (var functionPart : functionParts) {
-            var funcAndAlias = functionPart.split("\\s+AS\\s+");
+            var funcAndAlias = functionPart.split(REGEX_AS);
             var function = funcAndAlias[0].trim();
             var alias = funcAndAlias.length > 1 ? funcAndAlias[1].trim() : function;
 
             if (StringUtils.startsWithIgnoreCase(function, "COUNT")) {
                 accumulators.add(Accumulators.sum(alias, 1));
+            } else if (StringUtils.startsWithIgnoreCase(function, "SUM(ARRAY_LENGTH(")) {
+                // this a special case at present. TODO: generalize this
+
+                var field = function.substring(function.indexOf("ARRAY_LENGTH(") + 13, function.lastIndexOf("))") + 1).trim();
+
+                // Remove the c. prefix used in cosmosdb
+                field = StringUtils.removeStart(field, "c.");
+
+                var dotFieldName = convertToDotFieldName(field);
+                var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
+
+                // array_length projection is always before group and accumulators
+                var fieldInPipeline4ArrayLength = fieldInPipeline + "__array_length";
+                subPipelines.add(0, createArrayLengthProjectionStage(dotFieldName, fieldInPipeline4ArrayLength));
+                accumulators.add(Accumulators.sum(alias, "$" + fieldInPipeline4ArrayLength));
+
             } else {
                 var field = function.substring(function.indexOf('(') + 1, function.lastIndexOf(')')).trim();
 
                 // Remove the c. prefix used in cosmosdb
                 field = StringUtils.removeStart(field, "c.");
 
-                var fieldInPipeline = convertToDotFieldName(field);
-                fieldInPipeline = convertFieldNameIncludingDot(fieldInPipeline);
+                var dotFieldName = convertToDotFieldName(field);
+                var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
 
                 if (StringUtils.startsWithIgnoreCase(function, "MAX")) {
                     accumulators.add(Accumulators.max(alias, "$" + fieldInPipeline));
@@ -131,8 +151,11 @@ public class AggregateUtil {
                     accumulators.add(Accumulators.sum(alias, "$" + fieldInPipeline));
                 } else if (StringUtils.startsWithIgnoreCase(function, "AVG")) {
                     accumulators.add(Accumulators.avg(alias, "$" + fieldInPipeline));
+                } else if (StringUtils.startsWithIgnoreCase(function, "SUM")) {
+                    accumulators.add(Accumulators.sum(alias, "$" + fieldInPipeline));
                 }
             }
+
         }
 
         // Create the group key based on the groupBy fields (use renamed fields where necessary)
@@ -150,10 +173,34 @@ public class AggregateUtil {
             }
         }
 
-        // Create the group stage
-        return Aggregates.group(groupId, accumulators);
+        if (!accumulators.isEmpty()) {
+            // Create the group stage
+            subPipelines.add(Aggregates.group(groupId, accumulators));
+        }
+
+        return subPipelines;
     }
 
+    /**
+     * Add projection stage for ARRAY_LENGTH(c.children)
+     *
+     * @param dotName         "children"
+     * @param fieldInPipeline "children__array_length"
+     * @return
+     */
+    static Bson createArrayLengthProjectionStage(String dotName, String fieldInPipeline) {
+        /*
+          {
+            $project: {
+              children__array_length: { $size: { $ifNull: ["$children", []] } }  // Get the length of the children array, or 0 if it's null
+            }
+          },
+         */
+
+        var doc = new Document(fieldInPipeline, new Document("$size", new Document("$ifNull", List.of("$" + dotName, List.of()))));
+
+        return Aggregates.project(doc);
+    }
 
 
     /**
@@ -207,7 +254,7 @@ public class AggregateUtil {
         var functionParts = aggregate.function.split(",");
         var index = 1;
         for (var functionPart : functionParts) {
-            var funcAndAlias = functionPart.split("\\s+AS\\s+");
+            var funcAndAlias = functionPart.split(REGEX_AS);
             var function = funcAndAlias[0];
             if (funcAndAlias.length > 1) {
                 // `max(c.age) AS maxAge` will be maxAge
@@ -257,7 +304,7 @@ public class AggregateUtil {
 
         for (var functionPart : functionParts) {
 
-            var funcAndAlias = functionPart.split("\\s+AS\\s+");
+            var funcAndAlias = functionPart.split(REGEX_AS);
             var function = funcAndAlias[0].trim();
             var alias = funcAndAlias.length > 1 ? funcAndAlias[1].trim() : function;
 

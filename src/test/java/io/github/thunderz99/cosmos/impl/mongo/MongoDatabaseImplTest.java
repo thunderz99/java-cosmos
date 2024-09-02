@@ -1176,6 +1176,48 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void aggregate_should_work_with_sum() throws Exception {
+
+        // test sum(c.creationDate)
+        {
+            var aggregate = Aggregate.function("sum(c.creationDate) as dateSum");
+
+            // test find
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter(), "Families").toMap();
+            assertThat(result).hasSize(1);
+
+            var dateSum = result.get(0).get("dateSum");
+            if (dateSum instanceof Double) {
+                assertThat((Double) dateSum).isGreaterThan(2.8E9);
+            } else if (dateSum instanceof Long) {
+                assertThat((Long) dateSum).isGreaterThan(2_800_000_000L);
+            }
+
+        }
+    }
+
+    @Disabled
+        // not supported yet
+    void aggregate_should_work_with_array_length() throws Exception {
+
+        // test array_length(c.children)
+        {
+            var aggregate = Aggregate.function("array_length(c.children) as childrenLength")
+                    .conditionAfterAggregate(Condition.filter().sort("childrenLength", "ASC"));
+            ;
+
+            // test find
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter(), "Families").toMap();
+            assertThat(result).hasSize(2);
+
+            assertThat(result.get(0).get("childrenLength")).isEqualTo(1);
+            assertThat(result.get(1).get("childrenLength")).isEqualTo(3);
+        }
+    }
+
+    @Test
     void aggregate_should_work_with_nested_functions() throws Exception {
 
         // test ARRAY_LENGTH(c.children)
