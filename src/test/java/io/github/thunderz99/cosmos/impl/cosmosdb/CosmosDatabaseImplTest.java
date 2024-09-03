@@ -764,6 +764,23 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void find_using_not_with_multiple_sub_conds_should_work() throws Exception {
+        var partition = "Families";
+
+        {
+            // $AND + $NOT + multiple sub conds
+            var cond = Condition.filter("lastName", "Andersen", "$NOT not_test", List.of(
+                    Condition.filter("address.state", "NY"),
+                    Condition.filter("creationDate <", 0)
+            ));
+            var docs = db.find(coll, cond, partition).toMap();
+            assertThat(docs).hasSize(1);
+            assertThat(docs.get(0)).containsEntry("id", "AndersenFamily");
+
+        }
+    }
+
+    @Test
     public void fields_with_empty_field_should_work() throws Exception {
         // test fields with fields ["id", ""]
         {
@@ -779,7 +796,6 @@ class CosmosDatabaseImplTest {
             assertThat(users.get(0).skills).isEmpty();
         }
     }
-
 
     @Test
     public void regex_should_work_with_filter() throws Exception {

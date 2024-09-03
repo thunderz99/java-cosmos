@@ -6,9 +6,7 @@ import java.util.regex.Pattern;
 
 import com.mongodb.client.model.Filters;
 import io.github.thunderz99.cosmos.condition.Condition;
-import org.bson.BsonDocument;
 import org.bson.Document;
-import org.bson.conversions.Bson;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -243,52 +241,6 @@ public class ConditionUtilTest {
     public void nullSort_should_return_null() {
         var bsonSort = ConditionUtil.toBsonSort(null);
         assertThat(bsonSort).isNull();
-    }
-
-    @Test
-    public void processNor_should_return_null_when_filter_is_null() {
-        Bson result = ConditionUtil.processNor(null);
-        assertThat(result).isNull();
-    }
-
-    @Test
-    public void processNor_should_handle_empty_document() {
-        Bson result = ConditionUtil.processNor(new BsonDocument());
-        assertThat(result.toBsonDocument()).isEmpty();
-    }
-
-    @Test
-    public void processNor_should_return_same_filter_when_not_top_level_not() {
-        Bson filter = Filters.eq("age", 30);
-        Bson result = ConditionUtil.processNor(filter);
-        assertThat(result.toBsonDocument()).isEqualTo(filter.toBsonDocument());
-    }
-
-    @Test
-    public void processNor_should_convert_top_level_not_with_document_to_nor() {
-
-        // single $not with bson filter should remain unchanged.
-        Bson filter = Filters.not(Filters.eq("age", 30));
-        Bson result = ConditionUtil.processNor(filter);
-
-        assertThat(result.toBsonDocument()).isEqualTo(filter.toBsonDocument());
-    }
-
-    @Test
-    public void processNor_should_convert_top_level_not_with_array_to_nor() {
-        Bson filter = Filters.not(Filters.or(Filters.eq("age", 30), Filters.eq("name", "John")));
-        Bson result = ConditionUtil.processNor(filter);
-
-        var expected = Filters.nor(Filters.or(Filters.eq("age", 30), Filters.eq("name", "John")));
-        assertThat(result.toBsonDocument()).isEqualTo(expected.toBsonDocument());
-    }
-
-    @Test
-    public void processNor_should_return_same_filter_for_unexpected_case() {
-        Bson filter = Filters.not(Filters.in("tags", "MongoDB", "Java"));
-        Bson result = ConditionUtil.processNor(filter);
-
-        assertThat(result.toBsonDocument()).isEqualTo(filter.toBsonDocument());
     }
 
 }
