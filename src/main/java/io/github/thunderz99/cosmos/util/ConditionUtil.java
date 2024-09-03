@@ -39,7 +39,7 @@ public class ConditionUtil {
     );
 
     // Generate the regex pattern using binaryOperators
-    public static final Pattern simpleExpressionPattern = Pattern.compile("(.+?)\\s*(" + String.join("|", binaryOperators) + ")\\s*$");
+    public static final Pattern simpleExpressionPattern = Pattern.compile("(?!\\$)(.+?)\\s*(" + String.join("|", binaryOperators) + ")\\s*$");
 
     /**
      * Convert condition's map filter to bson filter for mongo

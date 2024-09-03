@@ -170,9 +170,9 @@ public class ConditionUtilTest {
             assertThat(bsonFilter.toBsonDocument()).isEqualTo(Filters.nor(Filters.regex("lastName", ".*" + Pattern.quote("Willington") + ".*")).toBsonDocument());
         }
         {
-            // not with multiple sub filters
+            // not with multiple sub filters, and with a description "CONTAINS"
             Map<String, Object> filter = Map.of(
-                    "$NOT", List.of(
+                    "$NOT CONTAINS", List.of(
                             Map.of("lastName", "Willington"),
                             Map.of("age >=", 20)
                     )

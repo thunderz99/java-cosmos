@@ -769,7 +769,7 @@ class CosmosDatabaseImplTest {
 
         {
             // $AND + $NOT + multiple sub conds
-            var cond = Condition.filter("lastName", "Andersen", "$NOT not_test", List.of(
+            var cond = Condition.filter("lastName", "Andersen", "$NOT CONTAINS", List.of(
                     Condition.filter("address.state", "NY"),
                     Condition.filter("creationDate <", 0)
             ));
