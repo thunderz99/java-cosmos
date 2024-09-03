@@ -39,7 +39,7 @@ public class ConditionUtil {
     );
 
     // Generate the regex pattern using binaryOperators
-    public static final Pattern simpleExpressionPattern = Pattern.compile("(?!\\$)(.+?)\\s*(" + String.join("|", binaryOperators) + ")\\s*$");
+    public static final Pattern simpleExpressionPattern = Pattern.compile("(.+?)\\s*(" + String.join("|", binaryOperators) + ")\\s*$");
 
     /**
      * Convert condition's map filter to bson filter for mongo
@@ -163,8 +163,8 @@ public class ConditionUtil {
             return null;
         }
 
-        // preprocess for "fieldA OR fieldB"
-        if (key.contains(" OR ")) {
+        // preprocess for "fieldA OR fieldB". exclude $AND, $OR, $NOT sub queries
+        if (key.contains(" OR ") && !StringUtils.startsWithAny(key, "$AND", "$OR", "$NOT")) {
             return generateOrExpression(key, value, filterOptions);
         }
 
@@ -180,7 +180,9 @@ public class ConditionUtil {
         }
 
         var matcher = simpleExpressionPattern.matcher(key);
-        if (matcher.matches()) {
+
+        // match expression and exclude $AND, $OR, $NOT sub queries
+        if (matcher.matches() && !StringUtils.startsWithAny(key, "$AND", "$OR", "$NOT")) {
             var field = matcher.group(1).trim();
             var operator = matcher.group(2).trim();
 
