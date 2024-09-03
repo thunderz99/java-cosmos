@@ -167,7 +167,7 @@ public class ConditionUtilTest {
             );
             var bsonFilter = ConditionUtil.toBsonFilter(filter);
 
-            assertThat(bsonFilter.toBsonDocument()).isEqualTo(Filters.not(Filters.regex("lastName", ".*" + Pattern.quote("Willington") + ".*")).toBsonDocument());
+            assertThat(bsonFilter.toBsonDocument()).isEqualTo(Filters.nor(Filters.regex("lastName", ".*" + Pattern.quote("Willington") + ".*")).toBsonDocument());
         }
         {
             // not with multiple sub filters
@@ -179,7 +179,7 @@ public class ConditionUtilTest {
             );
             var bsonFilter = ConditionUtil.toBsonFilter(filter);
 
-            assertThat(bsonFilter.toBsonDocument()).isEqualTo(new Document("$not", Filters.and(Filters.eq("lastName", "Willington"), Filters.gte("age", 20))).toBsonDocument());
+            assertThat(bsonFilter.toBsonDocument()).isEqualTo(Filters.nor(Filters.eq("lastName", "Willington"), Filters.gte("age", 20)).toBsonDocument());
         }
 
         {
@@ -187,7 +187,7 @@ public class ConditionUtilTest {
             var cond = Condition.filter("lastName", "Willington", "age >=", 20).not();
             var bsonFilter = ConditionUtil.toBsonFilter(cond);
 
-            assertThat(bsonFilter.toBsonDocument()).isEqualTo(new Document("$not", Filters.and(Filters.eq("lastName", "Willington"), Filters.gte("age", 20))).toBsonDocument());
+            assertThat(bsonFilter.toBsonDocument()).isEqualTo(Filters.nor(Filters.and(Filters.eq("lastName", "Willington"), Filters.gte("age", 20))).toBsonDocument());
         }
 
     }
