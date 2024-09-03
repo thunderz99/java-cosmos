@@ -12,6 +12,7 @@ import com.mongodb.client.model.BsonField;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
@@ -47,8 +48,7 @@ public class AggregateUtil {
         // Include all fields that will be used in aggregate functions
         var functionParts = aggregate.function.split(",");
         for (var functionPart : functionParts) {
-            var parts = functionPart.trim().split(REGEX_AS);
-            var function = parts[0];
+            var function = extractFunctionAndAlias(functionPart).getLeft();
 
             if (StringUtils.startsWithIgnoreCase(function, "COUNT(")) {
                 //count do not need a field "COUNT(1)"
@@ -113,11 +113,12 @@ public class AggregateUtil {
 
         // Add accumulators for each aggregate function
         for (var functionPart : functionParts) {
-            var funcAndAlias = functionPart.split(REGEX_AS);
-            var function = funcAndAlias[0].trim();
-            var alias = funcAndAlias.length > 1 ? funcAndAlias[1].trim() : function;
+            var functionAndAlias = extractFunctionAndAlias(functionPart);
 
-            if (StringUtils.startsWithIgnoreCase(function, "COUNT")) {
+            var function = functionAndAlias.getLeft();
+            var alias = functionAndAlias.getRight();
+
+            if (StringUtils.startsWithIgnoreCase(function, "COUNT(")) {
                 accumulators.add(Accumulators.sum(alias, 1));
             } else if (StringUtils.startsWithIgnoreCase(function, "SUM(ARRAY_LENGTH(")) {
 
@@ -271,18 +272,19 @@ public class AggregateUtil {
 
         // Include all calculated fields (e.g., facetCount, maxAge) directly from the group stage
         var functionParts = aggregate.function.split(",");
-        var index = 1;
         for (var functionPart : functionParts) {
-            var funcAndAlias = functionPart.split(REGEX_AS);
-            var function = funcAndAlias[0];
-            if (funcAndAlias.length > 1) {
+
+            var functionAndAlias = extractFunctionAndAlias(functionPart);
+            var function = functionAndAlias.getLeft();
+            var alias = functionAndAlias.getRight();
+
+            if (StringUtils.isNotEmpty(alias)) {
                 // `max(c.age) AS maxAge` will be maxAge
-                var alias = funcAndAlias[1].trim();
                 projection.append(alias, 1);
             } else {
                 // `max(c.age)` without AS will be $1 or $2, etc. According to cosmosdb's spec
                 // TODO $1 and $2 not implemented
-                var alias = function;
+                alias = function;
                 projection.append(alias, 1);
             }
         }
@@ -323,9 +325,9 @@ public class AggregateUtil {
 
         for (var functionPart : functionParts) {
 
-            var funcAndAlias = functionPart.split(REGEX_AS);
-            var function = funcAndAlias[0].trim();
-            var alias = funcAndAlias.length > 1 ? funcAndAlias[1].trim() : function;
+            var functionAndAlias = extractFunctionAndAlias(functionPart);
+            var function = functionAndAlias.getLeft();
+            var alias = functionAndAlias.getRight();
 
             if (StringUtils.startsWithIgnoreCase(function, "COUNT")) {
                 // empty value for count
@@ -343,7 +345,7 @@ public class AggregateUtil {
      * Convert "c['address']['city']['street']" to "address.city.street"
      *
      * <p>
-     * And also c.address.city.street to address.city.street
+     * And also "c.address.city.street" to "address.city.street"
      * </p>
      *
      * @param input
@@ -376,6 +378,33 @@ public class AggregateUtil {
         }
 
         return result.toString();
+    }
+
+    /**
+     * extract "SUM(c.age) AS ageSum" to function="SUM(c.age)", alias="ageSum"
+     *
+     * <p>
+     * And also "SUM(ARRAY_LENGTH(c['children'])) AS 'count'" to function="SUM(ARRAY_LENGTH(c['children']))", alias="count"
+     * </p>
+     *
+     * @param input
+     * @return fieldName using dot
+     */
+    static Pair<String, String> extractFunctionAndAlias(String input) {
+        if (StringUtils.isEmpty(input)) {
+            return Pair.of("", "");
+        }
+
+        var funcAndAlias = input.split(REGEX_AS);
+        var function = funcAndAlias[0].trim();
+
+        // TODO, deal with if there is no alias "SUM(c.age) without AS"
+        var alias = funcAndAlias.length > 1 ? funcAndAlias[1].trim() : "";
+
+        // removes unneeded single quotation " SUM(c.age) AS 'count' "
+        alias = StringUtils.removeStart(StringUtils.removeEnd(alias, "'"), "'");
+
+        return Pair.of(function, alias);
     }
 
 }
