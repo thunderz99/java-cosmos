@@ -472,12 +472,14 @@ public class Condition {
             } else if (entry.getKey().startsWith(SubConditionType.NOT)) {
                 // sub query NOT
                 var subQueries = extractSubQueries(entry.getValue());
-                var subQueryWithNot = Condition.filter(SubConditionType.AND, subQueries).not();
-                // recursively generate the filterQuery with negative flag true
-                var filterQueryWithNot = subQueryWithNot.generateFilterQuery("", params, conditionIndex, paramIndex, selectAlias);
-                subFilterQueryToAdd = " " + removeConnectPart(filterQueryWithNot.queryText.toString());
-                saveOriginJoinCondition(subFilterQueryToAdd);
-                subFilterQueryToAdd=toJoinQueryText( subFilterQueryToAdd,  subFilterQueryToAdd,  paramIndex);
+                if (CollectionUtils.isNotEmpty(subQueries)) {
+                    var subQueryWithNot = Condition.filter(SubConditionType.AND, subQueries).not();
+                    // recursively generate the filterQuery with negative flag true
+                    var filterQueryWithNot = subQueryWithNot.generateFilterQuery("", params, conditionIndex, paramIndex, selectAlias);
+                    subFilterQueryToAdd = " " + removeConnectPart(filterQueryWithNot.queryText.toString());
+                    saveOriginJoinCondition(subFilterQueryToAdd);
+                    subFilterQueryToAdd = toJoinQueryText(subFilterQueryToAdd, subFilterQueryToAdd, paramIndex);
+                }
             } else {
                 // normal expression
                 var exp = parse(entry.getKey(), entry.getValue());
@@ -498,9 +500,9 @@ public class Condition {
 		queryText = processNegativeQuery(queryText, this.negative);
 
 		//add WHERE part
-		if (StringUtils.isNotEmpty(queryText)) {
-			queryText = connectPart + queryText;
-		}
+        if (StringUtils.isNotBlank(queryText)) {
+            queryText = connectPart + queryText;
+        }
 
 		//add SELECT part
 		queryText = selectPart + queryText;
