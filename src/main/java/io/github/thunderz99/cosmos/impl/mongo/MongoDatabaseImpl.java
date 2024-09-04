@@ -348,10 +348,12 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     /**
      * Add "_ts" field to data automatically, for compatibility for cosmosdb
      *
-     * @param patchData
+     * @param data
      */
-    static void addTimestamp(Map<String, Object> patchData) {
-        patchData.put("_ts", Instant.now().getEpochSecond());
+    static void addTimestamp(Map<String, Object> data) {
+        // format: 1502246148.123
+        // we use milli instead of second in order to get a more stable sort when using "sort" : ["_ts", "DESC"]
+        data.put("_ts", Instant.now().toEpochMilli() / 1000d);
     }
 
 

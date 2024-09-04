@@ -7,8 +7,8 @@ import java.util.stream.Collectors;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import io.github.thunderz99.cosmos.util.TimestampUtil;
 import org.apache.commons.collections4.CollectionUtils;
-import org.json.JSONObject;
 
 /**
  * Represent a list of CosmosDB document.
@@ -19,8 +19,6 @@ import org.json.JSONObject;
  * </p>
  */
 public class CosmosDocumentList {
-
-    List<JSONObject> jsonObjs;
 
     List<Map<String, Object>> maps;
 
@@ -37,8 +35,9 @@ public class CosmosDocumentList {
 
         if (obj instanceof Map) {
             this.maps = (List<Map<String, Object>>) objs;
-        } else if (obj instanceof JSONObject) {
-            this.jsonObjs = (List<JSONObject>) objs;
+            for (var map : maps) {
+                TimestampUtil.processTimestampPrecision(map);
+            }
         }
     }
 
@@ -47,10 +46,6 @@ public class CosmosDocumentList {
         if (maps != null) {
             return maps.stream().map(obj -> JsonUtil.fromMap(obj, classOfT)).collect(Collectors.toList());
         }
-        if (jsonObjs != null) {
-            return jsonObjs.stream().map(obj -> JsonUtil.fromJson(obj.toString(), classOfT)).collect(Collectors.toList());
-        }
-
         return Lists.newArrayList();
     }
 
@@ -60,20 +55,12 @@ public class CosmosDocumentList {
             return maps.stream().map(obj -> Maps.newLinkedHashMap(obj)).collect(Collectors.toList());
         }
 
-        if (jsonObjs != null) {
-            return jsonObjs.stream().map(obj -> JsonUtil.toMap(obj.toString())).collect(Collectors.toList());
-        }
-
         return Lists.newArrayList();
     }
 
     public int size() {
         if (maps != null) {
             return maps.size();
-        }
-
-        if (jsonObjs != null) {
-            return jsonObjs.size();
         }
         return 0;
     }
@@ -83,9 +70,6 @@ public class CosmosDocumentList {
             return JsonUtil.toJson(maps);
         }
 
-        if (jsonObjs != null) {
-            return JsonUtil.toJson(jsonObjs);
-        }
         return "[]";
     }
 
