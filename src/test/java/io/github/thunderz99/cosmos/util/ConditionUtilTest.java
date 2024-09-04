@@ -6,6 +6,7 @@ import java.util.regex.Pattern;
 
 import com.mongodb.client.model.Filters;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.EvalSkip;
 import org.bson.Document;
 import org.junit.jupiter.api.Test;
 
@@ -241,6 +242,21 @@ public class ConditionUtilTest {
     public void nullSort_should_return_null() {
         var bsonSort = ConditionUtil.toBsonSort(null);
         assertThat(bsonSort).isNull();
+    }
+
+    public static class Skip {
+        Skip() {
+        }
+
+        @Override
+        public String toString() {
+            return "skip";
+        }
+    }
+
+    @Test
+    public void processCustomClasses_should_work() {
+        assertThat(ConditionUtil.processCustomClassValue(EvalSkip.singleton)).isEqualTo("{}");
     }
 
 }
