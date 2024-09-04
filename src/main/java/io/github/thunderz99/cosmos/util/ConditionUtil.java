@@ -614,9 +614,11 @@ public class ConditionUtil {
 
         List<Bson> bsonSortList = new ArrayList<>();
 
+        var field = "";
+        var order = "ASC";
         for (int i = 0; i < sort.size(); i += 2) {
-            var field = sort.get(i);
-            var order = (i + 1 < sort.size()) ? sort.get(i + 1).toUpperCase() : "ASC";
+            field = sort.get(i);
+            order = (i + 1 < sort.size()) ? sort.get(i + 1).toUpperCase() : "ASC";
 
             switch (order) {
                 case "DESC":
@@ -627,6 +629,11 @@ public class ConditionUtil {
                     bsonSortList.add(Sorts.ascending(field));
                     break;
             }
+        }
+
+        if (!StringUtils.equalsIgnoreCase(field, "_ts")) {
+            // when sort is not _ts, we add a second sort of _ts, in order to get a more stable sort result for mongodb
+            bsonSortList.add("ASC".equals(order) ? Sorts.ascending("_ts") : Sorts.descending("_ts"));
         }
 
         return Sorts.orderBy(bsonSortList);
