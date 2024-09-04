@@ -105,7 +105,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, getId(item), partition, getAccount());
 
-        return new CosmosDocument(map);
+        return getCosmosDocument(map);
     }
 
     /**
@@ -202,7 +202,18 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         if (response == null) {
             throw new CosmosException(404, "404", "Resource Not Found. code: NotFound");
         }
-        return new CosmosDocument(response);
+        return getCosmosDocument(response);
+    }
+
+    /**
+     * process precision of timestamp and get CosmosDucment instance from response
+     *
+     * @param map
+     * @return cosmos document
+     */
+    static CosmosDocument getCosmosDocument(Map<String, Object> map) {
+        TimestampUtil.processTimestampPrecision(map);
+        return new CosmosDocument(map);
     }
 
 
@@ -348,10 +359,12 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     /**
      * Add "_ts" field to data automatically, for compatibility for cosmosdb
      *
-     * @param patchData
+     * @param data
      */
-    static void addTimestamp(Map<String, Object> patchData) {
-        patchData.put("_ts", Instant.now().getEpochSecond());
+    static void addTimestamp(Map<String, Object> data) {
+        // format: 1714546148.123
+        // we use milli instead of second in order to get a more stable sort when using "sort" : ["_ts", "DESC"]
+        data.put("_ts", Instant.now().toEpochMilli() / 1000d);
     }
 
 
@@ -1066,7 +1079,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             }
         }
 
-        return documents.stream().map(doc -> new CosmosDocument(doc)).collect(Collectors.toList());
+        return documents.stream().map(doc -> getCosmosDocument(doc)).collect(Collectors.toList());
 
     }
 
@@ -1138,7 +1151,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             }
         }
 
-        return documents.stream().map(doc -> new CosmosDocument(doc)).collect(Collectors.toList());
+        return documents.stream().map(doc -> getCosmosDocument(doc)).collect(Collectors.toList());
     }
 
     /**
@@ -1264,7 +1277,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         for (var id : documentsMap.keySet()) {
             if (insertedIdSet.contains(id)) {
-                ret.successList.add(new CosmosDocument(documentsMap.get(id)));
+                ret.successList.add(getCosmosDocument(documentsMap.get(id)));
             } else {
                 ret.fatalList.add(new CosmosException(500, id, "Failed to insert"));
             }
@@ -1331,7 +1344,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         var index = 0;
         for (var entry : documentsMap.entrySet()) {
             if (index < totalModifiedCount) {
-                ret.successList.add(new CosmosDocument(entry.getValue()));
+                ret.successList.add(getCosmosDocument(entry.getValue()));
             } else {
                 ret.fatalList.add(new CosmosException(500, entry.getKey(), "Failed to upsert"));
             }
