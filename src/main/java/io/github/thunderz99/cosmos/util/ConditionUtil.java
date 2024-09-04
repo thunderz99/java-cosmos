@@ -124,6 +124,9 @@ public class ConditionUtil {
             */
             ret = Filters.expr(new Document(processedOperator, List.of(processField, processedValue)));
         } else {
+
+            value = processCustomClassValue(value);
+
             // normal simple queries
             switch (operator) {
                 case "=":
@@ -147,6 +150,17 @@ public class ConditionUtil {
             }
         }
         return ret;
+    }
+
+    /**
+     * convert some custom class to normal class that can be used in bson filter
+     *
+     * @param value
+     * @return
+     */
+    static Object processCustomClassValue(Object value) {
+        // use JsonPatchUtil's getNormalizedValue method can do this
+        return JsonPatchUtil.getNormalizedValue(value);
     }
 
     /**

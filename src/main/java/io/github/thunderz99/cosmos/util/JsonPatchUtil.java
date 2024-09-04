@@ -78,7 +78,7 @@ public class JsonPatchUtil {
      *
      * @param value
      */
-    static Object getNormalizedValue(Object value) {
+    public static Object getNormalizedValue(Object value) {
 
         if (value == null) {
             return null;

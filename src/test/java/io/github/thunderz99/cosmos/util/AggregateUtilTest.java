@@ -48,4 +48,15 @@ class AggregateUtilTest {
 
 
     }
+
+    @Test
+    void extractFieldFromFunction_should_work() {
+        assertThat(AggregateUtil.extractFieldFromFunction("SUM(c['children'])")).isEqualTo("c['children']");
+        assertThat(AggregateUtil.extractFieldFromFunction("avg(c['address']['state'])")).isEqualTo("c['address']['state']");
+        assertThat(AggregateUtil.extractFieldFromFunction("MIN(c.age)")).isEqualTo("c.age");
+        assertThat(AggregateUtil.extractFieldFromFunction("max(test.score)")).isEqualTo("test.score");
+        assertThat(AggregateUtil.extractFieldFromFunction("count(1)")).isEqualTo("1");
+        assertThat(AggregateUtil.extractFieldFromFunction("test.score")).isEqualTo("test.score");
+        assertThat(AggregateUtil.extractFieldFromFunction("c['address']['state']")).isEqualTo("c['address']['state']");
+    }
 }

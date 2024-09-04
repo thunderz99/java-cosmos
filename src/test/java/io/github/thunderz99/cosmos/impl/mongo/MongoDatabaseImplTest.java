@@ -13,6 +13,7 @@ import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.dto.CheckBox;
+import io.github.thunderz99.cosmos.dto.EvalSkip;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -828,6 +829,16 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void find_with_custom_class_value_should_work() throws Exception {
+        var partition = "Families";
+        {
+            var cond = Condition.filter("lastName", EvalSkip.singleton);
+            var docs = db.find(host, cond, partition).toMap();
+            assertThat(docs).isEmpty();
+        }
+    }
+
+    @Test
     public void fields_with_empty_field_should_work() throws Exception {
         // test fields with fields ["id", ""]
         {
@@ -1083,6 +1094,22 @@ class MongoDatabaseImplTest {
             var value = result.get(0).getOrDefault("maxDate", "");
             assertThat(value).isInstanceOfSatisfying(Map.class, (v) -> assertThat(v).isEmpty());
 
+        }
+    }
+
+    @Test
+    void aggregate_should_work_using_simple_field_without_function() throws Exception {
+
+        // test simple field without function
+        {
+            var aggregate = Aggregate.function("c['address']['state'] as result");
+
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter("lastName", "Andersen"), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+
+            assertThat(result.get(0)).containsEntry("result", "WA");
         }
     }
 
