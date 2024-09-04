@@ -7,7 +7,6 @@ import java.util.stream.Collectors;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.util.JsonUtil;
-import io.github.thunderz99.cosmos.util.TimestampUtil;
 import org.apache.commons.collections4.CollectionUtils;
 
 /**
@@ -35,9 +34,6 @@ public class CosmosDocumentList {
 
         if (obj instanceof Map) {
             this.maps = (List<Map<String, Object>>) objs;
-            for (var map : maps) {
-                TimestampUtil.processTimestampPrecision(map);
-            }
         }
     }
 

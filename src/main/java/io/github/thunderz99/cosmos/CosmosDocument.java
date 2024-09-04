@@ -3,7 +3,6 @@ package io.github.thunderz99.cosmos;
 import java.util.Map;
 
 import io.github.thunderz99.cosmos.util.JsonUtil;
-import io.github.thunderz99.cosmos.util.TimestampUtil;
 
 /**
  * Represent a CosmosDB document. Has a JSONObject inside.
@@ -20,7 +19,6 @@ public class CosmosDocument {
 
     public CosmosDocument(Map<String, Object> mapObj) {
         this.mapObj = mapObj;
-        TimestampUtil.processTimestampPrecision(mapObj);
     }
     
     public <T> T toObject(Class<T> classOfT) {
