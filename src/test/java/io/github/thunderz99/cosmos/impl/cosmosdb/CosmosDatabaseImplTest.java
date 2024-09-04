@@ -1092,6 +1092,22 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void aggregate_should_work_using_simple_field_without_function() throws Exception {
+
+        // test simple field without function
+        {
+            var aggregate = Aggregate.function("c['address']['state'] as result");
+
+            var result = db.aggregate(coll, aggregate,
+                    Condition.filter("lastName", "Andersen"), "Families").toMap();
+
+            assertThat(result).hasSize(1);
+
+            assertThat(result.get(0)).containsEntry("result", "WA");
+        }
+    }
+
+    @Test
     public void aggregate_should_work_with_condition_afterwards() throws Exception {
 
         // test aggregate with afterwards filter

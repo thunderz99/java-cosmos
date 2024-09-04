@@ -23,6 +23,8 @@ public class AggregateUtil {
 
     public static final String REGEX_AS = "(?i)\\s+AS\\s+";
 
+    private static final Pattern FUNCTION_PATTERN = Pattern.compile("^(?i)(?:SUM|AVG|MIN|MAX|COUNT)\\(([^)]+)\\)$");
+
     /**
      * Project fields with renamed keys if key name contains dot "."
      *
@@ -148,6 +150,10 @@ public class AggregateUtil {
                     accumulators.add(Accumulators.avg(alias, "$" + fieldInPipeline));
                 } else if (StringUtils.startsWithIgnoreCase(function, "SUM")) {
                     accumulators.add(Accumulators.sum(alias, "$" + fieldInPipeline));
+                } else {
+                    // simple field. like: c.address.state AS result
+                    // $project: { result : $address__state }
+                    preFieldProjections.append(alias, "$" + fieldInPipeline);
                 }
             }
 
@@ -199,7 +205,14 @@ public class AggregateUtil {
             return function.substring(function.indexOf("ARRAY_LENGTH(") + 13, function.lastIndexOf("))")).trim();
         }
 
-        return function.substring(function.indexOf('(') + 1, function.indexOf(')')).trim();
+        var matcher = FUNCTION_PATTERN.matcher(function);
+        if (matcher.find()) {
+            // Return the first capturing group, which is the content inside the parentheses
+            return matcher.group(1).trim();
+        }
+
+        // If no match, return the original string
+        return function.trim();
     }
 
     /**
