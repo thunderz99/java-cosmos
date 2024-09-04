@@ -466,8 +466,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // TODO crossPartition query
 
-        // process top $not filter to $nor for mongo
-        var filter = ConditionUtil.processNor(ConditionUtil.toBsonFilter(cond));
+        var filter = ConditionUtil.toBsonFilter(cond);
 
         // process sort
         var sort = ConditionUtil.toBsonSort(cond.sort);
@@ -526,7 +525,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // Add the first $match stage based on filter,  which narrows the pipeline significantly.
         // Process the condition into a BSON filter
         // @see docs/find-with-join.md
-        var filter = ConditionUtil.processNor(ConditionUtil.toBsonFilter(cond));
+        var filter = ConditionUtil.toBsonFilter(cond);
         // Add the match stage based on the filter
         if (filter != null) {
             pipeline.add(Aggregates.match(filter));
@@ -799,7 +798,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         var container = this.client.getDatabase(coll).getCollection(partition);
 
         // Process the condition into a BSON filter
-        var filter = ConditionUtil.processNor(ConditionUtil.toBsonFilter(cond));
+        var filter = ConditionUtil.toBsonFilter(cond);
 
         // Create the aggregation pipeline stages
         List<Bson> pipeline = new ArrayList<>();
@@ -888,10 +887,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // TODO crossPartition query
 
-        var filterBeforeProcess = ConditionUtil.toBsonFilter(cond);
-
-        // process top $not filter to $nor for mongo
-        var filter = ConditionUtil.processNor(filterBeforeProcess);
+        var filter = ConditionUtil.toBsonFilter(cond);
 
         var container = this.client.getDatabase(coll).getCollection(partition);
 

@@ -163,8 +163,8 @@ public class ConditionUtil {
             return null;
         }
 
-        // preprocess for "fieldA OR fieldB"
-        if (key.contains(" OR ")) {
+        // preprocess for "fieldA OR fieldB". exclude $AND, $OR, $NOT sub queries
+        if (key.contains(" OR ") && !StringUtils.startsWithAny(key, "$AND", "$OR", "$NOT")) {
             return generateOrExpression(key, value, filterOptions);
         }
 
@@ -180,7 +180,9 @@ public class ConditionUtil {
         }
 
         var matcher = simpleExpressionPattern.matcher(key);
-        if (matcher.matches()) {
+
+        // match expression and exclude $AND, $OR, $NOT sub queries
+        if (matcher.matches() && !StringUtils.startsWithAny(key, "$AND", "$OR", "$NOT")) {
             var field = matcher.group(1).trim();
             var operator = matcher.group(2).trim();
 
@@ -340,11 +342,11 @@ public class ConditionUtil {
 
         } else if (key.startsWith("$NOT")) {
             if (value instanceof Collection<?>) {
-                ret = Filters.not(Filters.and(toBsonFilters((Collection<?>) value, filterOptions)));
+                ret = Filters.nor(toBsonFilters((Collection<?>) value, filterOptions));
             } else if (value instanceof Condition) {
-                ret = Filters.not(toBsonFilter((Condition) value, filterOptions));
+                ret = Filters.nor(toBsonFilter((Condition) value, filterOptions));
             } else if (value instanceof Map<?, ?>) {
-                ret = Filters.not(toBsonFilter((Map<String, Object>) value, filterOptions));
+                ret = Filters.nor(toBsonFilter((Map<String, Object>) value, filterOptions));
             } else {
                 throw new IllegalArgumentException("$NOT 's filter is not correct. expect Collection/Map/Condition:" + value);
             }
@@ -540,8 +542,8 @@ public class ConditionUtil {
             // a normal filter
             return toBsonFilter(cond.filter, filterOptions);
         } else {
-            // process a NOT filter
-            return Filters.not(toBsonFilter(cond.filter, filterOptions));
+            // process a NOR filter
+            return Filters.nor(toBsonFilter(cond.filter, filterOptions));
         }
     }
 
