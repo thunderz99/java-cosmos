@@ -1639,6 +1639,194 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void sub_cond_query_should_work_4_OR() throws Exception {
+        // test json from cosmosdb official site
+        // https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
+
+        {
+            // using Condition.filter as a sub query
+            var partition = "Families";
+
+            var cond = Condition.filter(SubConditionType.OR, List.of( //
+                            Condition.filter("address.state", "WA"), //
+                            Condition.filter("id", "WakefieldFamily"))) //
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(2);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+            assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
+        }
+        {
+            // using map as a sub query (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var cond = Condition.filter(SubConditionType.OR, List.of( //
+                            Map.of("address.state", "WA"), //
+                            Map.of("id", "WakefieldFamily"))) //
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(2);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+            assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
+        }
+
+        {
+            // using json to represent a filter (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var filter = JsonUtil.toMap(CosmosDatabaseTest.class.getResourceAsStream("familyQuery-OR.json"));
+            var cond = new Condition(filter).sort("id", "ASC");
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(2);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+            assertThat(items.get(1).get("creationDate")).hasToString("1431620462");
+        }
+
+    }
+
+    @Test
+    void sub_cond_query_should_work_4_AND() throws Exception {
+        // test json from cosmosdb official site
+        // https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
+
+        {
+            // using Condition.filter as a sub query
+            var partition = "Families";
+
+            var cond = Condition.filter(SubConditionType.AND, List.of( //
+                            Condition.filter("address.state", "WA"), //
+                            Condition.filter("lastName", "Andersen"))) //
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+        {
+            // using map as a sub query (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var cond = Condition.filter(SubConditionType.AND, List.of( //
+                            Map.of("address.state", "WA"), //
+                            Map.of("lastName", "Andersen"))) //
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+        {
+            // using json to represent a filter (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var filter = JsonUtil.toMap(CosmosDatabaseTest.class.getResourceAsStream("familyQuery-AND.json"));
+            var cond = new Condition(filter).sort("id", "ASC");
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+        {
+            // using json to represent a filter (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var filter = JsonUtil.toMap(CosmosDatabaseTest.class.getResourceAsStream("familyQuery-AND2.json"));
+            var cond = new Condition(filter).sort("id", "ASC");
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+
+    }
+
+    @Test
+    void sub_cond_query_should_work_4_NOT() throws Exception {
+        // test json from cosmosdb official site
+        // https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
+
+        {
+            // using json to represent a filter (in order to support rest api 's parameter)
+            var partition = "Families";
+
+            var filter = JsonUtil.toMap(CosmosDatabaseTest.class.getResourceAsStream("familyQuery-NOT.json"));
+            var cond = new Condition(filter).sort("id", "ASC");
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
+        }
+
+    }
+
+    @Test
+    void sub_cond_query_should_work_when_subquery_is_null_or_empty() throws Exception {
+        {
+            // $AND null
+            var partition = "Families";
+
+            // null will be ignored
+            var cond = Condition.filter("lastName", "Andersen", SubConditionType.AND, null, "$AND 2", List.of())
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(host, cond, partition).toMap();
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+        {
+            // $OR null
+            var partition = "Families";
+
+            // null will be ignored
+            var cond = Condition.filter("lastName", "Andersen", SubConditionType.OR, null, "$OR 2", List.of())
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+        {
+            // $NOT null
+            var partition = "Families";
+
+            // null will be ignored
+            var cond = Condition.filter("lastName", "Andersen", SubConditionType.NOT, null, "$NOT 2", List.of())
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+    }
+
+    @Test
     void dynamic_field_and_is_defined_should_work() throws Exception {
         var partition = "SheetConents";
 

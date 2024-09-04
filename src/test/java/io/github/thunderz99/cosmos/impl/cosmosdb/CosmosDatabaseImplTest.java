@@ -1822,6 +1822,53 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void sub_cond_query_should_work_when_subquery_is_null_or_empty() throws Exception {
+        {
+            // $AND null
+            var partition = "Families";
+
+            // null will be ignored
+            var cond = Condition.filter("lastName", "Andersen", SubConditionType.AND, null, "$AND 2", List.of())
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(coll, cond, partition).toMap();
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+        {
+            // $OR null
+            var partition = "Families";
+
+            // null will be ignored
+            var cond = Condition.filter("lastName", "Andersen", SubConditionType.OR, null, "$OR 2", List.of())
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(coll, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+        {
+            // $NOT null
+            var partition = "Families";
+
+            // null will be ignored
+            var cond = Condition.filter("lastName", "Andersen", SubConditionType.NOT, null, "$NOT 2", List.of())
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(coll, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+    }
+    
+    @Test
     void check_invalid_id_should_work() throws Exception {
         var ids = List.of("\ttabbefore", "tabafter\t", "tab\nbetween", "\ncrbefore", "crafter\r", "cr\n\rbetween", "/test");
         for (var id : ids) {
