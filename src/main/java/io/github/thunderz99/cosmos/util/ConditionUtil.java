@@ -62,7 +62,7 @@ public class ConditionUtil {
             return new BsonDocument();
         }
 
-        var filters = new ArrayList<Bson>();
+        List<Bson> filters = new ArrayList<>();
 
         for (var entry : map.entrySet()) {
             var key = entry.getKey();
@@ -76,6 +76,9 @@ public class ConditionUtil {
             filters.add(toBsonFilter(key, value, filterOptions));
 
         }
+
+        // filter invalid bson (null)
+        filters = filters.stream().filter(Objects::nonNull).collect(Collectors.toList());
 
         return filters.size() == 1 ? filters.get(0) : Filters.and(filters);
     }
@@ -181,8 +184,13 @@ public class ConditionUtil {
 
         var matcher = simpleExpressionPattern.matcher(key);
 
-        // match expression and exclude $AND, $OR, $NOT sub queries
-        if (matcher.matches() && !StringUtils.startsWithAny(key, "$AND", "$OR", "$NOT")) {
+
+        if (StringUtils.startsWithAny(key, "$AND", "$OR", "$NOT")) {
+            // query with sub conditions
+            ret = toBsonFilter4SubConditions(key, value, filterOptions);
+
+        } else if (matcher.matches()) {
+            // match expressions
             var field = matcher.group(1).trim();
             var operator = matcher.group(2).trim();
 
@@ -319,7 +327,57 @@ public class ConditionUtil {
                 default:
                     break;
             }
-        } else if (key.startsWith("$OR")) {
+        } else {
+            // 
+            // process "tags ARRAY_CONTAINS_ANY id" or "children ARRAY_CONTAINS_ALL grade"
+            ret = generateExpression4SubQuery(key, value, filterOptions);
+
+            if (ret == null) {
+                // normal {"key=": value} pattern 
+                if (value instanceof Collection<?>) {
+                    // the same as IN
+                    var coll = (Collection<?>) value;
+                    ret = Filters.in(key, coll);
+                } else {
+                    // normal eq filter. and support $fieldA = $fieldB case
+                    ret = generateExpression(key, "=", value, filterOptions);
+                }
+            }
+        }
+
+        // finally add "$elemMatch" for JOIN
+        if (elemMatch && ret != null) {
+            ret = Filters.elemMatch(joinKey.get(), ret);
+        }
+
+        return ret;
+    }
+
+    /**
+     * Generate sub condition bson filter for $AND, $OR, $NOT
+     *
+     * @param key
+     * @param value
+     * @param filterOptions
+     * @return bson filter
+     */
+    static Bson toBsonFilter4SubConditions(String key, Object value, FilterOptions filterOptions) {
+
+        if (StringUtils.isEmpty(key) || value == null) {
+            // invalid key / value for sub conditions
+            return null;
+        }
+
+        if (value instanceof Collection<?>) {
+            // empty sub conditions
+            if (CollectionUtils.isEmpty((Collection<?>) value)) {
+                return null;
+            }
+        }
+
+        Bson ret = null;
+
+        if (key.startsWith("$OR")) {
             if (value instanceof Collection<?>) {
                 ret = Filters.or(toBsonFilters((Collection<?>) value, filterOptions));
             } else if (value instanceof Condition) {
@@ -350,29 +408,7 @@ public class ConditionUtil {
             } else {
                 throw new IllegalArgumentException("$NOT 's filter is not correct. expect Collection/Map/Condition:" + value);
             }
-        } else {
-
-            // process "tags ARRAY_CONTAINS_ANY id" or "children ARRAY_CONTAINS_ALL grade"
-            ret = generateExpression4SubQuery(key, value, filterOptions);
-
-            if (ret == null) {
-                // normal {"key=": value} pattern 
-                if (value instanceof Collection<?>) {
-                    // the same as IN
-                    var coll = (Collection<?>) value;
-                    ret = Filters.in(key, coll);
-                } else {
-                    // normal eq filter. and support $fieldA = $fieldB case
-                    ret = generateExpression(key, "=", value, filterOptions);
-                }
-            }
         }
-
-        // finally add "$elemMatch" for JOIN
-        if (elemMatch && ret != null) {
-            ret = Filters.elemMatch(joinKey.get(), ret);
-        }
-
         return ret;
     }
 
