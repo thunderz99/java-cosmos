@@ -256,7 +256,12 @@ public class ConditionUtilTest {
 
     @Test
     public void processCustomClasses_should_work() {
-        assertThat(ConditionUtil.processCustomClassValue(EvalSkip.singleton)).isEqualTo("{}");
+        var value = ConditionUtil.processCustomClassValue(EvalSkip.singleton);
+        // empty obj -> empty map
+        assertThat(value).isInstanceOfSatisfying(Map.class, map -> {
+            assertThat(map).isEmpty();
+        });
+
     }
 
 }

@@ -14,6 +14,7 @@ import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.dto.CheckBox;
+import io.github.thunderz99.cosmos.dto.EvalSkip;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
@@ -777,6 +778,16 @@ class CosmosDatabaseImplTest {
             assertThat(docs).hasSize(1);
             assertThat(docs.get(0)).containsEntry("id", "AndersenFamily");
 
+        }
+    }
+
+    @Test
+    void find_with_custom_class_value_should_work() throws Exception {
+        var partition = "Families";
+        {
+            var cond = Condition.filter("lastName", EvalSkip.singleton);
+            var docs = db.find(coll, cond, partition).toMap();
+            assertThat(docs).isEmpty();
         }
     }
 
