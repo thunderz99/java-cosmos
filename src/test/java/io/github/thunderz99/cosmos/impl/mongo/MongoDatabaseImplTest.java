@@ -1875,8 +1875,11 @@ class MongoDatabaseImplTest {
         }
 
         try {
-            var result = db.batchCreate(host, userList, partition);
-            assertThat(result).hasSize(size);
+
+            db.upsert(host, userList.get(0), partition);
+            // let _ts be different
+            Thread.sleep(1);
+            db.upsert(host, userList.get(1), partition);
 
             var users = db.find(host, Condition.filter("id LIKE", "sort_with_createAt_should_work%")
                     .sort("createAt", "DESC"), partition).toList(User.class);

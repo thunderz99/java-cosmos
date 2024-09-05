@@ -198,7 +198,7 @@ public class ConditionUtilTest {
         List<String> sort = List.of("id", "DESC");
         var bsonSort = ConditionUtil.toBsonSort(sort);
 
-        assertThat(bsonSort.toBsonDocument()).isEqualTo(new Document("id", -1).toBsonDocument());
+        assertThat(bsonSort.toBsonDocument()).isEqualTo(new Document().append("id", -1).append("_ts", -1).toBsonDocument());
     }
 
     @Test
@@ -206,7 +206,7 @@ public class ConditionUtilTest {
         List<String> sort = List.of("_ts", "ASC");
         var bsonSort = ConditionUtil.toBsonSort(sort);
 
-        assertThat(bsonSort.toBsonDocument()).isEqualTo(new Document("_ts", 1).toBsonDocument());
+        assertThat(bsonSort.toBsonDocument()).isEqualTo(new Document().append("_ts", 1).toBsonDocument());
     }
 
     @Test
@@ -214,7 +214,7 @@ public class ConditionUtilTest {
         List<String> sort = List.of("age");
         var bsonSort = ConditionUtil.toBsonSort(sort);
 
-        assertThat(bsonSort.toBsonDocument()).isEqualTo(new Document("age", 1).toBsonDocument());
+        assertThat(bsonSort.toBsonDocument()).isEqualTo(new Document().append("age", 1).append("_ts", 1).toBsonDocument());
     }
 
     @Test

@@ -1952,8 +1952,10 @@ class CosmosDatabaseImplTest {
         }
 
         try {
-            var result = db.batchCreate(coll, userList, partition);
-            assertThat(result).hasSize(size);
+            db.upsert(coll, userList.get(0), partition);
+            // let _ts be different
+            Thread.sleep(1);
+            db.upsert(coll, userList.get(1), partition);
 
             var users = db.find(coll, Condition.filter("id LIKE", "sort_with_createAt_should_work%")
                     .sort("createAt", "DESC"), partition).toList(User.class);
