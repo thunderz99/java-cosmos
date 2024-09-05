@@ -1,5 +1,8 @@
 package io.github.thunderz99.cosmos.impl.cosmosdb;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -51,6 +54,8 @@ class CosmosDatabaseImplTest {
         public String firstName;
         public String lastName;
 
+        public String createdAt;
+
         public User() {
         }
 
@@ -58,6 +63,13 @@ class CosmosDatabaseImplTest {
             this.id = id;
             this.firstName = firstName;
             this.lastName = lastName;
+        }
+
+        public User(String id, String firstName, String lastName, String createdAt) {
+            this.id = id;
+            this.firstName = firstName;
+            this.lastName = lastName;
+            this.createdAt = createdAt;
         }
     }
 
@@ -1927,6 +1939,35 @@ class CosmosDatabaseImplTest {
     @Test
     void get_database_name_should_work() throws Exception {
         assertThat(db.getDatabaseName()).isEqualTo(dbName);
+    }
+
+    @Test
+    void sort_with_createAt_should_work() throws Exception {
+        var partition = "UserSorts";
+        int size = 2;
+        var userList = new ArrayList<User>(size);
+        var createdAt = Instant.now().atZone(ZoneId.of("UTC")).format(DateTimeFormatter.ISO_DATE);
+        for (int i = 0; i < size; i++) {
+            userList.add(new User("sort_with_createAt_should_work" + i, "testFirstName" + i, "testLastName" + i, createdAt));
+        }
+
+        try {
+            db.upsert(coll, userList.get(0), partition);
+            // let _ts be different
+            Thread.sleep(1);
+            db.upsert(coll, userList.get(1), partition);
+
+            var users = db.find(coll, Condition.filter("id LIKE", "sort_with_createAt_should_work%")
+                    .sort("createAt", "DESC"), partition).toList(User.class);
+
+            assertThat(users).hasSize(2);
+
+            // check the sort result is correct (DESC)
+            assertThat(users.get(0).id).isEqualTo(userList.get(1).id);
+
+        } finally {
+            db.batchDelete(coll, userList, partition);
+        }
     }
 
     @Test
