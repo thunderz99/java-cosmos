@@ -50,7 +50,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         this.cosmosAccount = cosmosAccount;
         this.db = db;
         if (cosmosAccount instanceof CosmosImpl) {
-            this.clientV4 = ((CosmosImpl) cosmosAccount).getClientV4();
+            this.clientV4 = ((CosmosImpl) cosmosAccount).getClient();
         }
 
     }

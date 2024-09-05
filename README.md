@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.7.1</version>
+    <version>0.7.2</version>
 </dependency>
 ```
 
@@ -35,7 +35,6 @@ import io.github.thunderz99.cosmos.Cosmos
 import java.util.ArrayList;
 
 public static void main(String[]args){
-  new CosmosBuilder().withConnectionString()).build();
         var cosmosAccount =new CosmosBuilder().withConnectionString(System.getenv("YOUR_CONNECTION_STRING")).build();
         var db = cosmosAccount.getDatabase("Database1");
         db.upsert("Collection1",new User("id011","Tom","Banks"))
@@ -345,6 +344,8 @@ The main difference between Partial update and Patch is that:
     var aggregate = Aggregate.function("COUNT(1) as facetCount").groupBy("_partition");
     var cond = Condition.filter().crossPartition(true);
     var result = db.aggregate("Collection1", aggregate, cond);
+
+    // !! not supported for mongodb !!
 ```
 
 ### Raw SQL queries
@@ -382,6 +383,8 @@ The main difference between Partial update and Patch is that:
      );      
 
     db.find("Collection1", cond, "Partition1");
+                                
+    // !! not supported for mongodb !!
 ```
 
 ### join queries
@@ -411,6 +414,33 @@ The main difference between Partial update and Patch is that:
 
     var users = db.find("Collection1", cond).toList(User.class);
 ```
+
+
+### MongoDB support
+
+```
+// for mongodb (local). replicaSet is a must because we enable transaction features
+
+var cosmos = new CosmosBuilder().withDatabaseType("mongodb")
+ .withConnectionString("mongodb://localhost:27017/?replicaSet=rs0"))
+                .build();
+var db = cosmos.getDatabase("Database1");
+
+// you can use db instance at the same way as you are using cosmosdb
+db.upsert("Database1", new User("id011","Tom","Banks"), "Collection1");
+
+// for mongodb (mongo atlas)
+var cosmos = new CosmosBuilder().withDatabaseType("mongodb")
+ .withConnectionString("mongodb+srv://a:b@x-mongo.y.mongodb.net/"))
+                .build();
+                
+// for cosmosdb
+var cosmos = new CosmosBuilder().withDatabaseType("cosmosdb")
+ .withConnectionString("https://xxx:443/;AccountKey=yyy==;"))
+                .build();
+
+```
+
 
 
 ## Reference

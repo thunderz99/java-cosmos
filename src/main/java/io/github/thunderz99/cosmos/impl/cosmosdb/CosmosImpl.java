@@ -39,7 +39,7 @@ public class CosmosImpl implements Cosmos {
 
     private static Logger log = LoggerFactory.getLogger(CosmosImpl.class);
 
-    CosmosClient clientV4;
+    CosmosClient client;
 
     String account;
 
@@ -58,7 +58,7 @@ public class CosmosImpl implements Cosmos {
         var key = pair.getRight();
 
         log.info("COSMOS_SDK_V4_ENABLE is enabled for endpoint:{}", endpoint);
-        this.clientV4 = new CosmosClientBuilder()
+        this.client = new CosmosClientBuilder()
                 .endpoint(endpoint)
                 .key(key)
                 .preferredRegions(preferredRegions)
@@ -69,7 +69,7 @@ public class CosmosImpl implements Cosmos {
         this.account = extractAccountName(endpoint);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            this.clientV4.close();
+            this.closeClient();
         }));
 
     }
@@ -117,13 +117,13 @@ public class CosmosImpl implements Cosmos {
 
         Checker.checkNotBlank(db, "Database name");
 
-        this.clientV4.createDatabaseIfNotExists(db);
+        this.client.createDatabaseIfNotExists(db);
         log.info("created database:{}, account:{}", db, account);
 
         if (StringUtils.isBlank(coll)) {
             //do nothing
         } else {
-            var cosmosDatabase = this.clientV4.getDatabase(db);
+            var cosmosDatabase = this.client.getDatabase(db);
             var containerProperties = new CosmosContainerProperties(coll, "/" + getDefaultPartitionKey());
 
             var keyList = uniqueKeyPolicy.uniqueKeys;
@@ -162,7 +162,7 @@ public class CosmosImpl implements Cosmos {
         if (StringUtils.isEmpty(db)) {
             return;
         }
-        var cosmosDatabase = this.clientV4.getDatabase(db);
+        var cosmosDatabase = this.client.getDatabase(db);
         try {
             cosmosDatabase.delete();
         } catch (com.azure.cosmos.CosmosException ce) {
@@ -183,7 +183,7 @@ public class CosmosImpl implements Cosmos {
      */
     public void deleteCollection(String db, String coll) throws CosmosException {
 
-        var cosmosDatabase = this.clientV4.getDatabase(db);
+        var cosmosDatabase = this.client.getDatabase(db);
         var container = cosmosDatabase.getContainer(coll);
         try {
             container.delete();
@@ -209,7 +209,7 @@ public class CosmosImpl implements Cosmos {
     public CosmosContainerResponse readCollection(String db, String coll) throws CosmosException {
 
 
-        var database = this.clientV4.getDatabase(db);
+        var database = this.client.getDatabase(db);
         try {
             var response = database.getContainer(coll).read();
             var policy = UniqueKeyUtil.toCommonUniqueKeyPolicy(response.getProperties().getUniqueKeyPolicy());
@@ -225,12 +225,21 @@ public class CosmosImpl implements Cosmos {
 
 
     /**
-     * Get Official cosmos db sdk(v4)'s CosmosClient instance
+     * Get Official cosmos db sdk(v4)'s CosmosClient instance (the same to getClient(), for compatibility)
      *
      * @return official cosmosdb sdk client(v4)
      */
     public CosmosClient getClientV4() {
-        return this.clientV4;
+        return this.client;
+    }
+
+    /**
+     * Get Official cosmos db sdk(v4)'s CosmosClient instance
+     *
+     * @return official cosmosdb sdk client(v4)
+     */
+    public CosmosClient getClient() {
+        return this.client;
     }
 
     /**
@@ -267,6 +276,14 @@ public class CosmosImpl implements Cosmos {
     @Override
     public String getDatabaseType() {
         return CosmosBuilder.COSMOSDB;
+    }
+
+    /**
+     * Close the internal database client safely
+     */
+    @Override
+    public void closeClient() {
+        this.getClient().close();
     }
 
 }

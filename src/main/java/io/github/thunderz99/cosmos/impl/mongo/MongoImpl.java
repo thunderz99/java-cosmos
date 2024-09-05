@@ -62,7 +62,7 @@ public class MongoImpl implements Cosmos {
         databases.forEach(db -> log.info(db.toJson()));
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            this.client.close();
+            this.closeClient();
         }));
 
     }
@@ -273,7 +273,15 @@ public class MongoImpl implements Cosmos {
     public String getDatabaseType() {
         return CosmosBuilder.MONGODB;
     }
-    
+
+    /**
+     * Close the internal database client safely
+     */
+    @Override
+    public void closeClient() {
+        this.getClient().close();
+    }
+
     /**
      * get the default partition key
      *
