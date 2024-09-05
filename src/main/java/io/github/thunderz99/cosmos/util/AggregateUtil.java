@@ -342,16 +342,23 @@ public class AggregateUtil {
             var function = functionAndAlias.getLeft();
             var alias = functionAndAlias.getRight();
 
-            if (StringUtils.startsWithIgnoreCase(function, "COUNT")) {
+            var field = extractFieldFromFunction(function);
+            if (StringUtils.equals(field, function)) {
+                // a simple expression without aggregate
+                // e.g. c['address']['state']
+                // do nothing to ret
+            } else if (StringUtils.startsWithIgnoreCase(function, "COUNT")) {
+                // aggregate using COUNT
                 // empty value for count
                 ret.append(alias, 0);
             } else {
+                // aggregate using other functions
                 // empty value for max/min/avg
                 ret.append(alias, new LinkedHashMap<String, Object>());
             }
         }
 
-        return List.of(ret);
+        return ret.isEmpty() ? results : List.of(ret);
     }
 
     /**

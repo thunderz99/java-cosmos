@@ -1,5 +1,10 @@
 package io.github.thunderz99.cosmos.util;
 
+import java.util.ArrayList;
+import java.util.Map;
+
+import io.github.thunderz99.cosmos.condition.Aggregate;
+import org.bson.Document;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,5 +64,34 @@ class AggregateUtilTest {
         assertThat(AggregateUtil.extractFieldFromFunction("count(1)")).isEqualTo("1");
         assertThat(AggregateUtil.extractFieldFromFunction("test.score")).isEqualTo("test.score");
         assertThat(AggregateUtil.extractFieldFromFunction("c['address']['state']")).isEqualTo("c['address']['state']");
+    }
+
+    @Test
+    void processEmptyAggregateResults_should_work() {
+
+        // count
+        assertThat(AggregateUtil.processEmptyAggregateResults(Aggregate.function("COUNT(1) AS count"), new ArrayList<>()))
+                .hasSize(1).contains(new Document("count", 0));
+
+        // count
+        assertThat(AggregateUtil.processEmptyAggregateResults(Aggregate.function("COUNT(c.age) AS count"), new ArrayList<>()))
+                .hasSize(1).contains(new Document("count", 0));
+
+        // max
+        assertThat(AggregateUtil.processEmptyAggregateResults(Aggregate.function("max(c.age) AS count"), new ArrayList<>()))
+                .hasSize(1).contains(new Document("count", Map.of()));
+
+        // nested
+        assertThat(AggregateUtil.processEmptyAggregateResults(Aggregate.function("SUM(ARRAY_LENGTH(c.children)) AS count"), new ArrayList<>()))
+                .hasSize(1).contains(new Document("count", Map.of()));
+
+        // simple field without aggregation
+        assertThat(AggregateUtil.processEmptyAggregateResults(Aggregate.function("c.children"), new ArrayList<>()))
+                .hasSize(0);
+
+        // simple field without aggregation
+        assertThat(AggregateUtil.processEmptyAggregateResults(Aggregate.function("c['address']['state']"), new ArrayList<>()))
+                .hasSize(0);
+
     }
 }
