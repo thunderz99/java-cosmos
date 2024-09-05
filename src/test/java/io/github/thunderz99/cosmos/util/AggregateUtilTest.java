@@ -14,8 +14,9 @@ class AggregateUtilTest {
         assertThat(AggregateUtil.convertToDotFieldName("address")).isEqualTo("address");
         assertThat(AggregateUtil.convertToDotFieldName("address.city")).isEqualTo("address.city");
         assertThat(AggregateUtil.convertToDotFieldName("c['address']")).isEqualTo("address");
-        assertThat(AggregateUtil.convertToDotFieldName("c['address']['city']")).isEqualTo("address.city");
+        assertThat(AggregateUtil.convertToDotFieldName("c[\"address\"][\"city\"]")).isEqualTo("address.city");
         assertThat(AggregateUtil.convertToDotFieldName("c['address']['city']['street-block']")).isEqualTo("address.city.street-block");
+        assertThat(AggregateUtil.convertToDotFieldName("c[\"address\"][\"city\"]['street-block']")).isEqualTo("address.city.street-block");
 
     }
 
