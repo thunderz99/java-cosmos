@@ -84,7 +84,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         Map<String, Object> map = JsonUtil.toMap(data);
 
         // add partition info
-        map.put(MongoImpl.getDefaultPartitionKey(), partition);
+        map.put(Cosmos.getDefaultPartitionKey(), partition);
 
         // set id(for java-cosmos) and _id(for mongo) before insert
         addId4Mongo(map);
@@ -268,7 +268,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
 
         // add partition info
-        map.put(MongoImpl.getDefaultPartitionKey(), partition);
+        map.put(Cosmos.getDefaultPartitionKey(), partition);
 
         var container = this.client.getDatabase(coll).getCollection(partition);
 
@@ -336,7 +336,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         addTimestamp(patchData);
 
         // Remove partition key from patchData, because it is not needed for a patch action.
-        patchData.remove(MongoImpl.getDefaultPartitionKey());
+        patchData.remove(Cosmos.getDefaultPartitionKey());
 
         // flatten the map to "address.country.street" format to be used in mongo update method.
         var flatMap = MapUtil.toFlatMapWithPeriod(patchData);
@@ -397,7 +397,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
         // add partition info
-        map.put(MongoImpl.getDefaultPartitionKey(), partition);
+        map.put(Cosmos.getDefaultPartitionKey(), partition);
 
         var container = this.client.getDatabase(coll).getCollection(partition);
 
@@ -1042,7 +1042,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             var map = JsonUtil.toMap(obj);
 
             // Add partition info
-            map.put(MongoImpl.getDefaultPartitionKey(), partition);
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
 
             // Handle ID
             var id = addId4Mongo(map);
@@ -1106,7 +1106,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             Map<String, Object> map = JsonUtil.toMap(obj);
 
             // Add partition info
-            map.put(MongoImpl.getDefaultPartitionKey(), partition);
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
 
             // Handle ID
             var id = addId4Mongo(map);
@@ -1248,7 +1248,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             Map<String, Object> map = JsonUtil.toMap(obj);
 
             // add partition info
-            map.put(MongoImpl.getDefaultPartitionKey(), partition);
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
 
             // add _id for mongo
             var id = addId4Mongo(map);
@@ -1311,7 +1311,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             Map<String, Object> map = JsonUtil.toMap(obj);
 
             // Add partition info
-            map.put(MongoImpl.getDefaultPartitionKey(), partition);
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
 
             // Handle ID
             var id = addId4Mongo(map);
