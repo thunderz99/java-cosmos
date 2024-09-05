@@ -372,8 +372,8 @@ public class AggregateUtil {
         // Remove the c. prefix used in cosmosdb
         input = StringUtils.removeStart(input, "c.");
 
-        // Regex to match the pattern c['key1']['key2']...
-        var pattern = Pattern.compile("\\['([^']+)'\\]");
+        // Regex to match the pattern c['key1']['key2'] or c["key1"]["key2"]...
+        var pattern = Pattern.compile("\\[['\"]([^'\"]+)['\"]\\]");
         var matcher = pattern.matcher(input);
 
         var result = new StringBuilder();
@@ -386,7 +386,7 @@ public class AggregateUtil {
         }
 
         // If the result is empty and the input is a single key without brackets
-        if (result.length() == 0 && !input.contains("['")) {
+        if (result.length() == 0 && !StringUtils.containsAny(input, "['", "[\"")) {
             return input;
         }
 
