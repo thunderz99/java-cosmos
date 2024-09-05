@@ -22,6 +22,7 @@ import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -40,7 +41,7 @@ class CosmosDatabaseImplTest {
     static CosmosDatabase db;
 
     static String dbName = "CosmosDB";
-    static String coll = "UnitTest";
+    static String coll = "UnitTest_" + RandomStringUtils.randomAlphanumeric(6);
 
     static FullNameUser user1 = null;
     static FullNameUser user2 = null;
@@ -86,6 +87,7 @@ class CosmosDatabaseImplTest {
     @AfterAll
     public static void afterAll() throws Exception {
         deleteData4ComplexQuery();
+        cosmos.deleteCollection(dbName, coll);
     }
 
 
@@ -292,7 +294,7 @@ class CosmosDatabaseImplTest {
     void create_should_throw_when_data_is_null() throws Exception {
         User user = null;
         assertThatThrownBy(() -> db.create(coll, user, "Users")).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("create data UnitTest Users");
+                .hasMessageContaining("Users should not be null");
 
     }
 
