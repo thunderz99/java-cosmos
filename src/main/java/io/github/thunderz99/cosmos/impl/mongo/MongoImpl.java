@@ -281,14 +281,5 @@ public class MongoImpl implements Cosmos {
     public void closeClient() {
         this.getClient().close();
     }
-
-    /**
-     * get the default partition key
-     *
-     * @return default partition key
-     */
-    public static String getDefaultPartitionKey() {
-        return "_partition";
-    }
-
+    
 }

@@ -81,7 +81,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         Map<String, Object> objectMap = JsonUtil.toMap(data);
 
         // add partition info
-        objectMap.put(CosmosImpl.getDefaultPartitionKey(), partition);
+        objectMap.put(Cosmos.getDefaultPartitionKey(), partition);
 
         var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
@@ -256,7 +256,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         var documentLink = LinkFormatUtil.getDocumentLink(db, coll, id);
 
         // add partition info
-        map.put(CosmosImpl.getDefaultPartitionKey(), partition);
+        map.put(Cosmos.getDefaultPartitionKey(), partition);
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
@@ -340,7 +340,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         var patchData = JsonUtil.toMap(data);
 
         // Remove partition key from patchData, because it is not needed for a patch action.
-        patchData.remove(CosmosImpl.getDefaultPartitionKey());
+        patchData.remove(Cosmos.getDefaultPartitionKey());
 
         if (!option.checkETag || StringUtils.isEmpty(MapUtils.getString(patchData, CosmosImpl.ETAG))) {
             // if don't check etag or etag is empty, remove it.
@@ -407,7 +407,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
         var newData = JsonUtil.toMap(data);
         // add partition info
-        newData.put(CosmosImpl.getDefaultPartitionKey(), partition);
+        newData.put(Cosmos.getDefaultPartitionKey(), partition);
 
         // this is like `Object.assign(origin, newData)` in JavaScript, but support nested merge.
         var merged = merge(origin, newData);
@@ -502,7 +502,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
         // add partition info
-        map.put(CosmosImpl.getDefaultPartitionKey(), partition);
+        map.put(Cosmos.getDefaultPartitionKey(), partition);
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
@@ -1067,7 +1067,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         CosmosBatch batch = CosmosBatch.createCosmosBatch(partitionKey);
         data.forEach(it -> {
             var map = JsonUtil.toMap(it);
-            map.put(CosmosImpl.getDefaultPartitionKey(), partition);
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
             batch.createItemOperation(map);
         });
 
@@ -1092,7 +1092,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         CosmosBatch batch = CosmosBatch.createCosmosBatch(partitionKey);
         data.forEach(it -> {
             var map = JsonUtil.toMap(it);
-            map.put(CosmosImpl.getDefaultPartitionKey(), partition);
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
             batch.upsertItemOperation(map);
         });
 
@@ -1182,7 +1182,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         var partitionKey = new PartitionKey(partition);
         var operations = data.stream().map(it -> {
                     var map = JsonUtil.toMap(it);
-                    map.put(CosmosImpl.getDefaultPartitionKey(), partition);
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
                     return CosmosBulkOperations.getCreateItemOperation(map, partitionKey);
                 }
         ).collect(Collectors.toList());
@@ -1205,7 +1205,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         var partitionKey = new PartitionKey(partition);
         var operations = data.stream().map(it -> {
                     var map = JsonUtil.toMap(it);
-                    map.put(CosmosImpl.getDefaultPartitionKey(), partition);
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
                     return CosmosBulkOperations.getUpsertItemOperation(map, partitionKey);
                 }
         ).collect(Collectors.toList());

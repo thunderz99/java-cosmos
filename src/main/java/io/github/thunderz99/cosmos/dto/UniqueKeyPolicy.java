@@ -9,4 +9,13 @@ import com.google.common.collect.Lists;
  */
 public class UniqueKeyPolicy extends RecordData {
     public List<UniqueKey> uniqueKeys = Lists.newArrayList();
+
+    /**
+     * Get the uniqueKeys list of the policy
+     *
+     * @return uniqueKeys list
+     */
+    public List<UniqueKey> getUniqueKeys() {
+        return this.uniqueKeys;
+    }
 }

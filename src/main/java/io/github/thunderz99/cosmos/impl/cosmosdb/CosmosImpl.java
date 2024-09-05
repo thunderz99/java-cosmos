@@ -124,7 +124,7 @@ public class CosmosImpl implements Cosmos {
             //do nothing
         } else {
             var cosmosDatabase = this.client.getDatabase(db);
-            var containerProperties = new CosmosContainerProperties(coll, "/" + getDefaultPartitionKey());
+            var containerProperties = new CosmosContainerProperties(coll, "/" + Cosmos.getDefaultPartitionKey());
 
             var keyList = uniqueKeyPolicy.uniqueKeys;
             if (CollectionUtils.isNotEmpty(keyList)) {
@@ -258,15 +258,6 @@ public class CosmosImpl implements Cosmos {
             return ce.getStatusCode() == 404;
         }
         return StringUtils.contains(e.getMessage(), "Resource Not Found") ? true : false;
-    }
-
-    /**
-     * get the default partition key
-     *
-     * @return default partition key
-     */
-    public static String getDefaultPartitionKey() {
-        return "_partition";
     }
 
     public String getAccount() throws CosmosException {

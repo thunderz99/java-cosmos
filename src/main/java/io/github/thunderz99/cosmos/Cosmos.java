@@ -104,4 +104,13 @@ public interface Cosmos {
      * Close the internal database client safely
      */
     public void closeClient();
+
+    /**
+     * Get the default partitionKey(fieldName) used to do partitions
+     *
+     * @return default partition key "_partition"
+     */
+    public static String getDefaultPartitionKey() {
+        return "_partition";
+    }
 }
