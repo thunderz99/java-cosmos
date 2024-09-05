@@ -99,4 +99,9 @@ public interface Cosmos {
      */
     public String getDatabaseType();
 
+
+    /**
+     * Close the internal database client safely
+     */
+    public void closeClient();
 }

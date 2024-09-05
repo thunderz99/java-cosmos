@@ -98,9 +98,9 @@ class CosmosImplTest {
     @Test
     void getClientV4_should_work() {
         var cosmos = new CosmosImpl(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
-        assertThat(cosmos.getClientV4()).isNotNull();
+        assertThat(cosmos.getClient()).isNotNull();
 
-        var dbs = cosmos.getClientV4().readAllDatabases();
+        var dbs = cosmos.getClient().readAllDatabases();
         assertThat(dbs).isNotEmpty();
 
     }
