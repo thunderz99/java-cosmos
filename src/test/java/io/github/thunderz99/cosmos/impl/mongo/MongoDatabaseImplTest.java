@@ -10,6 +10,7 @@ import java.util.stream.IntStream;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
+import com.mongodb.client.model.Filters;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
@@ -2208,6 +2209,13 @@ class MongoDatabaseImplTest {
                 assertThat(((List<String>) item.get("skills")).get(1)).isEqualTo("Golang");
                 assertThat((Map<String, Object>) item.get("contents")).containsEntry("sex", "Male");
 
+
+                // assert that in raw doc in db, the _ts is Double
+                var client = ((MongoImpl) db.getCosmosAccount()).getClient().getDatabase(db.getDatabaseName());
+                var collection = client.getCollection(partition);
+                var doc = collection.find(Filters.eq("id", id)).first();
+                assertThat((Double) doc.get("_ts")).isInstanceOf(Double.class).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(0.01));
+
             }
 
             {
@@ -2335,6 +2343,40 @@ class MongoDatabaseImplTest {
                 assertThat(checkboxList.get(1).id).isEqualTo("id2");
                 assertThat(checkboxList.get(1).align).isEqualTo(CheckBox.Align.VERTICAL);
 
+
+            }
+        } finally {
+            db.delete(host, id, partition);
+        }
+    }
+
+    @Test
+    void patch_should_work_with_nested_pojo() throws Exception {
+        var partition = "PatchPojoTests";
+        var id = "patch_should_work_with_nested_pojo";
+
+        try {
+            var data1 = Map.of("id", id, "name", "John",
+                    "contents", Map.of("check1", new CheckBox("id1", "name1", CheckBox.Align.VERTICAL)),
+                    "score", 85.5);
+            db.upsert(host, data1, partition).toMap();
+
+            {
+                // Set should work
+
+                var operations = PatchOperations.create()
+                        .set("/contents", Map.of(
+                                "check1", new CheckBox("id1", "name1", CheckBox.Align.HORIZONTAL),
+                                "check2", new CheckBox("id2", "name2", CheckBox.Align.VERTICAL)
+                        )); // reset contents to a new list
+                var item = db.patch(host, id, operations, partition).toMap();
+
+                var contents = (Map<String, Object>) item.get("contents");
+                assertThat(contents).hasSize(2);
+
+                assertThat((Map<String, Object>) contents.get("check1"))
+                        .containsEntry("id", "id1")
+                        .containsEntry("align", CheckBox.Align.HORIZONTAL.name());
 
             }
         } finally {
