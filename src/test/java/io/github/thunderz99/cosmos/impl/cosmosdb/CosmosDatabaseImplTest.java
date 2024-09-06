@@ -2657,6 +2657,39 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void patch_should_work_with_nested_pojo() throws Exception {
+        var partition = "PatchPojoTests";
+        var id = "patch_should_work_with_nested_pojo";
+
+        try {
+            var data1 = Map.of("id", id, "name", "John",
+                    "contents", Map.of("check1", new CheckBox("id1", "name1", CheckBox.Align.VERTICAL)),
+                    "score", 85.5);
+            db.upsert(coll, data1, partition).toMap();
+
+            {
+                // Set should work with nested Map containing custom class pojo
+                var operations = PatchOperations.create()
+                        .set("/contents", Map.of(
+                                "check1", new CheckBox("id1", "name1", CheckBox.Align.HORIZONTAL),
+                                "check2", new CheckBox("id2", "name2", CheckBox.Align.VERTICAL)
+                        )); // reset contents to a new list
+                var item = db.patch(coll, id, operations, partition).toMap();
+
+                var contents = (Map<String, Object>) item.get("contents");
+                assertThat(contents).hasSize(2);
+
+                assertThat((Map<String, Object>) contents.get("check1"))
+                        .containsEntry("id", "id1")
+                        .containsEntry("align", CheckBox.Align.HORIZONTAL.name());
+
+            }
+        } finally {
+            db.delete(coll, id, partition);
+        }
+    }
+
+    @Test
     void batchCreate_should_work() throws Exception {
         int size = 100;
         var userList = new ArrayList<>(size);

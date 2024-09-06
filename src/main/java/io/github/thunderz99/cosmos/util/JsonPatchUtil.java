@@ -3,7 +3,6 @@ package io.github.thunderz99.cosmos.util;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -88,12 +87,7 @@ public class JsonPatchUtil {
         if (value instanceof String || Primitives.isWrapperType(value.getClass()) || value.getClass().isPrimitive() || value.getClass().isEnum()) {
             return value;
         }
-
-        if (value instanceof Map<?, ?>) {
-            // no need to convert
-            return value;
-        }
-
+        
         if (value instanceof Collection<?>) {
             var collection = (Collection<?>) value;
             return collection.stream().map(item -> JsonUtil.toMap(item)).collect(Collectors.toList());
