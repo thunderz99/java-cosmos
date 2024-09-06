@@ -87,10 +87,10 @@ public class JsonPatchUtil {
         if (value instanceof String || Primitives.isWrapperType(value.getClass()) || value.getClass().isPrimitive() || value.getClass().isEnum()) {
             return value;
         }
-        
+
         if (value instanceof Collection<?>) {
             var collection = (Collection<?>) value;
-            return collection.stream().map(item -> JsonUtil.toMap(item)).collect(Collectors.toList());
+            return collection.stream().map(item -> getNormalizedValue(item)).collect(Collectors.toList());
         }
 
         return JsonUtil.toMap(value);
