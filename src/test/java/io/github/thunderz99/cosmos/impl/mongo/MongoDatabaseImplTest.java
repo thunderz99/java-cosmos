@@ -10,6 +10,7 @@ import java.util.stream.IntStream;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
+import com.mongodb.client.model.Filters;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
@@ -2207,6 +2208,13 @@ class MongoDatabaseImplTest {
                 assertThat((List<String>) item.get("skills")).hasSize(4);
                 assertThat(((List<String>) item.get("skills")).get(1)).isEqualTo("Golang");
                 assertThat((Map<String, Object>) item.get("contents")).containsEntry("sex", "Male");
+
+
+                // assert that in raw doc in db, the _ts is Double
+                var client = ((MongoImpl) db.getCosmosAccount()).getClient().getDatabase(db.getDatabaseName());
+                var collection = client.getCollection(partition);
+                var doc = collection.find(Filters.eq("id", id)).first();
+                assertThat((Double) doc.get("_ts")).isInstanceOf(Double.class).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(0.01));
 
             }
 

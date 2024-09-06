@@ -1,6 +1,5 @@
 package io.github.thunderz99.cosmos.impl.mongo;
 
-import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -364,7 +363,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     static void addTimestamp(Map<String, Object> data) {
         // format: 1714546148.123
         // we use milli instead of second in order to get a more stable sort when using "sort" : ["_ts", "DESC"]
-        data.put("_ts", Instant.now().toEpochMilli() / 1000d);
+        data.put("_ts", TimestampUtil.getTimestampInDouble());
     }
 
 
@@ -974,7 +973,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         Preconditions.checkArgument(operations.size() <= PatchOperations.LIMIT, "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10", operations.size());
 
         // Set timestamp
-        operations.set("/_ts", Instant.now().getEpochSecond());
+        operations.set("/_ts", TimestampUtil.getTimestampInDouble());
         var patchData = JsonPatchUtil.toMongoPatchData(operations);
 
         var container = this.client.getDatabase(coll).getCollection(partition);
