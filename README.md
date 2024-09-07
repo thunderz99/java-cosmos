@@ -416,6 +416,7 @@ The main difference between Partial update and Patch is that:
 ```
 
 
+
 ### MongoDB support
 
 ```
@@ -426,12 +427,12 @@ var cosmos = new CosmosBuilder().withDatabaseType("mongodb")
                 .build();
 var db = cosmos.getDatabase("Database1");
 
-// you can use db instance at the same way as you are using cosmosdb
+// you can use db instance as the same way as you are using cosmosdb
 db.upsert("Database1", new User("id011","Tom","Banks"), "Collection1");
 
-// for mongodb (mongo atlas)
+// for mongodb atlas
 var cosmos = new CosmosBuilder().withDatabaseType("mongodb")
- .withConnectionString("mongodb+srv://a:b@x-mongo.y.mongodb.net/"))
+ .withConnectionString("mongodb+srv://aa:bb@xx-mongo.yy.mongodb.net/"))
                 .build();
                 
 // for cosmosdb
