@@ -568,9 +568,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
             // extract the joinFilter starts with the same joinField
             var joinFilter = joinRelatedFilters.entrySet().stream()
-                    .filter(entry -> entry.getKey().startsWith(joinField))
+                    .filter(entry -> entry.getKey().startsWith(joinField + "."))
                     .collect(Collectors.toMap(
-                            entry -> entry.getKey().substring(joinField.length() + 1), // Remove the joinField prefix
+                            entry -> StringUtils.removeStart(entry.getKey(), joinField + "."), // Remove the joinField prefix
                             Map.Entry::getValue
                     ));
 

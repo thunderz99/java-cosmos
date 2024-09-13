@@ -17,6 +17,8 @@ import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
+import static io.github.thunderz99.cosmos.condition.SubConditionType.*;
+
 /**
  * An util class to convert condition's filter/sort/limit/offset to bson filter/sort/limit/offset for mongo
  */
@@ -181,7 +183,7 @@ public class ConditionUtil {
         }
 
         // preprocess for "fieldA OR fieldB". exclude $AND, $OR, $NOT sub queries
-        if (key.contains(" OR ") && !StringUtils.startsWithAny(key, "$AND", "$OR", "$NOT")) {
+        if (key.contains(" OR ") && !StringUtils.startsWithAny(key, AND, OR, NOT, ELEM_MATCH)) {
             return generateOrExpression(key, value, filterOptions);
         }
 
@@ -199,7 +201,7 @@ public class ConditionUtil {
         var matcher = simpleExpressionPattern.matcher(key);
 
 
-        if (StringUtils.startsWithAny(key, "$AND", "$OR", "$NOT")) {
+        if (StringUtils.startsWithAny(key, AND, OR, NOT, ELEM_MATCH)) {
             // query with sub conditions
             ret = toBsonFilter4SubConditions(key, value, filterOptions);
 
@@ -391,7 +393,7 @@ public class ConditionUtil {
 
         Bson ret = null;
 
-        if (key.startsWith("$OR")) {
+        if (key.startsWith(OR)) {
             if (value instanceof Collection<?>) {
                 ret = Filters.or(toBsonFilters((Collection<?>) value, filterOptions));
             } else if (value instanceof Condition) {
@@ -399,9 +401,9 @@ public class ConditionUtil {
             } else if (value instanceof Map<?, ?>) {
                 ret = Filters.or(toBsonFilters(List.of(value), filterOptions));
             } else {
-                throw new IllegalArgumentException("$OR 's filter is not correct. expect Collection/Map/Condition:" + value);
+                throw new IllegalArgumentException(String.format("%s 's filter is not correct. expect Collection/Map/Condition:%s", OR, value));
             }
-        } else if (key.startsWith("$AND")) {
+        } else if (key.startsWith(AND)) {
             if (value instanceof Collection<?>) {
                 ret = Filters.and(toBsonFilters((Collection<?>) value, filterOptions));
             } else if (value instanceof Condition) {
@@ -409,10 +411,10 @@ public class ConditionUtil {
             } else if (value instanceof Map<?, ?>) {
                 ret = Filters.and(toBsonFilters(List.of(value), filterOptions));
             } else {
-                throw new IllegalArgumentException("$AND 's filter is not correct. expect Collection/Map/Condition:" + value);
+                throw new IllegalArgumentException(String.format("%s 's filter is not correct. expect Collection/Map/Condition:%s", AND, value));
             }
 
-        } else if (key.startsWith("$NOT")) {
+        } else if (key.startsWith(NOT)) {
             if (value instanceof Collection<?>) {
                 ret = Filters.nor(toBsonFilters((Collection<?>) value, filterOptions));
             } else if (value instanceof Condition) {
@@ -420,9 +422,98 @@ public class ConditionUtil {
             } else if (value instanceof Map<?, ?>) {
                 ret = Filters.nor(toBsonFilter((Map<String, Object>) value, filterOptions));
             } else {
-                throw new IllegalArgumentException("$NOT 's filter is not correct. expect Collection/Map/Condition:" + value);
+                throw new IllegalArgumentException(String.format("%s 's filter is not correct. expect Collection/Map/Condition:%s", NOT, value));
+            }
+        } else if (key.startsWith(ELEM_MATCH)) {
+            if (value instanceof Map<?, ?>) {
+                var map = (Map<String, Object>) value;
+
+                var mapsByJoinKey = extractMaps4ElemMatch(map, filterOptions.join);
+
+                var elemConds = new ArrayList<Bson>();
+
+                for (var entry : mapsByJoinKey.entrySet()) {
+                    var elemKey = entry.getKey();
+                    var elemValue = entry.getValue();
+
+                    if (MapUtils.isEmpty(elemValue)) {
+                        continue;
+                    }
+
+                    if (StringUtils.isNotEmpty(elemKey)) {
+                        // elem match for a sub array
+
+                        // Remove "children." prefix, e.g. "children.grade" -> "grade", in order to obtain a correct filter under $elemMatch
+                        var subMap = elemValue.entrySet()
+                                .stream()
+                                .collect(Collectors.toMap(
+                                        en -> StringUtils.removeStart(en.getKey(), elemKey + "."),
+                                        Map.Entry::getValue
+                                ));
+
+                        elemConds.add(Filters.elemMatch(elemKey, toBsonFilter(subMap, filterOptions)));
+                    } else {
+                        // normal and filters
+                        elemConds.add(Filters.and(toBsonFilter(elemValue, filterOptions)));
+                    }
+                }
+                ret = elemConds.size() > 1 ? Filters.and(elemConds) : elemConds.get(0);
+            } else {
+                throw new IllegalArgumentException(String.format("%s 's filter is not correct. expect Map:%s", ELEM_MATCH, value));
             }
         }
+        return ret;
+    }
+
+    /**
+     * extract sub maps for elem match
+     *
+     * <pre>
+     *     input(map): {"children.grade": 1, "children.age > ": 5, "parents.firstName": "Tom", "address": "NY"}
+     *     input(join): ["children", "parents"]
+     *
+     *     output: {
+     *       "children" :  {"children.grade": 1, "children.age > ": 5},  // grouping by the same joinKey
+     *       "parents": {"parents.firstName": "Tom"}
+     *       "" : {"address": "NY"}
+     *     }
+     *
+     *
+     * </pre>
+     *
+     * @param inputMap map to be extract
+     * @param join     join keys set
+     * @return extracted map grouping by join keys
+     */
+    static Map<String, Map<String, Object>> extractMaps4ElemMatch(Map<String, Object> inputMap, Set<String> join) {
+
+        if (MapUtils.isEmpty(inputMap)) {
+            return Map.of();
+        }
+
+        if (join == null) {
+            join = Set.of();
+        }
+
+        var ret = new LinkedHashMap<String, Map<String, Object>>();
+        var copy = new LinkedHashMap<>(inputMap);
+
+        for (var entry : inputMap.entrySet()) {
+            var key = entry.getKey();
+            var value = entry.getValue();
+
+            for (var joinKey : join) {
+                ret.putIfAbsent(joinKey, new LinkedHashMap<>());
+                var subMap = ret.get(joinKey);
+                if (StringUtils.startsWithAny(key, joinKey + ".")) {
+                    subMap.put(key, value);
+                    copy.remove(key);
+                }
+            }
+        }
+
+        ret.put("", copy);
+
         return ret;
     }
 
