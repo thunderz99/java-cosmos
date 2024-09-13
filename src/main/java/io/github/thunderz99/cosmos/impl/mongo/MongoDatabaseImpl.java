@@ -664,7 +664,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
      * @param maps
      * @return
      */
-    static List<? extends LinkedHashMap> convertAggregateResultsToInteger(List<? extends LinkedHashMap> maps) {
+    static List<? extends Map> convertAggregateResultsToInteger(List<? extends Map> maps) {
 
         if (CollectionUtils.isEmpty(maps)) {
             return maps;
@@ -866,6 +866,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // after process if an aggregate result is empty
         if (results.isEmpty()) {
             results = AggregateUtil.processEmptyAggregateResults(aggregate, results);
+        } else {
+            // convert aggregate result to Integer if possible
+            convertAggregateResultsToInteger(results);
         }
 
         // Return the results as CosmosDocumentList

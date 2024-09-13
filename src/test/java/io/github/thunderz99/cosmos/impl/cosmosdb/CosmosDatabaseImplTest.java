@@ -1344,7 +1344,7 @@ class CosmosDatabaseImplTest {
         testMaps.add(map3);
 
         // Call the method under test
-        List<? extends LinkedHashMap> resultMaps = CosmosDatabaseImpl.convertAggregateResultsToInteger(testMaps);
+        List<? extends Map> resultMaps = CosmosDatabaseImpl.convertAggregateResultsToInteger(testMaps);
 
         // Assertions
         assertThat(resultMaps).isNotNull();
