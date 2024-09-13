@@ -58,7 +58,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
     /**
      * An instance of LinkedHashMap<String, Object>, used to get the class instance in a convenience way.
      */
-    static final LinkedHashMap<String, Object> mapInstance = new LinkedHashMap<>();
+    static final Map<String, Object> mapInstance = new LinkedHashMap<>();
 
 
     /**
@@ -674,7 +674,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      * @param maps
      * @return
      */
-    static List<? extends LinkedHashMap> convertAggregateResultsToInteger(List<? extends LinkedHashMap> maps) {
+    static List<? extends Map> convertAggregateResultsToInteger(List<? extends Map> maps) {
 
         if (CollectionUtils.isEmpty(maps)) {
             return maps;
