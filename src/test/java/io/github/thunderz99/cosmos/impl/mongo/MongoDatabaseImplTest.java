@@ -1660,16 +1660,34 @@ class MongoDatabaseImplTest {
         }
     }
 
-    @Disabled
-    /**
-     * TODO, This case is not implemented at present
-     */
+    @Test
     void find_should_work_with_join_using_elem_match() throws Exception {
         // condition on the same sub array should be both applied to the element(e.g. children.gender = "female" AND children.grade = 5)
-        // If we want to implement this, we can introduce a new SubConditionType like "$ElemMatch" in mongodb
-        {
+        // If we want to implement this, we can introduce a new SubConditionType like "$ELEM_MATCH" in mongodb
+        { // test returnAllSubArray(true)
             var cond = new Condition();
-            cond = Condition.filter("children.gender", "female", "children.grade =", 5) //
+            cond = Condition.filter(SubConditionType.ELEM_MATCH,
+                            Map.of("children.gender", "male",
+                                    "children.grade >=", 5)
+                    )
+                    .sort("lastName", "ASC") //
+                    .limit(10) //
+                    .offset(0)
+                    .join(Set.of("parents", "children"))
+                    .returnAllSubArray(true)
+            ;
+            // test find
+            var result = db.find(host, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+            assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(3);
+        }
+        { // test returnAllSubArray(false)
+            var cond = new Condition();
+            cond = Condition.filter(SubConditionType.ELEM_MATCH,
+                            Map.of("children.gender", "male",
+                                    "children.grade >=", 5)
+                    )
                     .sort("lastName", "ASC") //
                     .limit(10) //
                     .offset(0)
@@ -1680,6 +1698,8 @@ class MongoDatabaseImplTest {
             var result = db.find(host, cond, "Families").toMap();
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+            // only sub set of children is returned
+            assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(1);
         }
     }
 

@@ -2,6 +2,7 @@ package io.github.thunderz99.cosmos.util;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import com.mongodb.client.model.Filters;
@@ -263,5 +264,48 @@ public class ConditionUtilTest {
         });
 
     }
+
+    @Test
+    void extractMaps4ElemMatch_should_work() {
+
+        {
+            // irregular patterns
+            assertThat(ConditionUtil.extractMaps4ElemMatch(null, null)).isEmpty();
+            assertThat(ConditionUtil.extractMaps4ElemMatch(null, Set.of())).isEmpty();
+            assertThat(ConditionUtil.extractMaps4ElemMatch(null, Set.of("A", "B"))).isEmpty();
+            assertThat(ConditionUtil.extractMaps4ElemMatch(Map.of(), null)).isEmpty();
+        }
+
+        {
+            // no joinKeys
+            var result = ConditionUtil.extractMaps4ElemMatch(Map.of("a.x", 1, "b", 2), null);
+            assertThat(result).hasSize(1).containsKey("");
+            assertThat(result.get("")).containsEntry("a.x", 1).containsEntry("b", 2);
+        }
+
+        {
+            /*
+             *     input(map): {"children.grade": 1, "children.age > ": 5, "parents.firstName": "Tom", "address": "NY"}
+             *     input(join): ["children", "parents"]
+             *
+             *     output: {
+             *       "children" :  {"children.grade": 1, "children.age > ": 5},  // grouping by the same joinKey
+             *       "parents": {"parents.firstName": "Tom"}
+             *       "" : {"address": "NY"}
+             *     }
+             */
+
+            Map<String, Object> inputMap = Map.of("children.grade", 1, "children.age > ", 5, "parents.firstName", "Tom", "address", "NY");
+            var result = ConditionUtil.extractMaps4ElemMatch(inputMap, Set.of("children", "parents"));
+            assertThat(result).hasSize(3).containsKeys("", "children", "parents");
+
+            assertThat(result.get("children")).containsEntry("children.grade", 1).containsEntry("children.age > ", 5);
+            assertThat(result.get("parents")).containsEntry("parents.firstName", "Tom");
+            assertThat(result.get("")).containsEntry("address", "NY");
+
+        }
+
+    }
+
 
 }
