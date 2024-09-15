@@ -12,10 +12,12 @@ public class SubConditionType {
     /**
      * support a simple expression for query
      *
-     * <pre>
+     * <p>
+     * {@code
      * // e.g.
      * Condition.filter("$EXPRESSION", "c.age / 10 < ARRAY_LENGTH(c.skills)");
-     * </pre>
+     * }
+     * </p>
      */
     public static final String EXPRESSION = "$EXPRESSION";
 

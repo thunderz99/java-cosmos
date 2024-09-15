@@ -14,11 +14,12 @@ import static io.github.thunderz99.cosmos.util.ConditionUtil.OPERATOR_MAPPINGS;
 /**
  * Convert SQL expression filter to mongodb bson filter
  *
- * <pre>
- *     input: "c.currentPhaseIndex < ARRAY_LENGTH(c.phases) - 1"
- *     output: { "currentPhaseIndex": { "$lt": { "$subtract": [ { "$size": "$phases" }, 1 ] } } }
- *
- * </pre>
+ * <p>
+ * {@code
+ * // input: "c.currentPhaseIndex < ARRAY_LENGTH(c.phases) - 1"
+ * // output: {"$expr": { "$lt": [ "$currentPhaseIndex", { "$subtract": [ { "$size": "$phases" }, 1 ] } ] } }
+ * }
+ * </p>
  */
 public class ExpressionConvertUtil {
 
