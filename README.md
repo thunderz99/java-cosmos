@@ -294,7 +294,7 @@ The main difference between Partial update and Patch is that:
 
 ```java
     // support aggregate function: COUNT, AVG, SUM, MAX, MIN
-// see https://docs.microsoft.com/en-us/azure/cosmos-db/sql-query-aggregate-functions
+    // see https://docs.microsoft.com/en-us/azure/cosmos-db/sql-query-aggregate-functions
     var aggregate=Aggregate.function("COUNT(1) AS facetCount").groupBy("location","gender");
 
     var result=db.aggregate("Collection1",aggregate,Condition.filter("age >=",20));
@@ -329,6 +329,18 @@ The main difference between Partial update and Patch is that:
     var result = db.increment("Collection1", "id1", "/name", 1, "Users");
     
 ```
+
+
+### Expression in filter
+
+```java
+    var cond = Condition.filter(
+      "$EXPRESSION", "c.age / 10 > ARRAY_LENGTH(c.skills)",
+      "$EXPRESSION 2", "MIN(c['term-test']['scores']) > 60"
+    );
+    var users = db.find("Collection1", cond).toList(User.class);
+```
+
 
 ### Cross-partition queries
 
