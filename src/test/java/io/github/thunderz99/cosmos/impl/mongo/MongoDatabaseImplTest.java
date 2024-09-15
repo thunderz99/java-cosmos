@@ -29,6 +29,8 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static io.github.thunderz99.cosmos.condition.SubConditionType.AND;
+import static io.github.thunderz99.cosmos.condition.SubConditionType.OR;
 import static io.github.thunderz99.cosmos.impl.mongo.MongoDatabaseImpl.convertAggregateResultsToInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -1849,6 +1851,60 @@ class MongoDatabaseImplTest {
             assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
         }
 
+    }
+
+    @Test
+    void sub_cond_query_should_work_4_empty_list() throws Exception {
+        {
+            // AND with empty list
+            var partition = "Families";
+
+            var cond = Condition.filter("id", "AndersenFamily", AND, List.of(
+                            Condition.filter("$AND sub cond", List.of()))
+                    )
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+
+        {
+            // OR with empty list
+            var partition = "Families";
+
+            var cond = Condition.filter("id", "AndersenFamily", OR, List.of(
+                            Condition.filter("$OR sub cond", List.of()))
+                    )
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+
+        {
+            // OR with empty list
+            var partition = "Families";
+
+            var cond = Condition.filter("id", "AndersenFamily", AND, List.of(
+                            Condition.filter("$NOT sub cond", List.of()))
+                    )
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(host, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
     }
 
     @Test

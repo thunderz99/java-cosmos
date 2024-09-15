@@ -31,6 +31,8 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static io.github.thunderz99.cosmos.condition.SubConditionType.AND;
+import static io.github.thunderz99.cosmos.condition.SubConditionType.OR;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
@@ -735,6 +737,20 @@ class CosmosDatabaseImplTest {
             var docs = db.find(coll, cond, partition).toMap();
             assertThat(docs).hasSize(1);
         }
+    }
+
+    @Test
+    void find_should_work_for_array_contains_a_json_obj() throws Exception {
+        var partition = "Families";
+
+        {
+            // ARRAY_CONTAINS {"givenName" : "Lisa"}
+            // children is an array, and grade is a field of children
+            var cond = Condition.filter("children ARRAY_CONTAINS_ANY givenName", "Lisa");
+            var docs = db.find(coll, cond, partition).toMap();
+            assertThat(docs).hasSize(1);
+        }
+
     }
 
     @Test
@@ -1474,7 +1490,7 @@ class CosmosDatabaseImplTest {
 
         //AND query with join
         {
-            var cond = Condition.filter(SubConditionType.AND, List.of( //
+            var cond = Condition.filter(AND, List.of( //
                             Condition.filter("parents.familyName", "Wakefield"), //
                             Condition.filter("isRegistered", false))) //
                     .sort("id", "ASC")//
@@ -1678,12 +1694,34 @@ class CosmosDatabaseImplTest {
     /**
      * TODO, This case is not implemented at present
      */
+    @Test
     void find_should_work_with_join_using_elem_match() throws Exception {
         // condition on the same sub array should be both applied to the element(e.g. children.gender = "female" AND children.grade = 5)
-        // If we want to implement this, we can introduce a new SubConditionType like "$ElemMatch" in mongodb
-        {
+        // If we want to implement this, we can introduce a new SubConditionType like "$ELEM_MATCH" in mongodb
+        { // test returnAllSubArray(true)
             var cond = new Condition();
-            cond = Condition.filter("children.gender", "female", "children.grade =", 5) //
+            cond = Condition.filter(SubConditionType.ELEM_MATCH,
+                            Map.of("children.gender", "male",
+                                    "children.grade >=", 5)
+                    )
+                    .sort("lastName", "ASC") //
+                    .limit(10) //
+                    .offset(0)
+                    .join(Set.of("parents", "children"))
+                    .returnAllSubArray(true)
+            ;
+            // test find
+            var result = db.find(coll, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+            assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(3);
+        }
+        { // test returnAllSubArray(false)
+            var cond = new Condition();
+            cond = Condition.filter(SubConditionType.ELEM_MATCH,
+                            Map.of("children.gender", "male",
+                                    "children.grade >=", 5)
+                    )
                     .sort("lastName", "ASC") //
                     .limit(10) //
                     .offset(0)
@@ -1694,6 +1732,8 @@ class CosmosDatabaseImplTest {
             var result = db.find(coll, cond, "Families").toMap();
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+            // only sub set of children is returned
+            assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(1);
         }
     }
 
@@ -1787,7 +1827,7 @@ class CosmosDatabaseImplTest {
             // using Condition.filter as a sub query
             var partition = "Families";
 
-            var cond = Condition.filter(SubConditionType.AND, List.of( //
+            var cond = Condition.filter(AND, List.of( //
                             Condition.filter("address.state", "WA"), //
                             Condition.filter("lastName", "Andersen"))) //
                     .sort("id", "ASC") //
@@ -1803,7 +1843,7 @@ class CosmosDatabaseImplTest {
             // using map as a sub query (in order to support rest api 's parameter)
             var partition = "Families";
 
-            var cond = Condition.filter(SubConditionType.AND, List.of( //
+            var cond = Condition.filter(AND, List.of( //
                             Map.of("address.state", "WA"), //
                             Map.of("lastName", "Andersen"))) //
                     .sort("id", "ASC") //
@@ -1843,6 +1883,60 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void sub_cond_query_should_work_4_empty_list() throws Exception {
+        {
+            // AND with empty list
+            var partition = "Families";
+
+            var cond = Condition.filter("id", "AndersenFamily", AND, List.of(
+                            Condition.filter("$AND sub cond", List.of()))
+                    )
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(coll, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+
+        {
+            // OR with empty list
+            var partition = "Families";
+
+            var cond = Condition.filter("id", "AndersenFamily", OR, List.of(
+                            Condition.filter("$OR sub cond", List.of()))
+                    )
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(coll, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+
+        {
+            // OR with empty list
+            var partition = "Families";
+
+            var cond = Condition.filter("id", "AndersenFamily", AND, List.of(
+                            Condition.filter("$NOT sub cond", List.of()))
+                    )
+                    .sort("id", "ASC") //
+                    ;
+
+            var items = db.find(coll, cond, partition).toMap();
+
+            assertThat(items).hasSize(1);
+
+            assertThat(items.get(0).get("id")).hasToString("AndersenFamily");
+        }
+    }
+
+    @Test
     void sub_cond_query_should_work_4_NOT() throws Exception {
         // test json from cosmosdb official site
         // https://docs.microsoft.com/ja-jp/azure/cosmos-db/sql-query-getting-started
@@ -1869,7 +1963,7 @@ class CosmosDatabaseImplTest {
             var partition = "Families";
 
             // null will be ignored
-            var cond = Condition.filter("lastName", "Andersen", SubConditionType.AND, null, "$AND 2", List.of())
+            var cond = Condition.filter("lastName", "Andersen", AND, null, "$AND 2", List.of())
                     .sort("id", "ASC") //
                     ;
 
@@ -2099,7 +2193,7 @@ class CosmosDatabaseImplTest {
 
             {
                 // IS_DEFINED = false in OR condition. result: 1 item
-                var cond = Condition.filter("id LIKE", "D00%", SubConditionType.AND, List.of(
+                var cond = Condition.filter("id LIKE", "D00%", AND, List.of(
                         Condition.filter(String.format("%s.name IS_DEFINED", formId), true),
                         Condition.filter(String.format("%s.empty IS_DEFINED", formId), false)
                 )).sort("id", "ASC");
