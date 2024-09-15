@@ -82,6 +82,10 @@ public class ConditionUtil {
         // filter invalid bson (null)
         filters = filters.stream().filter(Objects::nonNull).collect(Collectors.toList());
 
+        if (filters.isEmpty()) {
+            return trueBsonFilter();
+        }
+
         return filters.size() == 1 ? filters.get(0) : Filters.and(filters);
     }
 
@@ -346,9 +350,15 @@ public class ConditionUtil {
         } else {
             // 
             // process "tags ARRAY_CONTAINS_ANY id" or "children ARRAY_CONTAINS_ALL grade"
-            ret = generateExpression4SubQuery(key, value, filterOptions);
+            var subQueryMatcher = Condition.subQueryExpressionPattern.matcher(key);
 
-            if (ret == null) {
+            if (subQueryMatcher.find()) {
+                var subQueryJoinKey = subQueryMatcher.group(1); // children
+                var operator = subQueryMatcher.group(2); // ARRAY_CONTAINS_ANY
+                var filterKey = subQueryMatcher.group(3); // grade
+                ret = generateExpression4SubQuery(subQueryJoinKey, operator, filterKey, value, filterOptions);
+
+            } else {
                 // normal {"key=": value} pattern 
                 if (value instanceof Collection<?>) {
                     // the same as IN
@@ -457,7 +467,12 @@ public class ConditionUtil {
                         elemConds.add(Filters.and(toBsonFilter(elemValue, filterOptions)));
                     }
                 }
+
+                if (elemConds.isEmpty()) {
+                    return trueBsonFilter();
+                }
                 ret = elemConds.size() > 1 ? Filters.and(elemConds) : elemConds.get(0);
+
             } else {
                 throw new IllegalArgumentException(String.format("%s 's filter is not correct. expect Map:%s", ELEM_MATCH, value));
             }
@@ -520,20 +535,13 @@ public class ConditionUtil {
     /**
      * generate expression that do {"children ARRAY_CONTAINS_ANY grade" : [5, 8]}
      *
-     * @param key
+     * @param joinKey       e.g. children
+     * @param operator      e.g. ARRAY_CONTAINS_ANY
+     * @param filterKey     e.g. grade
      * @param value
      * @param filterOptions
      */
-    static Bson generateExpression4SubQuery(String key, Object value, FilterOptions filterOptions) {
-        var matcher = Condition.subQueryExpressionPattern.matcher(key);
-
-        if (!matcher.find()) {
-            return null;
-        }
-
-        var joinKey = matcher.group(1); // children
-        var operator = matcher.group(2); // ARRAY_CONTAINS_ANY
-        var filterKey = matcher.group(3); // grade
+    static Bson generateExpression4SubQuery(String joinKey, String operator, String filterKey, Object value, FilterOptions filterOptions) {
 
         if (StringUtils.isEmpty(filterKey)) {
             // if just "children ARRAY_CONTAINS_ANY"
@@ -672,11 +680,11 @@ public class ConditionUtil {
 
         if (Condition.isTrueCondition(cond)) {
             // SQL "(1=1)"
-            return new Document("$expr", new Document("$eq", Arrays.asList(1, 1)));
+            return trueBsonFilter();
 
         } else if (Condition.isFalseCondition(cond)) {
             // SQL "(1=0)"
-            return new Document("$expr", new Document("$eq", Arrays.asList(1, 0)));
+            return falseBsonFilter();
         }
 
         if (!cond.negative) {
@@ -688,6 +696,23 @@ public class ConditionUtil {
         }
     }
 
+    /**
+     * Returns the 1=1 equivalent of bson filter. ("$expr" : {"$eq": [1,1]})
+     *
+     * @return true bson filter
+     */
+    static Document trueBsonFilter() {
+        return new Document("$expr", new Document("$eq", Arrays.asList(1, 1)));
+    }
+
+    /**
+     * Returns the 1=0 equivalent of bson filter. ("$expr" : {"$eq": [1,0]})
+     *
+     * @return false bson filter
+     */
+    static Document falseBsonFilter() {
+        return new Document("$expr", new Document("$eq", Arrays.asList(1, 0)));
+    }
 
     /**
      * Convert List.of("id", "DESC") or List.of("_ts", "ASC") to bson sort for mongo
