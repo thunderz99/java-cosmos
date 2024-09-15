@@ -480,13 +480,25 @@ public class Condition {
                     saveOriginJoinCondition(subFilterQueryToAdd);
                     subFilterQueryToAdd = toJoinQueryText(subFilterQueryToAdd, subFilterQueryToAdd, paramIndex);
                 }
+            } else if (entry.getKey().startsWith(SubConditionType.EXPRESSION)) {
+                // support expression using combination of function and the basic operators
+                // e.g.: Condition.filter("$EXPRESSION exp1", "c.age / 10 < ARRAY_LENGTH(c.skills)");
+
+                if ((entry.getValue() instanceof String)) {
+                    //only support expression write in string
+                    var expressionStr = (String) entry.getValue();
+                    if (StringUtils.isNotEmpty(expressionStr)) {
+                        subFilterQueryToAdd = String.format(" (%s)", expressionStr);
+                    }
+                }
+
             } else {
-                // normal expression
+                // normal "key = value" expression
                 var exp = parse(entry.getKey(), entry.getValue());
                 var expQuerySpec = exp.toQuerySpec(paramIndex, selectAlias);
                 subFilterQueryToAdd = expQuerySpec.getQueryText();
                 saveOriginJoinCondition(subFilterQueryToAdd);
-                subFilterQueryToAdd = toJoinQueryText(entry.getKey(), subFilterQueryToAdd,paramIndex);
+                subFilterQueryToAdd = toJoinQueryText(entry.getKey(), subFilterQueryToAdd, paramIndex);
                 params.addAll(expQuerySpec.getParameters());
             }
 

@@ -37,7 +37,7 @@ public class AggregateUtil {
         var projectionSet = new HashSet<String>();
         // Project fields with renamed keys if necessary
         for (var groupByField : aggregate.groupBy) {
-            var dotFieldName = convertToDotFieldName(groupByField);
+            var dotFieldName = FieldNameUtil.convertToDotFieldName(groupByField);
             var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
 
             if (!projectionSet.contains(fieldInPipeline)) {
@@ -59,7 +59,7 @@ public class AggregateUtil {
 
             var field = extractFieldFromFunction(function);
 
-            var dotFieldName = convertToDotFieldName(field);
+            var dotFieldName = FieldNameUtil.convertToDotFieldName(field);
             var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
             if (!projectionSet.contains(fieldInPipeline)) {
                 // add the alias and field only if not added already
@@ -126,7 +126,7 @@ public class AggregateUtil {
 
                 var field = extractFieldFromFunction(function);
 
-                var dotFieldName = convertToDotFieldName(field);
+                var dotFieldName = FieldNameUtil.convertToDotFieldName(field);
                 var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
 
                 // array_length projection is always before group and accumulators
@@ -137,7 +137,7 @@ public class AggregateUtil {
             } else {
                 var field = extractFieldFromFunction(function);
 
-                var dotFieldName = convertToDotFieldName(field);
+                var dotFieldName = FieldNameUtil.convertToDotFieldName(field);
                 var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
 
                 if (StringUtils.startsWithIgnoreCase(function, "MAX")) {
@@ -277,7 +277,7 @@ public class AggregateUtil {
 
         // Extract fields from the _id and rename them
         for (var groupByField : aggregate.groupBy) {
-            var fieldInPipeline = convertToDotFieldName(groupByField);
+            var fieldInPipeline = FieldNameUtil.convertToDotFieldName(groupByField);
             fieldInPipeline = convertFieldNameIncludingDot(groupByField);
             var finalFieldName = getSimpleName(fieldInPipeline);
             projection.append(finalFieldName, "$_id." + fieldInPipeline);
@@ -361,44 +361,7 @@ public class AggregateUtil {
         return ret.isEmpty() ? results : List.of(ret);
     }
 
-    /**
-     * Convert "c['address']['city']['street']" to "address.city.street"
-     *
-     * <p>
-     * And also "c.address.city.street" to "address.city.street"
-     * </p>
-     *
-     * @param input
-     * @return fieldName using dot
-     */
-    static String convertToDotFieldName(String input) {
-        if (input == null) {
-            return null;
-        }
 
-        // Remove the c. prefix used in cosmosdb
-        input = StringUtils.removeStart(input, "c.");
-
-        // Regex to match the pattern c['key1']['key2'] or c["key1"]["key2"]...
-        var pattern = Pattern.compile("\\[['\"]([^'\"]+)['\"]\\]");
-        var matcher = pattern.matcher(input);
-
-        var result = new StringBuilder();
-
-        while (matcher.find()) {
-            if (result.length() > 0) {
-                result.append(".");
-            }
-            result.append(matcher.group(1));
-        }
-
-        // If the result is empty and the input is a single key without brackets
-        if (result.length() == 0 && !StringUtils.containsAny(input, "['", "[\"")) {
-            return input;
-        }
-
-        return result.toString();
-    }
 
     /**
      * extract "SUM(c.age) AS ageSum" to function="SUM(c.age)", alias="ageSum"

@@ -187,7 +187,7 @@ public class ConditionUtil {
         }
 
         // preprocess for "fieldA OR fieldB". exclude $AND, $OR, $NOT sub queries
-        if (key.contains(" OR ") && !StringUtils.startsWithAny(key, AND, OR, NOT, ELEM_MATCH)) {
+        if (key.contains(" OR ") && !StringUtils.startsWithAny(key, AND, OR, NOT, ELEM_MATCH, EXPRESSION)) {
             return generateOrExpression(key, value, filterOptions);
         }
 
@@ -205,7 +205,7 @@ public class ConditionUtil {
         var matcher = simpleExpressionPattern.matcher(key);
 
 
-        if (StringUtils.startsWithAny(key, AND, OR, NOT, ELEM_MATCH)) {
+        if (StringUtils.startsWithAny(key, AND, OR, NOT, ELEM_MATCH, EXPRESSION)) {
             // query with sub conditions
             ret = toBsonFilter4SubConditions(key, value, filterOptions);
 
@@ -411,7 +411,7 @@ public class ConditionUtil {
             } else if (value instanceof Map<?, ?>) {
                 ret = Filters.or(toBsonFilters(List.of(value), filterOptions));
             } else {
-                throw new IllegalArgumentException(String.format("%s 's filter is not correct. expect Collection/Map/Condition:%s", OR, value));
+                throw new IllegalArgumentException(String.format("%s 's filter value is not correct. expect Collection/Map/Condition:%s", OR, value));
             }
         } else if (key.startsWith(AND)) {
             if (value instanceof Collection<?>) {
@@ -421,7 +421,7 @@ public class ConditionUtil {
             } else if (value instanceof Map<?, ?>) {
                 ret = Filters.and(toBsonFilters(List.of(value), filterOptions));
             } else {
-                throw new IllegalArgumentException(String.format("%s 's filter is not correct. expect Collection/Map/Condition:%s", AND, value));
+                throw new IllegalArgumentException(String.format("%s 's filter value is not correct. expect Collection/Map/Condition:%s", AND, value));
             }
 
         } else if (key.startsWith(NOT)) {
@@ -432,7 +432,7 @@ public class ConditionUtil {
             } else if (value instanceof Map<?, ?>) {
                 ret = Filters.nor(toBsonFilter((Map<String, Object>) value, filterOptions));
             } else {
-                throw new IllegalArgumentException(String.format("%s 's filter is not correct. expect Collection/Map/Condition:%s", NOT, value));
+                throw new IllegalArgumentException(String.format("%s 's filter value is not correct. expect Collection/Map/Condition:%s", NOT, value));
             }
         } else if (key.startsWith(ELEM_MATCH)) {
             if (value instanceof Map<?, ?>) {
@@ -474,8 +474,20 @@ public class ConditionUtil {
                 ret = elemConds.size() > 1 ? Filters.and(elemConds) : elemConds.get(0);
 
             } else {
-                throw new IllegalArgumentException(String.format("%s 's filter is not correct. expect Map:%s", ELEM_MATCH, value));
+                throw new IllegalArgumentException(String.format("%s 's filter value is not correct. expect Map:%s", ELEM_MATCH, value));
             }
+        } else if (key.startsWith(EXPRESSION)) {
+            // support an expression as a query filter
+            // e.g.: Condition.filter("$EXPRESSION exp1", "c.age / 10 < ARRAY_LENGTH(c.skills)");
+
+            if (value instanceof String) {
+                //only support expression written in string
+                ret = new Document(ExpressionConvertUtil.convert((String) value));
+
+            } else {
+                throw new IllegalArgumentException(String.format("%s 's filter value is not correct. expect String:%s", EXPRESSION, value));
+            }
+
         }
         return ret;
     }
