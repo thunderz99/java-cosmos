@@ -29,8 +29,8 @@ public class SubConditionType {
      * db.Families.find({
      *   "children": {
      *     "$elemMatch": {
-     *       "age": { "$gt": 10 },
-     *       "sex": { "$eq": "female" }
+     *       "grade": { "$gt": 5 },
+     *       "gender": { "$eq": "female" }
      *     }
      *   }
      * })

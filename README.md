@@ -342,6 +342,7 @@ The main difference between Partial update and Patch is that:
 ```
 
 
+
 ### Cross-partition queries
 
 ```java
@@ -359,6 +360,8 @@ The main difference between Partial update and Patch is that:
 
     // !! not supported for mongodb !!
 ```
+
+
 
 ### Raw SQL queries
 
@@ -399,7 +402,9 @@ The main difference between Partial update and Patch is that:
     // !! not supported for mongodb !!
 ```
 
-### join queries
+
+
+### Join queries
 
 ```java
     var cond = Condition.filter(
@@ -454,9 +459,87 @@ var cosmos = new CosmosBuilder().withDatabaseType("cosmosdb")
 
 ```
 
+### $ELEM_MATCH queries in mongo to match fields in  array type field
+
+For cosmosdb, we can do a query like this using rawSql to find a child whose grade greater than 5 and gender is "female".
+
+```
+// the document, contains an array field named "children"
+{
+  "_id": "WakefieldFamily",
+  "id": "WakefieldFamily",
+  "children": [
+    {
+      "familyName": "Merriam",
+      "givenName": "Jesse",
+      "gender": "female",
+      "grade": 1,
+      "pets": [
+        {
+          "givenName": "Goofy"
+        },
+        {
+          "givenName": "Shadow"
+        }
+      ]
+    },
+    {
+      "familyName": "Miller",
+      "givenName": "Lisa",
+      "gender": "female",
+      "grade": 8
+    }
+  ],
+  "address": {
+    "state": "NY",
+    "county": "Manhattan",
+    "city": "NY"
+  },
+  "_partition": "Families"
+}
+
+```
+
+```
+// Java code using rawSQL
+var sql = """
+SELECT * FROM c WHERE 
+  EXISTS(SELECT VALUE children FROM children IN c["children"] 
+    WHERE (children.grade > 5) AND (children.gender = "female")
+  )
+""";
+
+var cond = Condition.rawSql(sql);
+var result = db.find("Collection1", cond);
+
+```
+
+We do not support rawSql in mongodb, so we introduce a $ELEM_MATCH filter to achieve this.
+
+```
+// the mongosh is:
+db.Families.find({
+  "children": {
+    "$elemMatch": {
+      "grade": { "$gt": 5 },
+      "gender": { "$eq": "female" }
+     }
+  }
+});
+```
+
+```
+// Java code is:
+var cond = Condition.filter("$ELEM_MATCH", Map.of("grade >", 5, "gender =" "female"));
+var result = db.find("Collection1", cond);
+```
+
+At present, "$ELEM_MATCH" only works for mongodb. But we will consider support it for cosmosdb too, so that we do not need to use rawSql. And the same Java code will work for both database type.
 
 
 ## Reference
 
-This library is built based on the official Azure Cosmos DB Java SDK v4.
-https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/sdk-java-v4
+This library is built based on the official Azure Cosmos DB Java SDK v4, and the offical MongoDB Java SDK
+
+* https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/sdk-java-v4
+* https://www.mongodb.com/docs/drivers/java/sync/current/
