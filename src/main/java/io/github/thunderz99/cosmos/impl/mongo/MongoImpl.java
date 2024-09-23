@@ -43,7 +43,14 @@ public class MongoImpl implements Cosmos {
 
     String account;
 
+    boolean expireAtEnabled = false;
+
+
     public MongoImpl(String connectionString) {
+        new MongoImpl(connectionString, false);
+    }
+
+    public MongoImpl(String connectionString, boolean expireAtEnabled) {
 
         var settings = MongoClientSettings.builder()
                 .applyToClusterSettings(builder -> builder.applyConnectionString(new ConnectionString(connectionString)))
@@ -57,6 +64,7 @@ public class MongoImpl implements Cosmos {
 
         this.client = mongoClient;
         this.account = extractAccountName(connectionString);
+        this.expireAtEnabled = expireAtEnabled;
 
         var databases = this.client.listDatabases().into(new ArrayList<>());
         databases.forEach(db -> log.info(db.toJson()));

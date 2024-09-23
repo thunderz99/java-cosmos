@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import static io.github.thunderz99.cosmos.condition.SubConditionType.AND;
 import static io.github.thunderz99.cosmos.condition.SubConditionType.OR;
+import static io.github.thunderz99.cosmos.impl.mongo.MongoDatabaseImpl.EXPIRE_AT;
 import static io.github.thunderz99.cosmos.impl.mongo.MongoDatabaseImpl.convertAggregateResultsToInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -82,6 +83,7 @@ class MongoDatabaseImplTest {
     @BeforeAll
     public static void beforeAll() throws Exception {
         cosmos = new CosmosBuilder().withDatabaseType("mongodb")
+                .withExpireAtEnabled(true)
                 .withConnectionString(EnvUtil.getOrDefault("MONGODB_CONNECTION_STRING", MongoImplTest.LOCAL_CONNECTION_STRING))
                 .build();
         // we do not need to create a collection here, so the second param is empty
@@ -2746,6 +2748,129 @@ class MongoDatabaseImplTest {
             db.batchDelete(host, userList, partition);
         }
     }
+
+    @Test
+    void addExpireAt4Mongo_should_work() {
+
+
+        { // expireAt should not be added if expireAtEnabled is false
+
+            var cosmosExpireOff = new CosmosBuilder().withDatabaseType("mongodb")
+                    .withExpireAtEnabled(false)
+                    .withConnectionString(EnvUtil.getOrDefault("MONGODB_CONNECTION_STRING", MongoImplTest.LOCAL_CONNECTION_STRING))
+                    .build();
+            var dbExpireOff = (MongoDatabaseImpl) cosmosExpireOff.createIfNotExist(host, "");
+
+            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", 60));
+
+            var expireAt = dbExpireOff.addExpireAt4Mongo(map);
+
+            assertThat(expireAt).isNull();
+            assertThat(map).doesNotContainKey(EXPIRE_AT);
+
+        }
+
+        var mdb = (MongoDatabaseImpl) db;
+
+        { // expireAt should not be added if "ttl" does not exist
+
+            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1"));
+
+            var expireAt = mdb.addExpireAt4Mongo(map);
+
+            assertThat(expireAt).isNull();
+            assertThat(map).doesNotContainKey(EXPIRE_AT);
+
+        }
+
+        { // expireAt should not be added if "ttl" is null
+
+            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1"));
+            map.put("ttl", null);
+
+            var expireAt = mdb.addExpireAt4Mongo(map);
+
+            assertThat(expireAt).isNull();
+            assertThat(map).doesNotContainKey(EXPIRE_AT);
+
+        }
+
+        { // expireAt should not be added if "ttl" cannot be parsed to int
+
+            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", "invalid format"));
+
+            var expireAt = mdb.addExpireAt4Mongo(map);
+
+            assertThat(expireAt).isNull();
+            assertThat(map).doesNotContainKey(EXPIRE_AT);
+
+        }
+
+        { // expireAt should be added if "ttl" is set to integer
+
+            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", 60));
+
+            var expireAt = mdb.addExpireAt4Mongo(map);
+
+            assertThat(expireAt).isNotNull().isBetween(Instant.now().plusSeconds(59), Instant.now().plusSeconds(61));
+            assertThat(map).containsKey(EXPIRE_AT);
+            assertThat(map.get(EXPIRE_AT)).isEqualTo(expireAt);
+
+        }
+
+        { // expireAt should not be added if "ttl" is not integer
+
+            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", 60L));
+
+            var expireAt = mdb.addExpireAt4Mongo(map);
+
+            assertThat(expireAt).isNull();
+            assertThat(map).doesNotContainKey(EXPIRE_AT);
+
+        }
+    }
+
+    @Test
+    void expireAt_should_be_added_if_ttl_is_set() throws Exception {
+        var partition = "TTLTests";
+
+        try {
+
+            var id = "expireAt_should_be_added_if_ttl_is_set" + RandomStringUtils.randomAlphanumeric(8);
+            { // create
+                var data1 = Map.of("id", RandomStringUtils.randomAlphanumeric(8), "ttl", 0);
+                var result = db.create(host, data1, partition).toMap();
+
+                assertThat(result).containsKey("_expireAt");
+                assertThat((Date) result.get("_expireAt")).isBetween(Instant.now().minusSeconds(1), Instant.now().plusSeconds(1));
+
+            }
+
+            { // upsert
+                var data1 = Map.of("id", id, "ttl", 0);
+                var result = db.upsert(host, data1, partition).toMap();
+
+                assertThat(result).containsKey("_expireAt");
+                assertThat((Date) result.get("_expireAt")).isBetween(Instant.now().minusSeconds(1), Instant.now().plusSeconds(1));
+            }
+
+            { // update
+                var data1 = Map.of("id", id, "ttl", 60);
+                var result = db.update(host, data1, partition).toMap();
+
+                assertThat(result).containsKey("_expireAt");
+                assertThat((Date) result.get("_expireAt")).isBetween(Instant.now().plusSeconds(59), Instant.now().plusSeconds(61));
+
+            }
+
+
+        } finally {
+            var data = db.find(host, Condition.filter(), partition).toMap();
+            db.batchDelete(host, data, partition);
+        }
+
+    }
+
 
     static void initFamiliesData() throws Exception {
         var partition = "Families";
