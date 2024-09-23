@@ -29,6 +29,8 @@ public class CosmosBuilder {
 
     List<String> preferredRegions;
 
+    boolean expireAtEnabled = false;
+
     /**
      * Specify the dbType( "cosmosdb" or "mongodb" )
      *
@@ -68,6 +70,25 @@ public class CosmosBuilder {
         return this;
     }
 
+    /**
+     * Specify whether enable the expireAt feature for mongodb. Note there is no effect to cosmosdb.
+     *
+     * <p>
+     * This option is to mimic the cosmosdb's ttl feature.
+     * This is implemented by adding an "_expireAt" field automatically when "ttl" field has value.
+     * The value of "expireAt" field would be set to the lastModified timestamp + "ttl" in seconds.
+     * And a TTL index is created for "expireAt" field(Note index should be added by yourself).
+     * So the document will automatically be deleted at the specific timestamp.
+     * </p>
+     *
+     * @param enabled
+     * @return
+     */
+    public CosmosBuilder withExpireAtEnabled(boolean enabled) {
+        this.expireAtEnabled = enabled;
+        return this;
+    }
+
 
     /**
      * Build the instance representing a Cosmos instance.
@@ -83,7 +104,7 @@ public class CosmosBuilder {
         }
 
         if (StringUtils.equals(dbType, MONGODB)) {
-            return new MongoImpl(connectionString);
+            return new MongoImpl(connectionString, expireAtEnabled);
         }
 
         throw new IllegalArgumentException("Not supported dbType: " + dbType);

@@ -43,6 +43,11 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
     static final int MAX_BATCH_NUMBER_OF_OPERATION = 100;
 
+    /**
+     * field automatically added to contain the expiration timestamp
+     */
+    public static String EXPIRE_AT = "_expireAt";
+
     String db;
     MongoClient client;
 
@@ -91,6 +96,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // add timestamp field "_ts"
         addTimestamp(map);
 
+        // add _expireAt if ttl is set
+        addExpireAt4Mongo(map);
+
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
         checkValidId(map);
@@ -120,12 +128,43 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         return id;
     }
 
+    /**
+     * add "expireAt" field automatically if expireAtEnabled is true, and "ttl" has int value
+     *
+     * @param objectMap
+     * @return expireAt Date. or null if not set.
+     */
+    Date addExpireAt4Mongo(Map<String, Object> objectMap) {
+
+        var account = (MongoImpl) this.getCosmosAccount();
+        if (!account.expireAtEnabled) {
+            return null;
+        }
+
+        var ttlObj = objectMap.get("ttl");
+        if (ttlObj == null) {
+            return null;
+        }
+
+        if (!(ttlObj instanceof Integer)) {
+            return null;
+        }
+
+        var ttl = (Integer) ttlObj;
+
+        var expireAt = new Date(System.currentTimeMillis() + ttl * 1000); // Current time + ttl in milliseconds
+
+        objectMap.put(EXPIRE_AT, expireAt);
+
+        return expireAt;
+    }
+
     static String getId(Object object) {
         // TODO, extract util method
         String id;
         if (object instanceof String) {
             id = (String) object;
-        } else if(object instanceof BsonObjectId) {
+        } else if (object instanceof BsonObjectId) {
             id = ((BsonObjectId) object).getValue().toHexString();
         } else {
             var map = JsonUtil.toMap(object);
@@ -264,6 +303,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // add timestamp field "_ts"
         addTimestamp(map);
 
+        // add _expireAt if ttl is set
+        addExpireAt4Mongo(map);
+
         var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
 
         // add partition info
@@ -334,6 +376,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         addTimestamp(patchData);
 
+        // add _expireAt if ttl is set
+        addExpireAt4Mongo(patchData);
+        
         // Remove partition key from patchData, because it is not needed for a patch action.
         patchData.remove(Cosmos.getDefaultPartitionKey());
 
@@ -392,6 +437,12 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // add timestamp field "_ts"
         addTimestamp(map);
+
+        // add _expireAt if ttl is set
+        addExpireAt4Mongo(map);
+
+        // add _expireAt if ttl is set
+        addExpireAt4Mongo(map);
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
@@ -1052,6 +1103,10 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             // Add _ts field
             addTimestamp(map);
 
+            // add _expireAt if ttl is set
+            addExpireAt4Mongo(map);
+
+
             documents.add(new Document(map));
         }
 
@@ -1115,6 +1170,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
             // Add _ts field
             addTimestamp(map);
+
+            // add _expireAt if ttl is set
+            addExpireAt4Mongo(map);
 
             var document = new Document(map);
 
@@ -1258,6 +1316,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             // add _ts field
             addTimestamp(map);
 
+            // add _expireAt if ttl is set
+            addExpireAt4Mongo(map);
+
             var document = new Document(map);
             // prepare documents to insert
             documents.add(document);
@@ -1320,6 +1381,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
             // Add _ts field
             addTimestamp(map);
+
+            // add _expireAt if ttl is set
+            addExpireAt4Mongo(map);
 
             var document = new Document(map);
 
