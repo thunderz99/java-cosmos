@@ -43,14 +43,22 @@ public class MongoImpl implements Cosmos {
 
     String account;
 
+    /**
+     * whether automatically add "_expireAt" field based on "ttl" field
+     */
     boolean expireAtEnabled = false;
+
+    /**
+     * whether automatically add "_etag" field for optimistic lock
+     */
+    boolean etagEnabled = false;
 
 
     public MongoImpl(String connectionString) {
-        new MongoImpl(connectionString, false);
+        new MongoImpl(connectionString, false, false);
     }
 
-    public MongoImpl(String connectionString, boolean expireAtEnabled) {
+    public MongoImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled) {
 
         var settings = MongoClientSettings.builder()
                 .applyToClusterSettings(builder -> builder.applyConnectionString(new ConnectionString(connectionString)))
@@ -65,6 +73,7 @@ public class MongoImpl implements Cosmos {
         this.client = mongoClient;
         this.account = extractAccountName(connectionString);
         this.expireAtEnabled = expireAtEnabled;
+        this.etagEnabled = etagEnabled;
 
         var databases = this.client.listDatabases().into(new ArrayList<>());
         databases.forEach(db -> log.info(db.toJson()));

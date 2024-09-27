@@ -31,6 +31,8 @@ public class CosmosBuilder {
 
     boolean expireAtEnabled = false;
 
+    boolean etagEnabled = false;
+
     /**
      * Specify the dbType( "cosmosdb" or "mongodb" )
      *
@@ -82,13 +84,28 @@ public class CosmosBuilder {
      * </p>
      *
      * @param enabled
-     * @return
+     * @return this
      */
     public CosmosBuilder withExpireAtEnabled(boolean enabled) {
         this.expireAtEnabled = enabled;
         return this;
     }
 
+    /**
+     * Specify whether enable the etag feature for mongodb. Note there is no effect to cosmosdb.
+     *
+     * <p>
+     * if enabled, "_etag" field is automatically added when modify a document, for optimistic lock.
+     * default is disabled.
+     * </p>
+     *
+     * @param enabled
+     * @return this
+     */
+    public CosmosBuilder withEtagEnabled(boolean enabled) {
+        this.etagEnabled = enabled;
+        return this;
+    }
 
     /**
      * Build the instance representing a Cosmos instance.
@@ -104,7 +121,7 @@ public class CosmosBuilder {
         }
 
         if (StringUtils.equals(dbType, MONGODB)) {
-            return new MongoImpl(connectionString, expireAtEnabled);
+            return new MongoImpl(connectionString, expireAtEnabled, etagEnabled);
         }
 
         throw new IllegalArgumentException("Not supported dbType: " + dbType);
