@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.google.common.collect.Maps;
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
 import com.mongodb.client.model.Filters;
@@ -17,6 +18,8 @@ import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.dto.CheckBox;
 import io.github.thunderz99.cosmos.dto.EvalSkip;
+import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosImpl;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -31,10 +34,8 @@ import org.slf4j.LoggerFactory;
 
 import static io.github.thunderz99.cosmos.condition.SubConditionType.AND;
 import static io.github.thunderz99.cosmos.condition.SubConditionType.OR;
-import static io.github.thunderz99.cosmos.impl.mongo.MongoDatabaseImpl.EXPIRE_AT;
-import static io.github.thunderz99.cosmos.impl.mongo.MongoDatabaseImpl.convertAggregateResultsToInteger;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static io.github.thunderz99.cosmos.impl.mongo.MongoDatabaseImpl.*;
+import static org.assertj.core.api.Assertions.*;
 import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
 
 class MongoDatabaseImplTest {
@@ -84,6 +85,7 @@ class MongoDatabaseImplTest {
     public static void beforeAll() throws Exception {
         cosmos = new CosmosBuilder().withDatabaseType("mongodb")
                 .withExpireAtEnabled(true)
+                .withEtagEnabled(true)
                 .withConnectionString(EnvUtil.getOrDefault("MONGODB_CONNECTION_STRING", MongoImplTest.LOCAL_CONNECTION_STRING))
                 .build();
         // we do not need to create a collection here, so the second param is empty
@@ -437,7 +439,7 @@ class MongoDatabaseImplTest {
 
     @Test
     void updatePartial_should_work() throws Exception {
-        var partition = "SheetConents";
+        var partition = "SheetContents";
 
         var id = "updatePartial_should_work_001"; // form with content
         var age = 20;
@@ -487,6 +489,112 @@ class MongoDatabaseImplTest {
 
                 assertThat(((Map<String, Object>) patched.get(formId)).get("key5")).isEqualTo(5);
 
+            }
+
+        } finally {
+            db.delete(host, id, partition);
+        }
+
+    }
+
+    @Test
+    void updatePartial_should_work_with_optimistic_concurrency_control() throws Exception {
+        var partition = "SheetContents";
+
+        var id = "updatePartial_should_work_with_optimistic_concurrency_control"; // form with content
+        var age = 20;
+        var formId = "03a69e73-18b8-44e5-a0b1-1b2739ca6e60"; //uuid
+        var formContent = Map.of("name", "Tom", "sex", "Male", "address", "NY", "tags",
+                List.of(Map.of("id", "t001", "name", "backend"), Map.of("id", "t002", "name", "frontend")));
+        var data = Map.of("id", id, "age", age, "sort", "010", formId, formContent, "sheet-2", Map.of("skills", Set.of("Java", "Python")));
+
+        try {
+            var upserted = db.upsert(host, data, partition).toMap();
+
+            assertThat(upserted).containsKeys("id", "age", formId, "_etag");
+
+            {
+                // read by A,B, update by B and A with different field should succeed
+                // PartialUpdateOption.checkETag is false(default)
+
+                var partialMapA = Map.of("age", 25);
+
+                var partialMapB = Map.of("sort", "099", "employeeCode", "X0123");
+
+                var patchedB = db.updatePartial(host, id, partialMapB, partition).toMap();
+
+                var patchedA = db.updatePartial(host, id, partialMapA, partition).toMap();
+
+
+                // B should update sort and add employeeCode only
+                assertThat(patchedB).containsEntry("sort", "099").containsEntry("employeeCode", "X0123")
+                        .containsEntry("age", 20) // age keep not change
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition)
+                ;
+
+                // A should update age only, and retain B's sort value
+                assertThat(patchedA).containsEntry("age", 25) // age updated
+                        .containsEntry("sort", "099").containsEntry("employeeCode", "X0123") // sort and employeeCode remains B's result
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition)
+                ;
+
+                var partialMapC = Map.of("city", "Tokyo", CosmosImpl.ETAG, "invalid etag");
+
+                // etag will be ignored, if PartialUpdateOption.checkETag false. So the following operation should succeed.
+                var patchedC = db.updatePartial(host, id, partialMapC, partition).toMap();
+
+                assertThat(patchedC).containsEntry("city", "Tokyo").containsEntry("age", 25).containsEntry("sort", "099");
+
+            }
+
+            {
+                // read by A,B, update by B and A with different field should succeed
+                // PartialUpdateOption.checkETag is true
+
+                var originData = db.read(host, id, partition).toMap();
+
+                var etag = originData.getOrDefault("_etag", "").toString();
+                assertThat(etag).isNotEmpty();
+
+                Map<String, Object> partialMapA = Maps.newHashMap(Map.of("age", 30, CosmosImpl.ETAG, etag));
+
+                Map<String, Object> partialMapB = Map.of("sort", "199", "employeeCode", "X0456", CosmosImpl.ETAG, etag);
+
+                var patchedB = db.updatePartial(host, id, partialMapB, partition, PartialUpdateOption.checkETag(true)).toMap();
+
+                // B should update sort and add employeeCode only
+                assertThat(patchedB).containsEntry("sort", "199").containsEntry("employeeCode", "X0456")
+                        .containsEntry("age", 25) // age keep not change
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition)
+                ;
+
+                // new etag should be generated
+                assertThat(patchedB.getOrDefault(CosmosImpl.ETAG, "").toString()).isNotEmpty().isNotEqualTo(etag);
+
+
+                assertThatThrownBy(() -> db.updatePartial(host, id, partialMapA, partition, PartialUpdateOption.checkETag(true)).toMap())
+                        .isInstanceOfSatisfying(CosmosException.class, (e) -> {
+                            assertThat(e.getStatusCode()).isEqualTo(412);
+                        });
+
+                // if 412 exception, the original document should not be updated
+                var originMap = db.read(host, id, partition).toMap();
+                // value of patchedB
+                assertThat(originMap).containsEntry("age", 25);
+
+
+                // empty etag will be ignored
+                partialMapA.put(CosmosImpl.ETAG, "");
+                var patchedA = db.updatePartial(host, id, partialMapA, partition, PartialUpdateOption.checkETag(true)).toMap();
+
+                // the result should be correct partial updated
+                assertThat(patchedA).containsEntry("age", 30) // age updated
+                        .containsEntry("sort", "199").containsEntry("employeeCode", "X0456") // sort and employeeCode remains B's result
+                        .containsKey("_ts").containsKey(formId).containsKey("sheet-2")
+                        .containsEntry("_partition", partition);
             }
 
         } finally {
@@ -2031,7 +2139,7 @@ class MongoDatabaseImplTest {
 
     @Test
     void dynamic_field_and_is_defined_should_work() throws Exception {
-        var partition = "SheetConents";
+        var partition = "SheetContents";
 
         var id = "D001"; // form with content
         var age = 20;
@@ -2191,7 +2299,7 @@ class MongoDatabaseImplTest {
 
     @Test
     void dynamic_field_should_work_for_ARRAY_CONTAINS_ALL() throws Exception {
-        var partition = "SheetConents2";
+        var partition = "SheetContents2";
 
         var id = "dynamic_field_should_work_for_ARRAY_CONTAINS_ALL"; // form with content
         var formId = "421f118a-543e-49e9-88c1-dba77b7f990f"; //uuid
@@ -2831,6 +2939,44 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void addEtag4Mongo_should_work() {
+
+
+        { // expireAt should not be added if expireAtEnabled is false
+
+            var cosmosExpireOff = new CosmosBuilder().withDatabaseType("mongodb")
+                    .withEtagEnabled(false)
+                    .withConnectionString(EnvUtil.getOrDefault("MONGODB_CONNECTION_STRING", MongoImplTest.LOCAL_CONNECTION_STRING))
+                    .build();
+            var dbEtagOff = (MongoDatabaseImpl) cosmosExpireOff.createIfNotExist(host, "");
+
+            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", 60));
+
+            var etag = dbEtagOff.addEtag4Mongo(map);
+
+            assertThat(etag).isNull();
+            assertThat(map).doesNotContainKey(ETAG);
+
+        }
+
+        var mdb = (MongoDatabaseImpl) db;
+
+        { // etag should be added
+
+            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1"));
+
+            var etag = mdb.addEtag4Mongo(map);
+
+            assertThat(etag).isNotEmpty();
+            assertThat(map).containsKey(ETAG);
+
+            // to check if it can be parsed as a UUID:
+            assertThatCode(() -> UUID.fromString(etag)).doesNotThrowAnyException();
+
+        }
+    }
+
+    @Test
     void expireAt_should_be_added_if_ttl_is_set() throws Exception {
         var partition = "TTLTests";
 
@@ -2860,6 +3006,47 @@ class MongoDatabaseImplTest {
 
                 assertThat(result).containsKey("_expireAt");
                 assertThat((Date) result.get("_expireAt")).isBetween(Instant.now().plusSeconds(59), Instant.now().plusSeconds(61));
+
+            }
+
+
+        } finally {
+            var data = db.find(host, Condition.filter(), partition).toMap();
+            db.batchDelete(host, data, partition);
+        }
+
+    }
+
+    @Test
+    void etag_should_be_added() throws Exception {
+        var partition = "EtagTests";
+
+        try {
+
+            var id = "etag_should_be_added" + RandomStringUtils.randomAlphanumeric(8);
+            { // create
+                var data1 = Map.of("id", RandomStringUtils.randomAlphanumeric(8));
+                var result = db.create(host, data1, partition).toMap();
+
+                assertThat(result).containsKey(ETAG);
+                assertThat((String) result.get(ETAG)).isNotEmpty();
+
+            }
+
+            { // upsert
+                var data1 = Map.of("id", id, "ttl", 0);
+                var result = db.upsert(host, data1, partition).toMap();
+
+                assertThat(result).containsKey(ETAG);
+                assertThat((String) result.get(ETAG)).isNotEmpty();
+            }
+
+            { // update
+                var data1 = Map.of("id", id, "ttl", 60);
+                var result = db.update(host, data1, partition).toMap();
+
+                assertThat(result).containsKey(ETAG);
+                assertThat((String) result.get(ETAG)).isNotEmpty();
 
             }
 

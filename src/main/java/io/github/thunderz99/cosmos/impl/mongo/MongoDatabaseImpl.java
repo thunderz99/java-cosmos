@@ -48,6 +48,11 @@ public class MongoDatabaseImpl implements CosmosDatabase {
      */
     public static String EXPIRE_AT = "_expireAt";
 
+    /**
+     * field automatically added to contain the etag value for optimistic lock
+     */
+    public static String ETAG = "_etag";
+
     String db;
     MongoClient client;
 
@@ -99,6 +104,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // add _expireAt if ttl is set
         addExpireAt4Mongo(map);
 
+        // add etag for optimistic lock if enabled
+        addEtag4Mongo(map);
+
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
         checkValidId(map);
@@ -129,7 +137,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     }
 
     /**
-     * add "expireAt" field automatically if expireAtEnabled is true, and "ttl" has int value
+     * add "_expireAt" field automatically if expireAtEnabled is true, and "ttl" has int value
      *
      * @param objectMap
      * @return expireAt Date. or null if not set.
@@ -157,6 +165,25 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         objectMap.put(EXPIRE_AT, expireAt);
 
         return expireAt;
+    }
+
+    /**
+     * add "_etag" field automatically if etagEnabled is true
+     *
+     * @param objectMap
+     * @return etag string value(uuid). or null if not set.
+     */
+    String addEtag4Mongo(Map<String, Object> objectMap) {
+
+        var account = (MongoImpl) this.getCosmosAccount();
+        if (!account.etagEnabled) {
+            return null;
+        }
+
+        var etag = UUID.randomUUID().toString();
+        objectMap.put(ETAG, etag);
+
+        return etag;
     }
 
     static String getId(Object object) {
@@ -306,6 +333,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // add _expireAt if ttl is set
         addExpireAt4Mongo(map);
 
+        // add etag for optimistic lock if enabled
+        addEtag4Mongo(map);
+
         var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
 
         // add partition info
@@ -378,7 +408,11 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // add _expireAt if ttl is set
         addExpireAt4Mongo(patchData);
-        
+
+        var etag = patchData.getOrDefault(ETAG, "").toString();
+        // add etag for optimistic lock if enabled
+        addEtag4Mongo(patchData);
+
         // Remove partition key from patchData, because it is not needed for a patch action.
         patchData.remove(Cosmos.getDefaultPartitionKey());
 
@@ -389,10 +423,36 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         var container = this.client.getDatabase(coll).getCollection(partition);
 
-        var document = RetryUtil.executeWithRetry(() -> container.findOneAndUpdate(eq("_id", id),
-                new Document("$set", new Document(flatMap)),
-                new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER))
-        );
+        Document document = null;
+
+        if (option.checkETag && StringUtils.isNotEmpty(etag)) {
+            // update with etag check. if etag not match, throw 412 Precondition failed Exception
+            document = RetryUtil.executeWithRetry(() -> container.findOneAndUpdate(
+                    Filters.and(
+                            eq("_id", id),
+                            eq(ETAG, etag)
+                    ),
+                    new Document("$set", new Document(flatMap)),
+                    new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER))
+            );
+
+            if (document == null) {
+                // make sure whether the id not match, or the etag not match
+                var confirmDoc = RetryUtil.executeWithRetry(() -> container.find(eq("_id", id)).first());
+
+                if (confirmDoc != null) {
+                    // etag not match, throw 412 pre-condition not met Exception
+                    throw new CosmosException(412, "412 Precondition Failed", "etag not match");
+                }
+            }
+
+        } else {
+            // a normal update without etag check
+            document = RetryUtil.executeWithRetry(() -> container.findOneAndUpdate(eq("_id", id),
+                    new Document("$set", new Document(flatMap)),
+                    new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER))
+            );
+        }
 
         log.info("updated Document:{}, id:{}, partition:{}, account:{}", documentLink, id, partition, getAccount());
 
@@ -443,6 +503,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // add _expireAt if ttl is set
         addExpireAt4Mongo(map);
+
+        // add etag for optimistic lock if enabled
+        addEtag4Mongo(map);
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
@@ -1106,6 +1169,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             // add _expireAt if ttl is set
             addExpireAt4Mongo(map);
 
+            // add etag for optimistic lock if enabled
+            addEtag4Mongo(map);
+
 
             documents.add(new Document(map));
         }
@@ -1173,6 +1239,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
             // add _expireAt if ttl is set
             addExpireAt4Mongo(map);
+
+            // add etag for optimistic lock if enabled
+            addEtag4Mongo(map);
 
             var document = new Document(map);
 
@@ -1319,6 +1388,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             // add _expireAt if ttl is set
             addExpireAt4Mongo(map);
 
+            // add etag for optimistic lock if enabled
+            addEtag4Mongo(map);
+
             var document = new Document(map);
             // prepare documents to insert
             documents.add(document);
@@ -1384,6 +1456,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
             // add _expireAt if ttl is set
             addExpireAt4Mongo(map);
+
+            // add etag for optimistic lock if enabled
+            addEtag4Mongo(map);
 
             var document = new Document(map);
 

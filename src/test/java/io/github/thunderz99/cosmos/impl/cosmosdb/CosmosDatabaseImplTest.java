@@ -2092,7 +2092,7 @@ class CosmosDatabaseImplTest {
 
     @Test
     void dynamic_field_and_is_defined_should_work() throws Exception {
-        var partition = "SheetConents";
+        var partition = "SheetContents";
 
         var id = "D001"; // form with content
         var age = 20;
@@ -2252,7 +2252,7 @@ class CosmosDatabaseImplTest {
 
     @Test
     void updatePartial_should_work() throws Exception {
-        var partition = "SheetConents";
+        var partition = "SheetContents";
 
         var id = "updatePartial_should_work_001"; // form with content
         var age = 20;
@@ -2312,7 +2312,7 @@ class CosmosDatabaseImplTest {
 
     @Test
     void updatePartial_should_work_with_optimistic_concurrency_control() throws Exception {
-        var partition = "SheetConents";
+        var partition = "SheetContents";
 
         var id = "updatePartial_should_work_with_optimistic_concurrency_control"; // form with content
         var age = 20;
@@ -2393,6 +2393,12 @@ class CosmosDatabaseImplTest {
                             assertThat(e.getStatusCode()).isEqualTo(412);
                         });
 
+                // if 412 exception, the original document should not be updated
+                var originMap = db.read(coll, id, partition).toMap();
+                // value of patchedB
+                assertThat(originMap).containsEntry("age", 25);
+
+
                 // empty etag will be ignored
                 partialMapA.put(CosmosImpl.ETAG, "");
                 var patchedA = db.updatePartial(coll, id, partialMapA, partition, PartialUpdateOption.checkETag(true)).toMap();
@@ -2414,7 +2420,7 @@ class CosmosDatabaseImplTest {
 
     @Test
     void dynamic_field_should_work_for_ARRAY_CONTAINS_ALL() throws Exception {
-        var partition = "SheetConents2";
+        var partition = "SheetContents2";
 
         var id = "dynamic_field_should_work_for_ARRAY_CONTAINS_ALL"; // form with content
         var formId = "421f118a-543e-49e9-88c1-dba77b7f990f"; //uuid
