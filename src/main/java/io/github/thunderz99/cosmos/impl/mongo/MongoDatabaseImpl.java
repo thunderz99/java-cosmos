@@ -160,7 +160,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         var ttl = (Integer) ttlObj;
 
-        var expireAt = new Date(System.currentTimeMillis() + ttl * 1000); // Current time + ttl in milliseconds
+        // Current time + ttl in milliseconds. use long because this will be possibly larger than Integer.MAX_VALUE
+        var expireAt = new Date(System.currentTimeMillis() + 1000L * ttl);
 
         objectMap.put(EXPIRE_AT, expireAt);
 
@@ -588,7 +589,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             return findWithJoin(coll, cond, partition);
         }
 
-        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
         // TODO crossPartition query
 
