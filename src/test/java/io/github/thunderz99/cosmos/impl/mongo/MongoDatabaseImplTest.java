@@ -2936,6 +2936,30 @@ class MongoDatabaseImplTest {
             assertThat(map).doesNotContainKey(EXPIRE_AT);
 
         }
+
+        { // expireAt should be added if "ttl" is 30 days(which is a large value, if represent in milliseconds)
+
+            var thirtyDaysInSeconds = 30 * 24 * 60 * 60;
+            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", thirtyDaysInSeconds));
+
+            var expireAt = mdb.addExpireAt4Mongo(map);
+
+            assertThat(expireAt).isNotNull().isBetween(Instant.now().plusSeconds(thirtyDaysInSeconds), Instant.now().plusSeconds(thirtyDaysInSeconds + 1));
+            assertThat(map.get(EXPIRE_AT)).isEqualTo(expireAt);
+
+        }
+
+        { // expireAt should be added if "ttl" * 1000 is larger than Integer.MAX_VALUE
+
+            var longPeriod = (Integer.MAX_VALUE - 1) / 1000;
+            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", longPeriod));
+
+            var expireAt = mdb.addExpireAt4Mongo(map);
+
+            assertThat(expireAt).isNotNull().isBetween(Instant.now().plusSeconds(longPeriod), Instant.now().plusSeconds(longPeriod + 1));
+            assertThat(map.get(EXPIRE_AT)).isEqualTo(expireAt);
+
+        }
     }
 
     @Test
