@@ -19,6 +19,7 @@ import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -663,6 +664,40 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
         return ret;
 
+    }
+
+
+    public CosmosDocumentIterator findToIterator(String coll, Condition cond, String partition) throws Exception {
+        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
+
+        var queryRequestOptions = new CosmosQueryRequestOptions();
+
+        if (cond.crossPartition) {
+            // In v4, do not set the partitionKey to do a cross partition query
+        } else {
+            queryRequestOptions.setPartitionKey(new PartitionKey(partition));
+        }
+
+        var querySpec = cond.toQuerySpec();
+
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+        var ret = new CosmosDocumentIteratorImpl();
+        if (!cond.joinCondText.isEmpty() && !cond.returnAllSubArray) {
+            // process query with join
+            var jsonObjs = mergeSubArrayToDoc(coll, cond, querySpec, queryRequestOptions);
+            throw new NotImplementedException("findToIterator not support join in cosmosdb");
+            //ret = new CosmosDocumentList(jsonObjs);
+        } else {
+            // process query without join
+            var docs = RetryUtil.executeWithRetry(() ->
+                    container.queryItems(querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass()));
+
+
+            ret.setDocumentIterator(docs.iterator());
+        }
+
+        return ret;
     }
 
     /**

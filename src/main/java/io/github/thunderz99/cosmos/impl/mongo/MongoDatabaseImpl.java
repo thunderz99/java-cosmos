@@ -46,12 +46,12 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     /**
      * field automatically added to contain the expiration timestamp
      */
-    public static String EXPIRE_AT = "_expireAt";
+    public static final String EXPIRE_AT = "_expireAt";
 
     /**
      * field automatically added to contain the etag value for optimistic lock
      */
-    public static String ETAG = "_etag";
+    public static final String ETAG = "_etag";
 
     String db;
     MongoClient client;
@@ -67,11 +67,6 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         }
 
     }
-
-    /**
-     * An instance of LinkedHashMap<String, Object>, used to get the class instance in a convenience way.
-     */
-    static final LinkedHashMap<String, Object> mapInstance = new LinkedHashMap<>();
 
 
     /**
@@ -621,6 +616,59 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         }
 
         return ret;
+
+    }
+
+    public CosmosDocumentIterator findToIterator(String coll, Condition cond, String partition) throws Exception {
+
+        if (cond == null) {
+            cond = new Condition();
+        }
+
+        if (CollectionUtils.isNotEmpty(cond.join) && !cond.returnAllSubArray) {
+            // When doing join and only return the matching part of subArray,
+            // we have to use findWithJoin method, which do a special aggregate pipeline to achieve this
+            throw new NotImplementedException("findToIterator not support join in mongodb");
+            //return findWithJoin(coll, cond, partition);
+        }
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        // TODO crossPartition query
+
+        var filter = ConditionUtil.toBsonFilter(cond);
+
+        // process sort
+        var sort = ConditionUtil.toBsonSort(cond.sort);
+
+        var container = this.client.getDatabase(coll).getCollection(partition);
+
+        var ret = new CosmosDocumentList();
+
+        var findIterable = container.find(filter)
+                .sort(sort).skip(cond.offset).limit(cond.limit);
+
+        var fields = ConditionUtil.processFields(cond.fields);
+        if (!fields.isEmpty()) {
+            // process fields
+            findIterable.projection(fields(excludeId(), include(fields)));
+        }
+
+        var iter = findIterable.iterator();
+
+        while (iter.hasNext()) {
+        }
+
+        var docs = RetryUtil.executeWithRetry(() -> findIterable.into(new ArrayList<>()));
+
+
+        ret = new CosmosDocumentList(docs);
+
+        if (log.isInfoEnabled()) {
+            log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
+        }
+
+        return null;
 
     }
 

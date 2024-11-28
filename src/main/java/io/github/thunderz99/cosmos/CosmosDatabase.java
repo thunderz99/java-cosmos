@@ -262,26 +262,56 @@ public interface CosmosDatabase {
     }
 
     /**
-     * do an aggregate query by Aggregate and Condition
+     * find data by condition to iterator and return a CosmosDocumentIterator instead of a list.
+     * Using this iterator can suppress memory consumption compared to the normal find method, when dealing with large data(size over 1000).
+     *
      * <p>
      * {@code
-     * <p>
-     * var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
      * var cond = Condition.filter(
-     * "age>=", "20",
-     * );
+     * "id>=", "id010", // id greater or equal to 'id010'
+     * "lastName", "Banks" // last name equal to Banks
+     * )
+     * .order("lastName", "ASC") //optional order
+     * .offset(0) //optional offset
+     * .limit(100); //optional limit
      * <p>
-     * var result = db.aggregate("Collection1", aggregate, cond, "Users").toMap();
+     * var userIterator = db.findToIterator("Collection1", cond);
+     * while(userIterator.hasNext()){
+     *     var user = userIterator.next().toObject(User.class);
+     }
      * <p>
      * }
      *
-     * @param coll      collection name
-     * @param aggregate Aggregate function and groupBys
-     * @param cond      condition to find
+     * @param coll collection name
+     * @param cond condition to find
      * @param partition partition name
-     * @return CosmosDocumentList
+     * @return CosmosDocumentIterator
      * @throws Exception Cosmos client exception
      */
+    public CosmosDocumentIterator findToIterator(String coll, Condition cond, String partition) throws Exception;
+
+
+        /**
+         * do an aggregate query by Aggregate and Condition
+         * <p>
+         * {@code
+         * <p>
+         * var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("location", "gender");
+         * var cond = Condition.filter(
+         * "age>=", "20",
+         * );
+         * <p>
+         * var result = db.aggregate("Collection1", aggregate, cond, "Users").toMap();
+         * <p>
+         * }
+         *
+         * @param coll      collection name
+         * @param aggregate Aggregate function and groupBys
+         * @param cond      condition to find
+         * @param partition partition name
+         * @return CosmosDocumentList
+         * @throws Exception Cosmos client exception
+         */
     public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception;
 
     /**
