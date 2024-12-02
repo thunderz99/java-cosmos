@@ -987,6 +987,192 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void find_to_iterator_should_work_with_filter() throws Exception {
+
+        // test basic find
+        {
+            var cond = Condition.filter("fullName.last", "Hanks", //
+                            "fullName.first", "Elise" //
+                    ).sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var iterator = db.findToIterator(host, cond, "Users");
+
+            var users = new ArrayList<FullNameUser>();
+            while(iterator.hasNext()){
+                var user = iterator.next(FullNameUser.class);
+                users.add(user);
+            }
+
+            assertThat(users.size()).isEqualTo(1);
+            assertThat(users.get(0)).hasToString(user1.toString());
+        }
+
+        // test basic find using OR
+        {
+            var cond = Condition.filter("fullName.last OR fullName.first =", "Elise" //
+                    ).sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var iterator = db.findToIterator(host, cond, "Users");
+
+            var typedIterator = iterator.getTypedIterator(FullNameUser.class);
+            var users = new ArrayList<FullNameUser>();
+            while(typedIterator.hasNext()){
+                var user = typedIterator.next();
+                users.add(user);
+            }
+
+
+            assertThat(users.size()).isEqualTo(1);
+            assertThat(users.get(0)).hasToString(user1.toString());
+        }
+
+        // test reserved word find("end")
+        {
+            var cond = Condition.filter("fullName.last", "Hanks", //
+                            "end >=", "2020-10-30" //
+                    ).sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var iterator = db.findToIterator(host, cond, "Users");
+
+            var typedIterator = iterator.getTypedIterator(FullNameUser.class);
+            var users = new ArrayList<FullNameUser>();
+            while(typedIterator.hasNext()){
+                var user = typedIterator.next();
+                users.add(user);
+            }
+
+            assertThat(users.size()).isEqualTo(1);
+            assertThat(users.get(0)).hasToString(user2.toString());
+        }
+
+        // test fields
+        {
+            var cond = Condition.filter("fullName.last", "Hanks", //
+                            "fullName.first", "Elise" //
+                    ).fields("id", "fullName.last", "age")//
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var iterator = db.findToIterator(host, cond, "Users");
+
+            var users = new ArrayList<FullNameUser>();
+            while(iterator.hasNext()){
+                var user = iterator.next(FullNameUser.class);
+                users.add(user);
+            }
+
+            assertThat(users.size()).isEqualTo(1);
+            assertThat(users.get(0).id).isEqualTo(user1.id);
+            assertThat(users.get(0).age).isEqualTo(user1.age);
+            assertThat(users.get(0).fullName.last).isEqualTo(user1.fullName.last);
+            assertThat(users.get(0).fullName.first).isNullOrEmpty();
+            assertThat(users.get(0).skills).isEmpty();
+        }
+
+        // test IN find
+
+        {
+            var cond = Condition.filter("fullName.last", "Hanks", //
+                            "id", List.of(user1.id, user2.id, user3.id)).sort("_ts", "DESC") //
+                    .limit(10) //
+                    .offset(0);
+
+            // test find
+            var iterator = db.findToIterator(host, cond, "Users");
+
+            var users = new ArrayList<FullNameUser>();
+            while(iterator.hasNext()){
+                var user = iterator.next(FullNameUser.class);
+                users.add(user);
+            }
+
+            assertThat(users.size()).isEqualTo(2);
+            assertThat(users.get(0)).hasToString(user2.toString());
+
+        }
+
+        // test limit find
+        {
+            var users = db.find(host, Condition.filter().sort("_ts", "DESC").limit(2), "Users")
+                    .toList(FullNameUser.class);
+            assertThat(users.size()).isEqualTo(2);
+            assertThat(users.get(0)).hasToString(user3.toString());
+
+            var iterator = db.findToIterator(host, Condition.filter().sort("_ts", "DESC").limit(2), "Users");
+            var maps = new ArrayList<Map<String, Object>>();
+            while(iterator.hasNext()){
+                maps.add(iterator.next(Map.class));
+            }
+            assertThat(maps.size()).isEqualTo(2);
+            assertThat(maps.get(1).get("id")).hasToString(user2.id);
+            assertThat(maps.get(1).get("fullName").toString()).contains(user2.fullName.first);
+        }
+
+        // test compare operator
+        {
+            var cond = Condition.filter( //
+                            "fullName.last !=", "Henry", //
+                            "age >=", 30).sort("_ts", "DESC") //
+                    .limit(10) //
+                    .offset(0);
+
+            // test find
+            var iterator = db.findToIterator(host, cond, "Users");
+            var users = new ArrayList<FullNameUser>();
+            while(iterator.hasNext()){
+                var user = iterator.next(FullNameUser.class);
+                users.add(user);
+            }
+
+            assertThat(users.size()).isEqualTo(1);
+            assertThat(users.get(0)).hasToString(user2.toString());
+
+            var count = db.count(host, cond, "Users");
+
+            assertThat(count).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void find_to_iterator_should_work_for_array_contains_any_field_query() throws Exception {
+        var partition = "Families";
+
+        {
+            // ARRAY_CONTAINS_ANY
+            // children is an array, and grade is a field of children
+            var cond = Condition.filter("children ARRAY_CONTAINS_ANY grade", List.of(5, 8));
+            var iterator = db.findToIterator(host, cond, partition);
+
+            var docs = new ArrayList<Map<String, Object>>();
+            while(iterator.hasNext()){
+                var doc = iterator.next().toMap();
+                docs.add(doc);
+            }
+            assertThat(docs).hasSize(2);
+        }
+
+        {
+            // ARRAY_CONTAINS_ALL
+            // children is an array, and grade is a field of children
+            var cond = Condition.filter("children ARRAY_CONTAINS_ALL grade", List.of(1, 8));
+            var iterator = db.findToIterator(host, cond, partition);
+            var docs = new ArrayList<Map<String, Object>>();
+            while(iterator.hasNext()){
+                var doc = iterator.next().toMap();
+                docs.add(doc);
+            }
+            assertThat(docs).hasSize(1);
+        }
+    }
+
+    @Test
     public void fields_with_empty_field_should_work() throws Exception {
         // test fields with fields ["id", ""]
         {
@@ -1838,6 +2024,102 @@ class MongoDatabaseImplTest {
         }
     }
 
+    @Test
+    public void findToIterator_should_work_with_join_using_array_contains() throws Exception {
+
+        // ARRAY_CONTAINS query with join
+
+        var id1 = "joinTestArrayContainId_iterator";
+        var id2 = "joinTestArrayContainId2_iterator";
+        var partition = "Users";
+
+        try {
+            var user = new User(id1, "firstNameJoin", "lastNameJoin");
+            var userMap = JsonUtil.toMap(user);
+            userMap.put("rooms", List.of(Map.of("no", List.of(1, 2, 3)), Map.of("no", List.of(1, 2, 4))));
+            db.upsert(host, userMap, partition);
+
+
+            var user2 = new User(id2, "firstNameJoin2", "lastNameJoin2");
+            var userMap2 = JsonUtil.toMap(user2);
+            userMap2.put("rooms", List.of(Map.of("no", List.of(4, 5, 6)), Map.of("no", List.of(6, 7, 8))));
+            db.upsert(host, userMap2, partition);
+
+            {
+                // simple ARRAY_CONTAINS
+                var cond = Condition.filter("rooms.no ARRAY_CONTAINS", 3) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("rooms"))
+                        .returnAllSubArray(false);
+
+                // test find
+                var iterator = db.findToIterator(host, cond, "Users").getTypedIterator(Map.class);
+
+                var items = new ArrayList<Map<String, Object>>();
+                while(iterator.hasNext()){
+                    items.add(iterator.next());
+                }
+
+                assertThat(items).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asInstanceOf(LIST).contains(3);
+                assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId_iterator");
+            }
+            {
+                // ARRAY_CONTAINS_ANY
+                var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", List.of(3, 9)) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("rooms"))
+                        .returnAllSubArray(false);
+
+                // test find
+                var iterator = db.findToIterator(host, cond, "Users").getMapIterator();
+
+                var items = new ArrayList<Map<String, Object>>();
+                while(iterator.hasNext()){
+                    items.add(iterator.next());
+                }
+
+                assertThat(items).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asInstanceOf(LIST).contains(3);
+                assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId_iterator");
+
+            }
+            {
+                // ARRAY_CONTAINS_ALL
+                var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ALL", List.of(2, 3)) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("rooms"))
+                        .returnAllSubArray(false);
+
+                // test find
+                var iterator = db.findToIterator(host, cond, "Users");
+
+                var items = new ArrayList<Map<String, Object>>();
+                while(iterator.hasNext()){
+                    items.add(iterator.next().toMap());
+                }
+
+                assertThat(items).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asInstanceOf(LIST).contains(3);
+                assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId_iterator");
+
+            }
+
+        } finally {
+            db.delete(host, id1, partition);
+            db.delete(host, id2, partition);
+        }
+    }
+    
     @Disabled
     /**
      * TODO rawSql is not implemented for mongodb

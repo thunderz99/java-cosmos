@@ -24,16 +24,16 @@ public class CosmosDocumentList {
     public CosmosDocumentList() {
     }
 
-    public CosmosDocumentList(List<?> objs) {
+    public CosmosDocumentList(List<? extends Map> maps) {
 
-        if (CollectionUtils.isEmpty(objs)) {
+        if (CollectionUtils.isEmpty(maps)) {
             return;
         }
 
-        var obj = objs.get(0);
+        var obj = maps.get(0);
 
         if (obj instanceof Map) {
-            this.maps = (List<Map<String, Object>>) objs;
+            this.maps = (List<Map<String, Object>>) maps;
         }
     }
 
