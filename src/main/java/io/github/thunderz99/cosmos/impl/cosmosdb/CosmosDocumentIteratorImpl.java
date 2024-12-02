@@ -36,13 +36,11 @@ public class CosmosDocumentIteratorImpl implements CosmosDocumentIterator {
     CosmosDocumentIteratorImpl() {}
 
     CosmosDocumentIteratorImpl(CosmosPagedIterable<? extends Map> iterable) {
-        this.iterable = iterable;
-        this.iterator = this.iterable.iterator();
+        setDocumentIterable(iterable);
     }
 
     CosmosDocumentIteratorImpl(CosmosPagedIterable<? extends Map> iterable, Map<String, String[]> keyMap) {
-        this.iterable = iterable;
-        this.iterator = this.iterable.iterator();
+        setDocumentIterable(iterable);
         this.keyMap = keyMap;
     }
 
@@ -86,6 +84,8 @@ public class CosmosDocumentIteratorImpl implements CosmosDocumentIterator {
 
     @Override
     public <T> Iterator<T> getTypedIterator(Class<T> clazz) {
+        Checker.checkNotNull(this.iterator, "this.iterator");
+        Checker.checkNotNull(clazz, "clazz");
         return new TypedIterator(this, clazz);
     }
 

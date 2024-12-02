@@ -31,8 +31,7 @@ public class MongoDocumentIteratorImpl implements CosmosDocumentIterator {
     MongoDocumentIteratorImpl() {}
 
     MongoDocumentIteratorImpl(MongoIterable<Document> iterable) {
-        this.iterable = iterable;
-        this.iterator = this.iterable.iterator();
+        setDocumentIterable(iterable);
     }
 
     @Override
@@ -68,7 +67,7 @@ public class MongoDocumentIteratorImpl implements CosmosDocumentIterator {
      * set the document iterable and the iterator will be reset to the beginning of the iterable
      * @param iterable the iterable to set
      */
-    public void setDocumentIterable(FindIterable<Document> iterable) {
+    public void setDocumentIterable(MongoIterable<Document> iterable) {
         this.iterable = iterable;
         this.iterator = iterable.iterator();
     }
@@ -78,12 +77,4 @@ public class MongoDocumentIteratorImpl implements CosmosDocumentIterator {
         return next().toObject(clazz);
     }
 
-    /**
-     * Return a stream of docs in the iterable. When using join(and returnAllSubArray is false), the docs will be replaced by subArray only match the join
-     * @return a stream of docs in the iterable
-     */
-    public List<Document> toList() {
-        //query with join and returnAllSubArray = false
-        return this.iterable.into(new ArrayList<>());
-    }
 }
