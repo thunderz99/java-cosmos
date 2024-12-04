@@ -11,7 +11,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 ## Disclaimer
 
 * This is an alpha version, and features are focused to CRUD and find at present.
-* Mininum supported Java runtime: JDK 17
+* Mininum supported Java runtime: JDK 11
 
 ## Quickstart
 
@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.7.5</version>
+    <version>0.7.8</version>
 </dependency>
 ```
 
@@ -289,6 +289,33 @@ The main difference between Partial update and Patch is that:
 
     var users = db.find("Collection1", cond).toList(User.class);
 ```
+
+
+
+### Iterate find results (findToIterator)
+
+Find data to return an iterator instead of a list.
+Using this iterator can reduce memory consumption compared to the normal find method, when dealing with large data(e.g. size over 10, 000).
+
+```java
+ var cond = Condition.filter(
+   "id>=", "id010", // id greater or equal to 'id010'
+   "status", "active" // active user only
+ )
+ .order("userId", "ASC")
+ .limit(10000); 
+
+ var iterator = db.findToIterator("Collection1", cond, "Users");
+ while(iterator.hasNext()){
+   var user = iterator.next().toObject(User.class);
+   // do something here(e.g. write to a CSV file)
+ }
+}
+```
+
+
+
+
 
 ### Aggregates
 

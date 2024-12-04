@@ -267,20 +267,20 @@ public interface CosmosDatabase {
      *
      * <p>
      * {@code
-     * var cond = Condition.filter(
-     * "id>=", "id010", // id greater or equal to 'id010'
-     * "lastName", "Banks" // last name equal to Banks
-     * )
-     * .order("lastName", "ASC") //optional order
-     * .offset(0) //optional offset
-     * .limit(100); //optional limit
-     * <p>
-     * var userIterator = db.findToIterator("Collection1", cond);
-     * while(userIterator.hasNext()){
+     *   var cond = Condition.filter(
+     *     "id>=", "id010", // id greater or equal to 'id010'
+     *     "lastName", "Banks" // last name equal to Banks
+     *   )
+     *   .order("lastName", "ASC") //optional order
+     *   .offset(0) //optional offset
+     *   .limit(100); //optional limit
+     *
+     *   var userIterator = db.findToIterator("Collection1", cond);
+     *   while(userIterator.hasNext()){
      *     var user = userIterator.next().toObject(User.class);
-     }
-     * <p>
+     *   }
      * }
+     * </p>
      *
      * @param coll collection name
      * @param cond condition to find
