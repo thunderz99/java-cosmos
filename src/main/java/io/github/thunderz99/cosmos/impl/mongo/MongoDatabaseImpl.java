@@ -7,7 +7,9 @@ import com.azure.cosmos.implementation.guava25.collect.Lists;
 import com.azure.cosmos.models.CosmosQueryRequestOptions;
 import com.google.common.base.Preconditions;
 import com.mongodb.MongoException;
+import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoIterable;
 import com.mongodb.client.model.*;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
@@ -46,12 +48,12 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     /**
      * field automatically added to contain the expiration timestamp
      */
-    public static String EXPIRE_AT = "_expireAt";
+    public static final String EXPIRE_AT = "_expireAt";
 
     /**
      * field automatically added to contain the etag value for optimistic lock
      */
-    public static String ETAG = "_etag";
+    public static final String ETAG = "_etag";
 
     String db;
     MongoClient client;
@@ -67,11 +69,6 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         }
 
     }
-
-    /**
-     * An instance of LinkedHashMap<String, Object>, used to get the class instance in a convenience way.
-     */
-    static final LinkedHashMap<String, Object> mapInstance = new LinkedHashMap<>();
 
 
     /**
@@ -579,6 +576,64 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
     public CosmosDocumentList find(String coll, Condition cond, String partition) throws Exception {
 
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        var docs = _findToIterable(coll, cond, partition).into(new ArrayList<>());
+
+        var ret = new CosmosDocumentList(docs);
+
+        if (log.isInfoEnabled()) {
+            log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
+        }
+
+        return ret;
+
+    }
+
+    /**
+     * find data by condition to iterator and return a CosmosDocumentIterator instead of a list.
+     * Using this iterator can suppress memory consumption compared to the normal find method, when dealing with large data(size over 1000).
+     *
+     * <p>
+     * {@code
+     * var cond = Condition.filter(
+     * "id>=", "id010", // id greater or equal to 'id010'
+     * "lastName", "Banks" // last name equal to Banks
+     * )
+     * .order("lastName", "ASC") //optional order
+     * .offset(0) //optional offset
+     * .limit(100); //optional limit
+     * <p>
+     * var userIterator = db.findToIterator("Collection1", cond);
+     * while(userIterator.hasNext()){
+     *     var user = userIterator.next().toObject(User.class);
+    }
+     * <p>
+     * }
+     *
+     * @param coll collection name
+     * @param cond condition to find
+     * @param partition partition name
+     * @return CosmosDocumentIterator
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocumentIterator findToIterator(String coll, Condition cond, String partition) throws Exception {
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        var findIterable = _findToIterable(coll, cond, partition);
+
+        var ret = new MongoDocumentIteratorImpl(findIterable);
+
+        if (log.isInfoEnabled()) {
+            log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
+        }
+
+        return ret;
+    }
+
+    MongoIterable<Document> _findToIterable(String coll, Condition cond, String partition) throws Exception {
+
         if (cond == null) {
             cond = new Condition();
         }
@@ -586,10 +641,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         if (CollectionUtils.isNotEmpty(cond.join) && !cond.returnAllSubArray) {
             // When doing join and only return the matching part of subArray,
             // we have to use findWithJoin method, which do a special aggregate pipeline to achieve this
-            return findWithJoin(coll, cond, partition);
+            return _findToIterableWithJoin(coll, cond, partition);
         }
-
-        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
         // TODO crossPartition query
 
@@ -611,21 +664,11 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             findIterable.projection(fields(excludeId(), include(fields)));
         }
 
-        var docs = RetryUtil.executeWithRetry(() -> findIterable.into(new ArrayList<>()));
-
-
-        ret = new CosmosDocumentList(docs);
-
-        if (log.isInfoEnabled()) {
-            log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
-        }
-
-        return ret;
-
+        return findIterable;
     }
 
     /**
-     * Find documents when JOIN is used and returnAllSubArray is false.
+     * inner find method. Find documents when JOIN is used and returnAllSubArray is false.
      * In mongo this is implemented by aggregate pipeline and using $project stage and $filter
      *
      * <p>
@@ -635,9 +678,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
      * @param coll
      * @param cond
      * @param partition
-     * @return documents
+     * @return aggregateIterable
      */
-    CosmosDocumentList findWithJoin(String coll, Condition cond, String partition) {
+    AggregateIterable<Document> _findToIterableWithJoin(String coll, Condition cond, String partition) {
 
         Checker.check(CollectionUtils.isNotEmpty(cond.join), "join cannot be empty in findWithJoin");
         Checker.check(!cond.negative, "Top negative condition is not supported for findWithJoin");
@@ -763,10 +806,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         }
 
         // Execute the aggregation pipeline
-        var results = container.aggregate(pipeline).into(new ArrayList<>());
-
-        // Return the results as CosmosDocumentList
-        return new CosmosDocumentList(results);
+        return container.aggregate(pipeline);
 
     }
 

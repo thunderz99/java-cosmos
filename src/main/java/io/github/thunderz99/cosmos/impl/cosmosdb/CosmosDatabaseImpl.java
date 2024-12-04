@@ -596,24 +596,68 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      */
 
     public CosmosDocumentList find(String coll, Condition cond, String partition) throws Exception {
-        // do a find without aggregate
-        return find(coll, null, cond, partition);
+        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
+        var iterator = _findToIterator(coll, cond, partition);
+
+        var maps = iterator.stream().collect(Collectors.toList());
+
+        if(log.isInfoEnabled()){
+            log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
+        }
+
+        return new CosmosDocumentList(maps);
+    }
+
+
+    /**
+     * find data by condition to iterator and return a CosmosDocumentIterator instead of a list.
+     * Using this iterator can suppress memory consumption compared to the normal find method, when dealing with large data(size over 1000).
+     *
+     * <p>
+     * {@code
+     * var cond = Condition.filter(
+     * "id>=", "id010", // id greater or equal to 'id010'
+     * "lastName", "Banks" // last name equal to Banks
+     * )
+     * .order("lastName", "ASC") //optional order
+     * .offset(0) //optional offset
+     * .limit(100); //optional limit
+     * <p>
+     * var userIterator = db.findToIterator("Collection1", cond);
+     * while(userIterator.hasNext()){
+     *     var user = userIterator.next().toObject(User.class);
+    }
+     * <p>
+     * }
+     *
+     * @param coll collection name
+     * @param cond condition to find
+     * @param partition partition name
+     * @return CosmosDocumentIterator
+     * @throws Exception Cosmos client exception
+     */
+    public CosmosDocumentIterator findToIterator(String coll, Condition cond, String partition) throws Exception {
+        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
+
+        var ret = _findToIterator(coll, cond, partition);
+        if (log.isInfoEnabled()) {
+            log.info("findToIterator Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
+        }
+        return ret;
     }
 
     /**
-     * A helper method to do find/aggregate by condition
+     * A helper method to do findToIterator by condition. find method is also based on this inner method,
+     * converting iterator to
      *
      * @param coll      collection name
-     * @param aggregate aggregate settings. null if no aggregation needed.
      * @param cond      condition to find
      * @param partition partition name
-     * @return CosmosDocumentList
+     * @return CosmosDocumentIteratorImpl
      * @throws Exception Cosmos client exception
      */
-    CosmosDocumentList find(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
-
-        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
+    CosmosDocumentIteratorImpl _findToIterator(String coll, Condition cond, String partition) throws Exception {
 
         var queryRequestOptions = new CosmosQueryRequestOptions();
 
@@ -623,46 +667,23 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
             queryRequestOptions.setPartitionKey(new PartitionKey(partition));
         }
 
-        var querySpec = aggregate == null ?
-                cond.toQuerySpec() : // normal query
-                cond.toQuerySpecForAggregate(aggregate); // aggregate query//
+        var querySpec = cond.toQuerySpec();
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
-        var ret = new CosmosDocumentList();
-        if (Objects.isNull(aggregate) && !cond.joinCondText.isEmpty() && !cond.returnAllSubArray) {
+        CosmosDocumentIteratorImpl ret = null;
+        if (!cond.joinCondText.isEmpty() && !cond.returnAllSubArray) {
             // process query with join
-            var jsonObjs = mergeSubArrayToDoc(coll, cond, querySpec, queryRequestOptions);
-            ret = new CosmosDocumentList(jsonObjs);
+            var iterableAndKeyMap = queryItemsWithSubArray(coll, cond, querySpec, queryRequestOptions);
+            ret = new CosmosDocumentIteratorImpl(iterableAndKeyMap.iterable, iterableAndKeyMap.keyMap);
         } else {
             // process query without join
             var docs = RetryUtil.executeWithRetry(() ->
                     container.queryItems(querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass()));
-
-            if (log.isInfoEnabled()) {
-                docs.iterableByPage(FIND_PREFERRED_PAGE_SIZE).forEach(response -> {
-                    log.info("find Document:{}/docs/, partition:{}, result size:{}, request charge:{}", collectionLink, partition, response.getResults().size(), response.getRequestCharge());
-                });
-            }
-
-            var maps = docs.stream().collect(Collectors.toList());
-
-            if (aggregate != null) {
-                // Process result of aggregate. convert Long value to Integer if possible.
-                // Because "itemsCount: 1L" is not acceptable by some users. They prefer "itemsCount: 1" more.
-                maps = convertAggregateResultsToInteger(maps);
-            }
-
-            ret = new CosmosDocumentList(maps);
-        }
-
-
-        if (log.isInfoEnabled()) {
-            log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
+            ret = new CosmosDocumentIteratorImpl(docs);
         }
 
         return ret;
-
     }
 
     /**
@@ -694,18 +715,22 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         return maps;
     }
 
+
     /**
-     * Merge the sub array to origin array
-     * This function will traverse the result of join part and replaced by new result that is found by sub query.
+     * Query the items with sub array, which is used in join condition(when returnAllSubArray is set to false).
+     * <p>
+     *     The return value is a form is {"c":originDocs, "s1": subArray4Join1, "s2": subArray4Join2, ...} .
+     *     Use s1/s2 to replace the arrays in originDocs, then the result will be docs that return only the sub array matched in join.
+     * </p>
      *
      * @param coll           collection name
      * @param cond           merge the content of the sub array to origin array
      * @param querySpec      querySpec
      * @param requestOptions request options
-     * @return docs list
+     * @return CosmosPagedIterable that should be processed to replace the subArray
      * @throws Exception error exception
      */
-    List<Map<String, Object>> mergeSubArrayToDoc(String coll, Condition cond, CosmosSqlQuerySpec querySpec, CosmosQueryRequestOptions requestOptions) throws Exception {
+    CosmosIterableAndKeyMap queryItemsWithSubArray(String coll, Condition cond, CosmosSqlQuerySpec querySpec, CosmosQueryRequestOptions requestOptions) throws Exception {
 
         Map<String, String[]> keyMap = new LinkedHashMap<>();
 
@@ -715,47 +740,20 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         var pagedDocs = RetryUtil.executeWithRetry(
                 () -> container.queryItems(new SqlQuerySpec(queryText, querySpec.getParametersv4()),  // use new querySpec with join
                         requestOptions, mapInstance.getClass()));
-        // cast the docs to Map<String, Object> type (want to do this more elegantly in the future)
-        var docs = pagedDocs.stream().map(x -> (Map<String, Object>) x).collect(Collectors.toList());
-        var result = mergeArrayValueToDoc(docs, keyMap);
 
-        return result.isEmpty() ? docs : result;
+        return new CosmosIterableAndKeyMap(pagedDocs, keyMap);
     }
 
-    /**
-     * This function will traverse the result of join part and replaced by new result that is found by sub query.
-     *
-     * @param docs   docs
-     * @param keyMap join part map
-     * @return the merged sub array
-     */
-    List<Map<String, Object>> mergeArrayValueToDoc(List<Map<String, Object>> docs, Map<String, String[]> keyMap) {
-        List<Map<String, Object>> result = new ArrayList<>();
-
-        for (var doc : docs) {
-            var docMain = JsonUtil.toMap(doc.get("c"));
-
-            for (Map.Entry<String, String[]> entry : keyMap.entrySet()) {
-                if (Objects.nonNull(doc.get(entry.getKey()))) {
-                    Map<String, Object> docSubListItem = Map.of(entry.getKey(), doc.get(entry.getKey()));
-                    traverseListValueToDoc(docMain, docSubListItem, entry, 0);
-                }
-            }
-            result.add(docMain);
-        }
-
-        return result;
-    }
 
     /**
-     * Init the select part of join
+     * Init the select part of join, return the select part and set the KeyMap
      *
      * @param cond      condition
      * @param querySpec query spec
      * @param keyMap    join part map
      * @return select part
      */
-    private String initJoinSelectPart(Condition cond, CosmosSqlQuerySpec querySpec, Map<String, String[]> keyMap) {
+    static String initJoinSelectPart(Condition cond, CosmosSqlQuerySpec querySpec, Map<String, String[]> keyMap) {
         StringBuilder queryText = new StringBuilder();
 
         var originSelectPart = querySpec.getQueryText().substring(0, querySpec.getQueryText().indexOf("WHERE"));
@@ -777,32 +775,6 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         queryText.append(querySpec.getQueryText().substring(startIndex - 1));
 
         return queryText.toString();
-    }
-
-    /**
-     * Traverse and merge the content of the list to origin list
-     * This function will traverse the result of join part and replaced by new result that is found by sub query.
-     *
-     * @param docMap    the map of doc
-     * @param newSubMap new sub map
-     * @param entry     entry
-     * @param count     count
-     */
-    void traverseListValueToDoc(Map<String, Object> docMap, Map<String, Object> newSubMap, Map.Entry<String, String[]> entry, int count) {
-
-        var aliasName = entry.getKey();
-        var subValue = entry.getValue();
-
-        if (count == subValue.length - 1) {
-            if (newSubMap.get(aliasName) instanceof List) {
-                docMap.put(subValue[entry.getValue().length - 1], newSubMap.get(aliasName));
-            }
-            return;
-        }
-
-        if (docMap.get(subValue[count]) instanceof Map) {
-            traverseListValueToDoc((Map) docMap.get(subValue[count++]), newSubMap, entry, count);
-        }
     }
 
     /**
@@ -874,7 +846,37 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      * @throws Exception Cosmos client exception
      */
     public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
-        return find(coll, aggregate, cond, partition);
+        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
+
+        var queryRequestOptions = new CosmosQueryRequestOptions();
+
+        if (cond.crossPartition) {
+            // In v4, do not set the partitionKey to do a cross partition query
+        } else {
+            queryRequestOptions.setPartitionKey(new PartitionKey(partition));
+        }
+
+        var querySpec = cond.toQuerySpecForAggregate(aggregate); // aggregate query//
+
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+        // process aggregate query
+        var docs = RetryUtil.executeWithRetry(() ->
+                container.queryItems(querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass()));
+
+        var maps = docs.stream().collect(Collectors.toList());
+
+        // Process result of aggregate. convert Long value to Integer if possible.
+        // Because "itemsCount: 1L" is not acceptable by some users. They prefer "itemsCount: 1" more.
+        maps = convertAggregateResultsToInteger(maps);
+
+        var ret = new CosmosDocumentList(maps);
+
+        if (log.isInfoEnabled()) {
+            log.info("aggregate Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
+        }
+
+        return ret;
     }
 
     /**
@@ -898,7 +900,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      * @throws Exception Cosmos client exception
      */
     public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond) throws Exception {
-        return find(coll, aggregate, cond, coll);
+        return aggregate(coll, aggregate, cond, coll);
     }
 
     /**
