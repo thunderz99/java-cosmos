@@ -22,6 +22,11 @@ public class CosmosBuilder {
      */
     public static String MONGODB = "mongodb";
 
+    /**
+     * Constant for dbType: postgres
+     */
+    public static String POSTGRES = "postgres";
+
 
     String dbType = COSMOSDB;
 

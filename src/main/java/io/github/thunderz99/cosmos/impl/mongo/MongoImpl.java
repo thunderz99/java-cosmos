@@ -144,7 +144,7 @@ public class MongoImpl implements Cosmos {
      *
      * @param db              database name
      * @param coll            collection name
-     * @param uniqueKeyPolicy unique key policy for the collection
+     * @param uniqueKeyPolicy (not used in mongo) unique key policy for the collection
      * @return CosmosDatabase instance
      * @throws CosmosException Cosmos client exception
      */
@@ -161,8 +161,7 @@ public class MongoImpl implements Cosmos {
             mongoDatabase.getCollection(coll);
         }
 
-        // TODO
-        // deal with uniqueKeyPolicy
+        // uniqueKeyPolicy not used for mongo
 
         return new MongoDatabaseImpl(this, db);
     }
