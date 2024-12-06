@@ -14,6 +14,7 @@ import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import io.github.thunderz99.cosmos.util.ParamUtil;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 
@@ -27,7 +28,6 @@ import org.apache.commons.lang3.StringUtils;
 public class SimpleExpression implements Expression {
 
 	public static final Pattern binaryOperatorPattern = Pattern.compile("^\\s*(LIKE|IN|=|!=|<|<=|>|>=)\\s*$");
-	public static final Pattern alphaNumericPattern = Pattern.compile("^[\\w\\d]+$");
 
 	public String key;
 	public Object value;
@@ -70,7 +70,7 @@ public class SimpleExpression implements Expression {
         // fullName.last -> @param001_fullName__last
         // or
         // "829cc727-2d49-4d60-8f91-b30f50560af7.name" -> @param001_wg31gsa.name
-        var paramName = getParamNameFromKey(this.key, paramIndex.getAndIncrement());
+        var paramName = ParamUtil.getParamNameFromKey(this.key, paramIndex.getAndIncrement());
 
         var paramValue = this.value;
 
@@ -141,34 +141,7 @@ public class SimpleExpression implements Expression {
 
 	}
 
-	/**
-	 * generate a valid param name from a key.
-	 * <p>
-	 * {@code
-	 * // e.g
-	 * // fullName.last -> @param001_fullName__last
-	 * // or
-	 * // if the key contains a non alphanumeric part, it will be replaced by a random str.
-	 * // "829cc727-2d49-4d60-8f91-b30f50560af7.name" -> @param001_wg31gsa.name
-	 * // "family.テスト.age" -> @param001_family.ab135dx.age
-	 * }
-	 *
-	 * @param key
-	 * @param index
-	 */
-	static String getParamNameFromKey(String key, int index) {
-		Checker.checkNotBlank(key, "key");
 
-		var sanitizedKey = Stream.of(key.split("\\.")).map(part -> {
-			if (alphaNumericPattern.asMatchPredicate().test(part)) {
-				return part;
-			} else {
-				return RandomStringUtils.randomAlphanumeric(7);
-			}
-        }).collect(Collectors.joining("__"));
-
-        return String.format("@param%03d_%s", index, sanitizedKey);
-    }
 
     @Override
     public String toString() {
