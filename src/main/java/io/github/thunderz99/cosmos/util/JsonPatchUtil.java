@@ -10,7 +10,10 @@ import com.azure.cosmos.implementation.patch.PatchOperationCore;
 import com.google.common.primitives.Primitives;
 import com.mongodb.client.model.PushOptions;
 import com.mongodb.client.model.Updates;
+import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
+import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
+import org.apache.commons.lang3.StringUtils;
 import org.bson.BsonDocument;
 
 /**
@@ -140,4 +143,82 @@ public class JsonPatchUtil {
         return ret;
     }
 
+    /**
+     * Convert JSON Patch operations to Postgres querySpec(sql and params) format to do an update operation
+
+     * @param operations
+     * @return subSql in CosmosSqlQuerySpec format, which contains sql in NamedParams and values
+     */
+    public static CosmosSqlQuerySpec toPostgresPatchData(PatchOperations operations) {
+
+        var subSql = new StringBuilder();
+
+        List<CosmosSqlParameter> params = new ArrayList<>();
+        var index = 0;
+        for (var _operation : operations.getPatchOperations()) {
+            var operation = (PatchOperationCore<?>) _operation;
+            var op = operation.getOperationType().name();
+            var jsonPath = operation.getPath();
+            var rawValue = operation.getResource();
+
+            var value = getNormalizedValue(rawValue);
+
+            var matcher = pattern.matcher(jsonPath);
+
+            // when the patch operation is against an array field
+            if (matcher.find()) {
+                var arrayPath = matcher.group(1);
+                var arrayIndex = Integer.parseInt(matcher.group(2));
+                //TODO
+                //params.add(generateOperation4Array(op, arrayPath, arrayIndex, value));
+            } else { // normal patch operation
+
+                // from /fullName/last to param001_fullName__last
+                var name = ParamUtil.getParamNameFromKey(MapUtil.toPeriodKey(jsonPath), index);
+                // from /fullName/last to {fullName, last}
+                var path = toPostgresPath(jsonPath);
+
+                switch (op) {
+                    case "ADD", "REPLACE", "SET" -> {
+                        if(subSql.isEmpty()){
+                            subSql.append(TableUtil.JDOC);
+                        }
+
+                        subSql.insert(0, "jsonb_set( ");
+                        subSql.append(",'%s', %s::jsonb )".formatted(path, name));
+                        params.add(new CosmosSqlParameter(name, value));  // Remove leading '/' from path
+
+                    }
+                    case "REMOVE" -> {
+                        if(subSql.isEmpty()){
+                            subSql.append(TableUtil.JDOC);
+                        }
+                        subSql.append(" - " + "'%s'".formatted(path));
+                        // no params added, because REMOVE does not need a value
+
+                    }
+                    case "INCREMENT" -> {
+                        // TODO
+
+                    }
+                    default -> throw new UnsupportedOperationException("Unsupported JSON Patch operation: " + op);
+                }
+            }
+            index++;
+        }
+        return new CosmosSqlQuerySpec(subSql.toString(), params);
+    }
+
+
+
+    /**
+     * Converts a JSON Patch path to a PostgreSQL jsonb_set path.
+     * <p>
+     * E.g. "/a/b" -> "{a,b}"
+     * </p>
+     */
+    static String toPostgresPath(String path) {
+        Checker.check(!StringUtils.contains(path, ";"), "path should not contain semicolon ';'");
+        return "{" + path.substring(1).replace("/", ",") + "}";
+    }
 }

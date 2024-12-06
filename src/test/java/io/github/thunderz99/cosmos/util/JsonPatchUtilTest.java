@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 import io.github.thunderz99.cosmos.dto.CheckBox;
+import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,5 +61,25 @@ class JsonPatchUtilTest {
 
         ;
 
+    }
+
+
+    @Test
+    void toPostgresPatchData_should_work() {
+        var operations = PatchOperations.create()
+                .set("/age", 20
+                )
+                .add("/fullName/first","Tom"
+                )
+                .remove("/address/street");
+
+        var result = JsonPatchUtil.toPostgresPatchData(operations);
+
+        assertThat(result.getQueryText()).isEqualTo("jsonb_set( jsonb_set( jdoc,'{age}', @param000_age::jsonb ),'{fullName,first}', @param001_fullName__first::jsonb ) - '{address,street}'");
+        assertThat(result.getParameters()).hasSize(2);
+        assertThat(result.getParameters().get(0).getName()).isEqualTo("@param000_age");
+        assertThat(result.getParameters().get(0).getValue()).isEqualTo(20);
+        assertThat(result.getParameters().get(1).getName()).isEqualTo("@param001_fullName__first");
+        assertThat(result.getParameters().get(1).getValue()).isEqualTo("Tom");
     }
 }

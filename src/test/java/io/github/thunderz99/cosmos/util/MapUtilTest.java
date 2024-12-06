@@ -1,9 +1,11 @@
 package io.github.thunderz99.cosmos.util;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Queues;
 import org.junit.jupiter.api.Test;
 
@@ -139,5 +141,36 @@ public class MapUtilTest {
 
     }
 
+    @Test
+    void merge_should_work_for_nested_json() {
+
+        var map1 = new LinkedHashMap<String, Object>();
+        map1.put("id", "ID001");
+        map1.put("name", "Tom");
+        map1.put("sort", "010");
+        var contents = new LinkedHashMap<String, Object>();
+        contents.put("phone", "12345");
+        contents.put("addresses", Lists.newArrayList("NY", "DC"));
+        map1.put("contents", contents);
+
+        var map2 = new LinkedHashMap<String, Object>();
+        map2.put("name", "Jane");
+        var contents2 = new LinkedHashMap<String, Object>();
+        contents2.put("skill", "backend");
+        contents.put("addresses", Lists.newArrayList("NY", "Houston"));
+        map2.put("contents", contents2);
+
+        var merged = MapUtil.merge(map1, map2);
+
+        assertThat(merged).containsEntry("name", "Jane") // updated
+                .containsEntry("sort", "010") // reserved
+        ;
+        assertThat((Map<String, Object>) merged.get("contents"))
+                .containsEntry("phone", "12345") // reserved
+                .containsEntry("skill", "backend") //updated
+                .containsEntry("addresses", Lists.newArrayList("NY", "Houston")) //updated
+        ;
+
+    }
 
 }

@@ -4,6 +4,7 @@ import java.util.List;
 
 import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosImpl;
 import io.github.thunderz99.cosmos.impl.mongo.MongoImpl;
+import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
 import io.github.thunderz99.cosmos.util.Checker;
 import org.apache.commons.lang3.StringUtils;
 
@@ -21,6 +22,11 @@ public class CosmosBuilder {
      * Constant for dbType: mongodb
      */
     public static String MONGODB = "mongodb";
+
+    /**
+     * Constant for dbType: postgres
+     */
+    public static String POSTGRES = "postgres";
 
 
     String dbType = COSMOSDB;
@@ -122,6 +128,10 @@ public class CosmosBuilder {
 
         if (StringUtils.equals(dbType, MONGODB)) {
             return new MongoImpl(connectionString, expireAtEnabled, etagEnabled);
+        }
+
+        if (StringUtils.equals(dbType, POSTGRES)) {
+            return new PostgresImpl(connectionString, expireAtEnabled, etagEnabled);
         }
 
         throw new IllegalArgumentException("Not supported dbType: " + dbType);

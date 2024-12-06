@@ -133,4 +133,35 @@ public class MapUtil {
         return path.startsWith("/") ? path.substring(1).replace("/", ".")
                 : path.replace("/", ".");
     }
+
+    /**
+     * like Object.assign(m1, m2) in javascript, but support nested merge.
+     *
+     * @param m1
+     * @param m2
+     * @return map after merge
+     */
+    public static Map<String, Object> merge(Map<String, Object> m1, Map<String, Object> m2) {
+
+        for (var entry : m1.entrySet()) {
+            var key = entry.getKey();
+            var value = entry.getValue();
+
+            var value2 = m2.get(key);
+
+            // do nested merge
+            if (value != null && value instanceof Map<?, ?> && value2 != null && value2 instanceof Map<?, ?>) {
+                var subMap1 = (Map<String, Object>) value;
+                var subMap2 = (Map<String, Object>) value2;
+
+                subMap1 = merge(subMap1, subMap2);
+                m2.put(key, subMap1);
+            }
+
+        }
+
+
+        m1.putAll(m2);
+        return m1;
+    }
 }
