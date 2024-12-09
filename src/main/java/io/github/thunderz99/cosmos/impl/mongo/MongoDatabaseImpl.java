@@ -106,8 +106,6 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        checkValidId(map);
-
         var container = this.client.getDatabase(coll).getCollection(partition);
         var response = RetryUtil.executeWithRetry(() -> container.insertOne(
                 new Document(map)
@@ -185,12 +183,13 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     }
 
     static String getId(Object object) {
-        // TODO, extract util method
         String id;
         if (object instanceof String) {
             id = (String) object;
         } else if (object instanceof BsonObjectId) {
             id = ((BsonObjectId) object).getValue().toHexString();
+        } else if (object instanceof Map map){
+            id = map.getOrDefault("id", "").toString();
         } else {
             var map = JsonUtil.toMap(object);
             id = map.getOrDefault("id", "").toString();
@@ -201,26 +200,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
     static void checkValidId(List<?> data) {
         for (Object datum : data) {
-            if (datum instanceof String) {
-                checkValidId((String) datum);
-            } else {
-                Map<String, Object> map = JsonUtil.toMap(datum);
-                checkValidId(map);
-            }
+            checkValidId(getId(datum));
         }
-    }
-
-    /**
-     * Id cannot contain "\t", "\r", "\n", or cosmosdb will create invalid data.
-     *
-     * @param objectMap
-     */
-    static void checkValidId(Map<String, Object> objectMap) {
-        if (objectMap == null) {
-            return;
-        }
-        var id = getId(objectMap);
-        checkValidId(id);
     }
 
     static void checkValidId(String id) {

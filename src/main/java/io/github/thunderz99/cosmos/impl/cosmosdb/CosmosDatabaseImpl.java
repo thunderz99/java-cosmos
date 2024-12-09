@@ -88,7 +88,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         checkValidId(objectMap);
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
-        var response = RetryUtil.executeWithRetry(() -> container.createItem(
+        var response = .executeWithRetry(() -> container.createItem(
                 objectMap,
                 new PartitionKey(partition),
                 new CosmosItemRequestOptions()

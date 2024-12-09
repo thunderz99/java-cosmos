@@ -295,5 +295,12 @@ public class PostgresImpl implements Cosmos {
     public void closeClient() {
         this.getDataSource().close();
     }
-    
+
+    public static boolean isResourceNotFoundException(Exception e) {
+        if (e instanceof CosmosException) {
+            var me = (CosmosException) e;
+            return me.getStatusCode() == 404;
+        }
+        return StringUtils.contains(e.getMessage(), "Not Found") ? true : false;
+    }
 }

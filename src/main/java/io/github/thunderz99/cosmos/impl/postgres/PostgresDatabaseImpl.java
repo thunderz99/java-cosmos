@@ -1,22 +1,13 @@
 package io.github.thunderz99.cosmos.impl.postgres;
 
-import com.azure.cosmos.implementation.guava25.collect.Lists;
-import com.azure.cosmos.models.CosmosQueryRequestOptions;
-import com.google.common.base.Preconditions;
-import com.mongodb.MongoException;
 import com.mongodb.client.AggregateIterable;
-import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoIterable;
-import com.mongodb.client.model.*;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
-import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
-import io.github.thunderz99.cosmos.dto.FilterOptions;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
-import io.github.thunderz99.cosmos.impl.mongo.MongoDocumentIteratorImpl;
 import io.github.thunderz99.cosmos.impl.mongo.MongoImpl;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -25,15 +16,12 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 import org.bson.BsonObjectId;
 import org.bson.Document;
-import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static com.mongodb.client.model.Filters.eq;
-import static com.mongodb.client.model.Projections.*;
 
 /**
  * Class representing a postgres schema instance.
@@ -73,8 +61,41 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
     }
 
+    /**
+     * Create a table representing a partition, if not exist. This table will have the standard table definition for java-cosmos(id, tenant_id, jdoc)
+     *
+     * @param tableName
+     * @return
+     * @throws Exception
+     */
     public String createTableIfNotExists(String tableName) throws Exception {
-        return null;
+
+        var conn = dataSource.getConnection();
+
+        TableUtil.createTableIfNotExists(conn, getSchemaName(), tableName);
+
+        return tableName;
+    }
+
+    /**
+     * Drop a table representing a partition, if exist.
+     *
+     * @param tableName
+     * @throws Exception
+     */
+    public void dropTableIfExists(String tableName) throws Exception {
+
+        var conn = dataSource.getConnection();
+
+        TableUtil.dropTableIfExists(conn, getSchemaName(), tableName);
+    }
+
+    /**
+     * In postgres implementation, we map dbName to schemaName
+     * @return
+     */
+    public String getSchemaName(){
+        return db;
     }
 
     /**
@@ -88,55 +109,52 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     public CosmosDocument create(String coll, Object data, String partition) throws Exception {
 
-//
-//        Checker.checkNotBlank(coll, "coll");
-//        Checker.checkNotBlank(partition, "partition");
-//        Checker.checkNotNull(data, "create data " + coll + " " + partition);
-//
-//        Map<String, Object> map = JsonUtil.toMap(data);
-//
-//        // add partition info
-//        map.put(Cosmos.getDefaultPartitionKey(), partition);
-//
-//        // set id(for java-cosmos) and _id(for mongo) before insert
-//        addId4Mongo(map);
-//
-//        // add timestamp field "_ts"
-//        addTimestamp(map);
-//
-//        // add _expireAt if ttl is set
-//        addExpireAt4Mongo(map);
-//
-//        // add etag for optimistic lock if enabled
-//        addEtag4Mongo(map);
-//
-//        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
-//
-//        checkValidId(map);
-//
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//        var response = RetryUtil.executeWithRetry(() -> container.insertOne(
-//                new Document(map)
-//        ));
-//
-//        var item = response.getInsertedId();
-//
-//        log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, getId(item), partition, getAccount());
-//
-//        return getCosmosDocument(map);
-        return null;
+
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotNull(data, "create data " + coll + " " + partition);
+
+        Map<String, Object> map = JsonUtil.toMap(data);
+
+        // add partition info
+        map.put(Cosmos.getDefaultPartitionKey(), partition);
+
+        // set id(for java-cosmos) and _id(for mongo) before insert
+        var id = addId4Postgres(map);
+
+        // add timestamp field "_ts"
+        addTimestamp(map);
+
+        // add _expireAt if ttl is set
+        addExpireAt4Mongo(map);
+
+        // add etag for optimistic lock if enabled
+        addEtag4Mongo(map);
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        PostgresRecord record = null;
+        try (var conn = this.dataSource.getConnection()) {
+            // TODO: RetryUtil.executeWithRetry
+            record = TableUtil.insertRecord(conn, getSchemaName(), partition, new PostgresRecord(id, coll, map));
+        }
+
+        if (log.isInfoEnabled()){
+            log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, record.id, partition, getAccount());
+        }
+
+        return getCosmosDocument(record);
     }
 
     /**
-     * set _id correctly by "id" for mongodb
+     * set "id" correctly, and generate an uuid if id is empty.
      *
      * @param objectMap
      */
-    static String addId4Mongo(Map<String, Object> objectMap) {
+    static String addId4Postgres(Map<String, Object> objectMap) {
         var id = objectMap.getOrDefault("id", UUID.randomUUID()).toString();
         checkValidId(id);
         objectMap.put("id", id);
-        objectMap.put("_id", id);
         return id;
     }
 
@@ -148,6 +166,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     Date addExpireAt4Mongo(Map<String, Object> objectMap) {
 
+        // TODO
         var account = (PostgresImpl) this.getCosmosAccount();
         if (!account.expireAtEnabled) {
             return null;
@@ -180,6 +199,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     String addEtag4Mongo(Map<String, Object> objectMap) {
 
+        // TODO
         var account = (PostgresImpl) this.getCosmosAccount();
         if (!account.etagEnabled) {
             return null;
@@ -192,12 +212,11 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     }
 
     static String getId(Object object) {
-        // TODO, extract util method
         String id;
         if (object instanceof String) {
             id = (String) object;
-        } else if (object instanceof BsonObjectId) {
-            id = ((BsonObjectId) object).getValue().toHexString();
+        } else if (object instanceof Map map){
+            id = map.getOrDefault("id", "").toString();
         } else {
             var map = JsonUtil.toMap(object);
             id = map.getOrDefault("id", "").toString();
@@ -208,26 +227,8 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
     static void checkValidId(List<?> data) {
         for (Object datum : data) {
-            if (datum instanceof String) {
-                checkValidId((String) datum);
-            } else {
-                Map<String, Object> map = JsonUtil.toMap(datum);
-                checkValidId(map);
-            }
+            checkValidId(getId(datum));
         }
-    }
-
-    /**
-     * Id cannot contain "\t", "\r", "\n", or cosmosdb will create invalid data.
-     *
-     * @param objectMap
-     */
-    static void checkValidId(Map<String, Object> objectMap) {
-        if (objectMap == null) {
-            return;
-        }
-        var id = getId(objectMap);
-        checkValidId(id);
     }
 
     static void checkValidId(String id) {
@@ -245,47 +246,23 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      * @throws Exception Throw 404 Not Found Exception if object not exist
      */
     public CosmosDocument read(String coll, String id, String partition) throws Exception {
-
-        Checker.checkNotBlank(id, "id");
-        Checker.checkNotBlank(coll, "coll");
-        Checker.checkNotBlank(partition, "partition");
-
-//        var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
-//
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        var response = RetryUtil.executeWithRetry(() -> container.find(eq("_id", id)).first()
-//        );
-//
-//        log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
-//
-//        return checkAndGetCosmosDocument(response);
-
-        return null;
-    }
-
-    /**
-     * check whether the response is null and return CosmosDocument. if null, throw CosmosException(404 Not Found)
-     *
-     * @param response
-     * @return cosmos document
-     */
-    static CosmosDocument checkAndGetCosmosDocument(Document response) {
-        if (response == null) {
+       var ret = readSuppressing404(coll, id, partition);
+        if (ret == null) {
             throw new CosmosException(404, "404", "Resource Not Found. code: NotFound");
         }
-        return getCosmosDocument(response);
+        return ret;
     }
 
     /**
      * process precision of timestamp and get CosmosDucment instance from response
      *
-     * @param map
+     * @param record
      * @return cosmos document
      */
-    static CosmosDocument getCosmosDocument(Map<String, Object> map) {
-        TimestampUtil.processTimestampPrecision(map);
-        return new CosmosDocument(map);
+    static CosmosDocument getCosmosDocument(PostgresRecord record) {
+        record.map.put(TableUtil.ID, record.id);
+        TimestampUtil.processTimestampPrecision(record.map);
+        return new CosmosDocument(record.map);
     }
 
 
@@ -300,14 +277,26 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     public CosmosDocument readSuppressing404(String coll, String id, String partition) throws Exception {
 
-        try {
-            return read(coll, id, partition);
-        } catch (Exception e) {
-            if (MongoImpl.isResourceNotFoundException(e)) {
+        Checker.checkNotBlank(id, "id");
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+
+        var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
+
+        // TODO: RetryUtil.executeWithRetry
+        try(var conn = this.dataSource.getConnection()) {
+            var record = TableUtil.readRecord(conn, getSchemaName(), partition, id);
+
+            if(log.isInfoEnabled()) {
+                log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+            }
+
+            if(record == null){
                 return null;
             }
-            throw e;
+            return getCosmosDocument(record);
         }
+
     }
 
     /**
@@ -321,45 +310,41 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     public CosmosDocument update(String coll, Object data, String partition) throws Exception {
 
-//        Checker.checkNotBlank(coll, "coll");
-//        Checker.checkNotBlank(partition, "partition");
-//        Checker.checkNotNull(data, "update data " + coll + " " + partition);
-//
-//        var map = JsonUtil.toMap(data);
-//        var id = getId(map);
-//
-//        Checker.checkNotBlank(id, "id");
-//        checkValidId(id);
-//
-//        // process id for mongo
-//        map.put("_id", id);
-//
-//        // add timestamp field "_ts"
-//        addTimestamp(map);
-//
-//        // add _expireAt if ttl is set
-//        addExpireAt4Mongo(map);
-//
-//        // add etag for optimistic lock if enabled
-//        addEtag4Mongo(map);
-//
-//        var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
-//
-//        // add partition info
-//        map.put(Cosmos.getDefaultPartitionKey(), partition);
-//
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        var document = RetryUtil.executeWithRetry(() -> container.findOneAndReplace(eq("_id", id),
-//                new Document(map),
-//                new FindOneAndReplaceOptions().upsert(false).returnDocument(ReturnDocument.AFTER))
-//        );
-//
-//        log.info("updated Document:{}, id:{}, partition:{}, account:{}", documentLink, id, partition, getAccount());
-//
-//        return checkAndGetCosmosDocument(document);
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotNull(data, "update data " + coll + " " + partition);
 
-        return null;
+        var map = JsonUtil.toMap(data);
+        var id = getId(map);
+
+        Checker.checkNotBlank(id, "id");
+        checkValidId(id);
+
+        // add partition info
+        map.put(Cosmos.getDefaultPartitionKey(), partition);
+
+        // add timestamp field "_ts"
+        addTimestamp(map);
+
+        // add _expireAt if ttl is set
+        addExpireAt4Mongo(map);
+
+        // add etag for optimistic lock if enabled
+        addEtag4Mongo(map);
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        PostgresRecord record = null;
+        try (var conn = this.dataSource.getConnection()) {
+            // TODO: RetryUtil.executeWithRetry
+            record = TableUtil.updateRecord(conn, getSchemaName(), partition, new PostgresRecord(id, coll, map));
+        }
+
+        if (log.isInfoEnabled()){
+            log.info("updated Document:{}/docs/{}, partition:{}, account:{}", collectionLink, record.id, partition, getAccount());
+        }
+
+        return getCosmosDocument(record);
     }
 
 
@@ -547,18 +532,19 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     public CosmosDatabase delete(String coll, String id, String partition) throws Exception {
 
-//        Checker.checkNotBlank(coll, "coll");
-//        Checker.checkNotBlank(id, "id");
-//        Checker.checkNotBlank(partition, "partition");
-//
-//        var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
-//
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        var response = RetryUtil.executeWithRetry(() -> container.deleteOne(eq("_id", id))
-//        );
-//
-//        log.info("deleted Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(id, "id");
+        Checker.checkNotBlank(partition, "partition");
+
+        var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
+
+        // TODO: RetryUtil
+
+        try(var conn = this.dataSource.getConnection()){
+            TableUtil.deleteRecord(conn, getSchemaName(), partition, coll, id);
+        }
+
+        log.info("deleted Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
 
         return this;
 
