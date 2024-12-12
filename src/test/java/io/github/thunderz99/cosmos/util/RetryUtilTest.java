@@ -1,10 +1,22 @@
 package io.github.thunderz99.cosmos.util;
 
+import java.lang.reflect.Constructor;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
+import ch.qos.logback.classic.Level;
+import com.azure.cosmos.CosmosDiagnostics;
+import com.azure.cosmos.CosmosItemSerializer;
 import com.azure.cosmos.implementation.CosmosError;
+import com.azure.cosmos.models.*;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.thunderz99.cosmos.Cosmos;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
 import org.junit.jupiter.api.Test;
@@ -44,6 +56,8 @@ class RetryUtilTest {
         { // success after 2 retries. for 429
             final var i = new AtomicInteger(0);
 
+            var tracker = LogTracker.getInstance(RetryUtil.class);
+
             // success within 1 second
             var ret = assertTimeout(ofSeconds(1), () ->
                     RetryUtil.executeWithRetry(() -> {
@@ -54,6 +68,10 @@ class RetryUtilTest {
                         return "OK";
                     })
             );
+
+            // assert that the WARN level log is logged
+            assertThat(tracker.getEvents()).anyMatch(e -> e.getLevel() == Level.WARN
+                    && e.getFormattedMessage().contains("RetryUtil 429 occurred. Code:429, Wait:10 ms"));
             assertThat(ret).isEqualTo("OK");
         }
 
@@ -76,6 +94,8 @@ class RetryUtilTest {
         { // success after 1 retries. for 408 and CosmosException
             final var i = new AtomicInteger(0);
 
+            var tracker = LogTracker.getInstance(RetryUtil.class);
+
             // success within 1 second
             var ret = assertTimeout(ofSeconds(1), () ->
                     RetryUtil.executeWithRetry(() -> {
@@ -85,7 +105,11 @@ class RetryUtilTest {
                         return "OK";
                     })
             );
+
+            assertThat(tracker.getEvents()).anyMatch(e -> e.getLevel() == Level.WARN
+                    && e.getFormattedMessage().contains("RetryUtil 429 occurred. Code:408, Wait:5 ms"));
             assertThat(ret).isEqualTo("OK");
+
         }
     }
 
@@ -269,6 +293,139 @@ class RetryUtilTest {
             });
         }
 
+    }
+
+    public static class User {
+        public String id;
+        public String firstName;
+        public String lastName;
+
+        public String createdAt;
+
+        public User() {
+        }
+
+        public User(String id, String firstName, String lastName) {
+            this.id = id;
+            this.firstName = firstName;
+            this.lastName = lastName;
+        }
+
+        public User(String id, String firstName, String lastName, String createdAt) {
+            this.id = id;
+            this.firstName = firstName;
+            this.lastName = lastName;
+            this.createdAt = createdAt;
+        }
+    }
+
+    @Test
+    void executeBulkWithRetry_should_work() throws Exception {
+        var tracker = LogTracker.getInstance(RetryUtil.class, Level.INFO);
+        var partition = "Users";
+        var coll = "coll_executeBulkWithRetry_should_work";
+
+        var data = new ArrayList<User>(10);
+        for (int i = 0; i < 10; i++) {
+            data.add(new User("doBulkWithRetry_should_work_" + i, "first" + i, "last" + i));
+        }
+
+        var partitionKey = new PartitionKey(partition);
+        var operations = data.stream().map(it -> {
+                    var map = JsonUtil.toMap(it);
+                    map.put(Cosmos.getDefaultPartitionKey(), partition);
+                    return CosmosBulkOperations.getCreateItemOperation(map, partitionKey);
+                }
+        ).collect(Collectors.toList());
+
+        var wait = 5;
+        final var i = new AtomicInteger(0);
+        RetryUtil.executeBulkWithRetry(coll, operations,
+                (ops) -> {
+                    if (i.get() < 2) {
+                        i.incrementAndGet();
+                        var iter = ops.iterator();
+                        return List.of(generateCosmosBulkOperationResponse(iter.next(),
+                                generateCosmosBulkItemResponse(429, 5),
+                                new CosmosException(429, "429", "Too Many Requests", 5)));
+                    }
+                    return List.of();
+                });
+
+        // check retry logic is called in WARN level
+        var events = tracker.getEvents().stream().filter(e -> e.getLevel() == Level.WARN).collect(Collectors.toList());
+        assertThat(events.get(0).toString()).isEqualTo(String.format("[WARN] doBulkWithRetry 429 occurred. Code:429, coll:%s, partition:[\"%s\"]. operationType:CREATE, Wait:%d ms", coll, partition, wait));
+
+        // wait should be doubled
+        assertThat(events.get(1).toString()).isEqualTo(String.format("[WARN] doBulkWithRetry 429 occurred. Code:429, coll:%s, partition:[\"%s\"]. operationType:CREATE, Wait:%d ms", coll, partition, wait * 2));
+    }
+
+
+    /**
+     * use reflect to generate CosmosBulkItemResponse for test(which is not accessible directly)
+     * @param statusCode
+     * @param retryAfter
+     * @return
+     * @throws Exception
+     */
+    static CosmosBulkItemResponse generateCosmosBulkItemResponse(int statusCode, int retryAfter) throws Exception {
+        // Use reflection to access the package-private constructor
+        Constructor<CosmosBulkItemResponse> constructor =
+                CosmosBulkItemResponse.class.getDeclaredConstructor(
+                        String.class,
+                        double.class,
+                        ObjectNode.class,
+                        int.class,
+                        Duration.class,
+                        int.class,
+                        Map.class,
+                        CosmosDiagnostics.class,
+                        CosmosItemSerializer.class);
+
+        // Make the constructor accessible
+        constructor.setAccessible(true);
+
+        // Create an instance of CosmosBulkItemResponse using the constructor
+        CosmosBulkItemResponse response = constructor.newInstance(
+                "etagValue",                        // eTag
+                1.0,                                // requestCharge
+                JsonNodeFactory.instance.objectNode(), // resourceObject
+                statusCode,                                // statusCode
+                Duration.ofMillis(retryAfter),             // retryAfter
+                0,                                  // subStatusCode
+                new HashMap<>(),                    // responseHeaders
+                null,                               // cosmosDiagnostics
+                null                                // effectiveItemSerializer
+        );
+
+        return response;
+
+    }
+
+
+    static CosmosBulkOperationResponse generateCosmosBulkOperationResponse(CosmosItemOperation op, CosmosBulkItemResponse itemResponse, Exception e) throws Exception {
+        // Use reflection to access the package-private constructor
+        Constructor<CosmosBulkOperationResponse> constructor =
+                CosmosBulkOperationResponse.class.getDeclaredConstructor(
+                        CosmosItemOperation.class, // Operation
+                        CosmosBulkItemResponse.class, // Response
+                        Exception.class, // Exception
+                        Object.class // BatchContext (TContext)
+                );
+
+        // Make the constructor accessible
+        constructor.setAccessible(true);
+
+
+        // Create an instance of CosmosBulkOperationResponse using the constructor
+        CosmosBulkOperationResponse<String> response = constructor.newInstance(
+                op,
+                itemResponse,
+                e,
+                null
+        );
+
+        return response;
     }
 
 }

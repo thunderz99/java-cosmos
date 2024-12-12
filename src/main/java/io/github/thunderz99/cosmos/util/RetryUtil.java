@@ -1,12 +1,19 @@
 package io.github.thunderz99.cosmos.util;
 
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.Callable;
 
+import com.azure.cosmos.implementation.HttpConstants;
+import com.azure.cosmos.models.CosmosBulkOperationResponse;
+import com.azure.cosmos.models.CosmosItemOperation;
 import com.google.common.collect.Sets;
 import com.mongodb.MongoException;
+import io.github.thunderz99.cosmos.CosmosDocument;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
+import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
+import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosDatabaseImpl;
+import org.apache.commons.lang3.ObjectUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +42,11 @@ public class RetryUtil {
      * Wait time before retry in Millis for a single CRUD execution
      */
     static final int SINGLE_EXECUTION_DEFAULT_WAIT_TIME = 2000;
+
+    /**
+     * An instance of LinkedHashMap<String, Object>, used to get the class instance in a convenience way.
+     */
+    static final Map<String, Object> mapInstance = new LinkedHashMap<>();
 
 
     /**
@@ -97,7 +109,7 @@ public class RetryUtil {
                         log.warn("retryAfterInMilliseconds {} is minus. Will retry by defaultWaitTime(2000ms)", wait, cosmosException);
                     }
                 }
-                log.info("Code:{}, 429 Too Many Requests / 449 Retry with / 408 Request Timeout. Wait:{} ms", cosmosException.getStatusCode(), wait);
+                log.warn("RetryUtil 429 occurred. Code:{}, Wait:{} ms", cosmosException.getStatusCode(), wait);
                 Thread.sleep(wait);
             } else {
                 throw cosmosException;
@@ -121,9 +133,97 @@ public class RetryUtil {
         }, defaultWaitTime, maxRetries);
     }
 
+    /**
+     * do common bulk operation(create, upsert, delete) with retry
+     *
+     * @param coll           collection name
+     * @param operations     operations to be executed
+     * @param operationFunc  function to execute the operation
+     * @return CosmosBulkResult
+     * @throws Exception
+     */
+    public static CosmosBulkResult executeBulkWithRetry(String coll, List<CosmosItemOperation> operations, CosmosDatabaseImpl.BulkOperationable operationFunc) throws Exception {
+        return executeBulkWithRetry(coll, operations,operationFunc, 10);
+    }
 
     /**
-     * Judge whether should retry action for this cosmos exception. Currently we will retry for 429/449/408
+     * do common bulk operation(create, upsert, delete) with retry. number of maxRetries if a param, which is more testable for unit test
+     *
+     * @param coll           collection name
+     * @param operations     operations to be executed
+     * @param operationFunc  function to execute the operation
+     * @param maxRetries     max retry times(default to 3)
+     * @return CosmosBulkResult
+     * @throws Exception
+     */
+    static CosmosBulkResult executeBulkWithRetry(String coll, List<CosmosItemOperation> operations, CosmosDatabaseImpl.BulkOperationable operationFunc, int maxRetries) throws Exception {
+        var bulkResult = new CosmosBulkResult();
+        long delay = 0;
+        long maxDelay = 16000;
+
+        var successDocuments = new ArrayList<CosmosDocument>();
+
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+
+            var retryTasks = new ArrayList<CosmosItemOperation>();
+            var execResult = operationFunc.execute(operations);
+
+            for (CosmosBulkOperationResponse<?> result : execResult) {
+                var operation = result.getOperation();
+                var response = result.getResponse();
+                if (ObjectUtils.isEmpty(response)) {
+                    continue;
+                }
+                log.info("Document bulk operation: operation type:{}, request charge:{}, coll:{}, partition:{}",
+                        operation.getOperationType().name(), response.getRequestCharge(), coll, operation.getPartitionKeyValue().toString());
+
+                if (RetryUtil.shouldRetry(response.getStatusCode())) {
+                    delay = Math.max(delay, response.getRetryAfterDuration().toMillis());
+                    log.warn("doBulkWithRetry 429 occurred. Code:{}, coll:{}, partition:{}. operationType:{}, Wait:{} ms",
+                            response.getStatusCode(), coll, operation.getPartitionKeyValue().toString(), operation.getOperationType(), delay);
+                    retryTasks.add(operation);
+                } else if (response.isSuccessStatusCode()) {
+                    var item = response.getItem(mapInstance.getClass());
+                    if (item == null) continue;
+                    successDocuments.add(new CosmosDocument(item));
+                } else {
+                    var ex = result.getException();
+                    if (HttpConstants.StatusCodes.CONFLICT == response.getStatusCode()) {
+                        Map<String, String> map = operation.getItem();
+                        bulkResult.fatalList.add(new CosmosException(response.getStatusCode(), "CONFLICT", "id already exits: " + map.get("id")));
+                    } else {
+                        if (ObjectUtils.isNotEmpty(ex)) {
+                            bulkResult.fatalList.add(new CosmosException(response.getStatusCode(), ex.getMessage(), ex.getMessage()));
+                        } else {
+                            bulkResult.fatalList.add(new CosmosException(response.getStatusCode(), "UNKNOWN", "UNKNOWN"));
+                        }
+                    }
+                }
+            }
+
+            if (retryTasks.isEmpty()) {
+                operations.clear();
+                break;
+            } else {
+                operations = retryTasks;
+            }
+
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException ignored) {
+            }
+            // Exponential Backoff
+            delay = Math.min(maxDelay, delay * 2);
+        }
+
+        bulkResult.retryList = operations;
+        bulkResult.successList = successDocuments;
+        return bulkResult;
+    }
+
+
+    /**
+     * Judge whether we should retry for this cosmos exception. Currently, we will retry for 429/449/408
      *
      * @param cosmosException cosmosException
      * @return true/false
