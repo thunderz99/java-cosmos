@@ -97,7 +97,7 @@ public class RetryUtil {
                         log.warn("retryAfterInMilliseconds {} is minus. Will retry by defaultWaitTime(2000ms)", wait, cosmosException);
                     }
                 }
-                log.info("Code:{}, 429 Too Many Requests / 449 Retry with / 408 Request Timeout. Wait:{} ms", cosmosException.getStatusCode(), wait);
+                log.warn("RetryUtil 429 occurred. Code:{}, Wait:{} ms", cosmosException.getStatusCode(), wait);
                 Thread.sleep(wait);
             } else {
                 throw cosmosException;

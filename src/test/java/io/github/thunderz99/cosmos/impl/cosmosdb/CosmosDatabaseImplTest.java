@@ -1,13 +1,24 @@
 package io.github.thunderz99.cosmos.impl.cosmosdb;
 
+import java.lang.reflect.Constructor;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.azure.cosmos.CosmosDiagnostics;
+import com.azure.cosmos.CosmosItemSerializer;
+import com.azure.cosmos.models.*;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.microsoft.azure.documentdb.SqlParameter;
@@ -21,6 +32,7 @@ import io.github.thunderz99.cosmos.dto.EvalSkip;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import io.github.thunderz99.cosmos.util.LogTracker;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -3315,6 +3327,119 @@ class CosmosDatabaseImplTest {
 
     }
 
+    @Test
+    void doBulkWithRetry_should_work() throws Exception {
+        var tracker = LogTracker.getInstance(CosmosDatabaseImpl.class, Level.INFO);
+        var partition = "Users";
+
+        var data = new ArrayList<User>(10);
+        for (int i = 0; i < 10; i++) {
+            data.add(new User("doBulkWithRetry_should_work_" + i, "first" + i, "last" + i));
+        }
+
+        try {
+
+            var partitionKey = new PartitionKey(partition);
+            var operations = data.stream().map(it -> {
+                        var map = JsonUtil.toMap(it);
+                        map.put(Cosmos.getDefaultPartitionKey(), partition);
+                        return CosmosBulkOperations.getCreateItemOperation(map, partitionKey);
+                    }
+            ).collect(Collectors.toList());
+
+            var wait = 5;
+            final var i = new AtomicInteger(0);
+            CosmosDatabaseImpl.doBulkWithRetry(coll, operations,
+                    (ops) -> {
+                        if(i.get() < 2) {
+                            i.incrementAndGet();
+                            var iter = ops.iterator();
+                            return List.of(generateCosmosBulkOperationResponse(iter.next(),
+                                    generateCosmosBulkItemResponse(429, 5),
+                                    new CosmosException(429, "429", "Too Many Requests", 5)));
+                        }
+                        return List.of();
+                    });
+
+            // check retry logic is called in WARN level
+            var events = tracker.getEvents().stream().filter(e -> e.getLevel() == Level.WARN).collect(Collectors.toList());
+            assertThat(events.get(0).toString()).isEqualTo(String.format("[WARN] doBulkWithRetry 429 occurred. Code:429, coll:%s, partition:[\"%s\"]. operationType:CREATE, Wait:%d ms", coll, partition, wait));
+
+            // wait should be doubled
+            assertThat(events.get(1).toString()).isEqualTo(String.format("[WARN] doBulkWithRetry 429 occurred. Code:429, coll:%s, partition:[\"%s\"]. operationType:CREATE, Wait:%d ms", coll, partition, wait * 2));
+
+        } finally {
+            db.bulkDelete(coll, data, partition);
+        }
+    }
+
+    /**
+     * use reflect to generate CosmosBulkItemResponse for test(which is not accessible directly)
+     * @param statusCode
+     * @param retryAfter
+     * @return
+     * @throws Exception
+     */
+    static CosmosBulkItemResponse generateCosmosBulkItemResponse(int statusCode, int retryAfter) throws Exception {
+        // Use reflection to access the package-private constructor
+        Constructor<CosmosBulkItemResponse> constructor =
+                CosmosBulkItemResponse.class.getDeclaredConstructor(
+                        String.class,
+                        double.class,
+                        ObjectNode.class,
+                        int.class,
+                        Duration.class,
+                        int.class,
+                        Map.class,
+                        CosmosDiagnostics.class,
+                        CosmosItemSerializer.class);
+
+        // Make the constructor accessible
+        constructor.setAccessible(true);
+
+        // Create an instance of CosmosBulkItemResponse using the constructor
+        CosmosBulkItemResponse response = constructor.newInstance(
+                "etagValue",                        // eTag
+                1.0,                                // requestCharge
+                JsonNodeFactory.instance.objectNode(), // resourceObject
+                statusCode,                                // statusCode
+                Duration.ofMillis(retryAfter),             // retryAfter
+                0,                                  // subStatusCode
+                new HashMap<>(),                    // responseHeaders
+                null,                               // cosmosDiagnostics
+                null                                // effectiveItemSerializer
+        );
+
+        return response;
+
+    }
+
+
+    static CosmosBulkOperationResponse generateCosmosBulkOperationResponse(CosmosItemOperation op, CosmosBulkItemResponse itemResponse, Exception e) throws Exception {
+        // Use reflection to access the package-private constructor
+        Constructor<CosmosBulkOperationResponse> constructor =
+                CosmosBulkOperationResponse.class.getDeclaredConstructor(
+                        CosmosItemOperation.class, // Operation
+                        CosmosBulkItemResponse.class, // Response
+                        Exception.class, // Exception
+                        Object.class // BatchContext (TContext)
+                );
+
+        // Make the constructor accessible
+        constructor.setAccessible(true);
+
+
+        // Create an instance of CosmosBulkOperationResponse using the constructor
+        CosmosBulkOperationResponse<String> response = constructor.newInstance(
+                op,
+                itemResponse,
+                e,
+                null
+        );
+
+        return response;
+    }
+
 
     static void initFamiliesData() throws Exception {
         var partition = "Families";
@@ -3353,5 +3478,6 @@ class CosmosDatabaseImplTest {
             db.delete(coll, user4.id, "Users2");
         }
     }
+
 
 }
