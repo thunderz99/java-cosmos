@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import ch.qos.logback.classic.Level;
 import com.azure.cosmos.implementation.CosmosError;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
@@ -44,6 +45,8 @@ class RetryUtilTest {
         { // success after 2 retries. for 429
             final var i = new AtomicInteger(0);
 
+            var tracker = LogTracker.getInstance(RetryUtil.class);
+
             // success within 1 second
             var ret = assertTimeout(ofSeconds(1), () ->
                     RetryUtil.executeWithRetry(() -> {
@@ -54,6 +57,10 @@ class RetryUtilTest {
                         return "OK";
                     })
             );
+
+            // assert that the WARN level log is logged
+            assertThat(tracker.getEvents()).anyMatch(e -> e.getLevel() == Level.WARN
+                    && e.getFormattedMessage().contains("RetryUtil 429 occurred. Code:429, Wait:10 ms"));
             assertThat(ret).isEqualTo("OK");
         }
 
@@ -76,6 +83,8 @@ class RetryUtilTest {
         { // success after 1 retries. for 408 and CosmosException
             final var i = new AtomicInteger(0);
 
+            var tracker = LogTracker.getInstance(RetryUtil.class);
+
             // success within 1 second
             var ret = assertTimeout(ofSeconds(1), () ->
                     RetryUtil.executeWithRetry(() -> {
@@ -85,7 +94,11 @@ class RetryUtilTest {
                         return "OK";
                     })
             );
+
+            assertThat(tracker.getEvents()).anyMatch(e -> e.getLevel() == Level.WARN
+                    && e.getFormattedMessage().contains("RetryUtil 429 occurred. Code:408, Wait:5 ms"));
             assertThat(ret).isEqualTo("OK");
+
         }
     }
 

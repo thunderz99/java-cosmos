@@ -1189,7 +1189,17 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 }
         ).collect(Collectors.toList());
 
-        return doBulkWithRetry(coll, operations);
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+        log.info("begin bulkCreate coll:{}, partition:{}, account:{}", coll, partition, getAccount());
+
+        var ret = doBulkWithRetry(coll, operations,
+                (ops) -> container.executeBulkOperations(ops));
+
+        log.info("end bulkCreate coll:{}, partition:{}, account:{}", coll, partition, getAccount());
+
+        return ret;
+
     }
 
     /**
@@ -1212,7 +1222,14 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 }
         ).collect(Collectors.toList());
 
-        return doBulkWithRetry(coll, operations);
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+        log.info("begin bulkUpsert coll:{}, partition:{}, account:{}", coll, partition, getAccount());
+
+        var ret = doBulkWithRetry(coll, operations,
+                (ops) -> container.executeBulkOperations(ops));
+
+        log.info("end bulkUpsert coll:{}, partition:{}, account:{}", coll, partition, getAccount());
+        return ret;
     }
 
     /**
@@ -1239,21 +1256,47 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 .map(it -> CosmosBulkOperations.getDeleteItemOperation(it, partitionKey))
                 .collect(Collectors.toList());
 
-        var result = doBulkWithRetry(coll, operations);
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+
+        log.info("begin bulkDelete coll:{}, partition:{}, account:{}", coll, partition, getAccount());
+
+        var result = doBulkWithRetry(coll, operations,
+                (ops) -> container.executeBulkOperations(ops));
 
         result.successList = ids.stream().map(it ->
                 new CosmosDocument(Map.of("id", it))
         ).collect(Collectors.toList());
 
-
+        log.info("end bulkDelete coll:{}, partition:{}, account:{}", coll, partition, getAccount());
         return result;
     }
 
-    private CosmosBulkResult doBulkWithRetry(String coll, List<CosmosItemOperation> operations) {
-        var container = this.clientV4.getDatabase(db).getContainer(coll);
-        var bulkResult = new CosmosBulkResult();
 
-        int maxRetries = 10;
+    /**
+     * do common bulk operation(create, upsert, delete) with retry
+     *
+     * @param coll           collection name
+     * @param operations     operations to be executed
+     * @param operationFunc  function to execute the operation
+     * @return CosmosBulkResult
+     * @throws Exception
+     */
+    static CosmosBulkResult doBulkWithRetry(String coll, List<CosmosItemOperation> operations, BulkOperationable operationFunc) throws Exception {
+        return doBulkWithRetry(coll, operations,operationFunc, 3);
+    }
+
+    /**
+     * do common bulk operation(create, upsert, delete) with retry
+     *
+     * @param coll           collection name
+     * @param operations     operations to be executed
+     * @param operationFunc  function to execute the operation
+     * @param maxRetries     max retry times(default to 3)
+     * @return CosmosBulkResult
+     * @throws Exception
+     */
+    static CosmosBulkResult doBulkWithRetry(String coll, List<CosmosItemOperation> operations, BulkOperationable operationFunc, int maxRetries) throws Exception {
+        var bulkResult = new CosmosBulkResult();
         long delay = 0;
         long maxDelay = 16000;
 
@@ -1262,7 +1305,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         for (int attempt = 0; attempt < maxRetries; attempt++) {
 
             var retryTasks = new ArrayList<CosmosItemOperation>();
-            var execResult = container.executeBulkOperations(operations);
+            var execResult = operationFunc.execute(operations);
 
             for (CosmosBulkOperationResponse<?> result : execResult) {
                 var operation = result.getOperation();
@@ -1270,11 +1313,13 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 if (ObjectUtils.isEmpty(response)) {
                     continue;
                 }
-                log.info("Document bulk operation: operation type:{}, request charge:{}",
-                        operation.getOperationType().name(), response.getRequestCharge());
+                log.info("Document bulk operation: operation type:{}, request charge:{}, coll:{}, partition:{}",
+                        operation.getOperationType().name(), response.getRequestCharge(), coll, operation.getPartitionKeyValue().toString());
 
                 if (RetryUtil.shouldRetry(response.getStatusCode())) {
                     delay = Math.max(delay, response.getRetryAfterDuration().toMillis());
+                    log.warn("doBulkWithRetry 429 occurred. Code:{}, coll:{}, partition:{}. operationType:{}, Wait:{} ms",
+                            response.getStatusCode(), coll, operation.getPartitionKeyValue().toString(), operation.getOperationType(), delay);
                     retryTasks.add(operation);
                 } else if (response.isSuccessStatusCode()) {
                     var item = response.getItem(mapInstance.getClass());
@@ -1380,6 +1425,25 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      */
     public String getDatabaseName() {
         return this.db;
+    }
+
+
+    /**
+     * An interface to execute bulk operations(create/upsert/delete), used in bulkCreate/bulkUpsert/bulkDelete as a parameter.
+     *
+     * <p>
+     *     this makes unit test simpler
+     * </p>
+     */
+    @FunctionalInterface
+    public interface BulkOperationable {
+        /**
+         * do bulk operations
+         * @param operations
+         * @return
+         * @throws Exception
+         */
+        Iterable<CosmosBulkOperationResponse<Object>> execute(Iterable<CosmosItemOperation> operations) throws Exception;
     }
 
 }
