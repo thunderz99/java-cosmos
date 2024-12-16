@@ -1229,7 +1229,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
                 // Commit the transaction
                 session.commitTransaction();
 
-                log.info("Batch created Documents in collection:{}, partition:{}, insertedCount:{}, account:{}",
+                log.info("Batch created Documents in collection:{}, partition:{}, createdCount:{}, account:{}",
                         coll, partition, documents.size(), getAccount());
 
             } catch (Exception e) {
@@ -1307,7 +1307,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
                 // Commit the transaction
                 session.commitTransaction();
 
-                log.info("Batch created Documents in collection:{}, partition:{}, insertedCount:{}, account:{}",
+                log.info("Batch upserted Documents in collection:{}, partition:{}, upsertedCount:{}, account:{}",
                         coll, partition, documents.size(), getAccount());
 
             } catch (Exception e) {
@@ -1362,7 +1362,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
                 // Commit the transaction
                 session.commitTransaction();
 
-                log.info("Batch created Documents in collection:{}, partition:{}, insertedCount:{}, account:{}",
+                log.info("Batch deleted Documents in collection:{}, partition:{}, deletedCount:{}, account:{}",
                         coll, partition, ids.size(), getAccount());
 
 
@@ -1444,7 +1444,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         var result = container.insertMany(documents);
 
         var inserted = result.getInsertedIds();
-        log.info("Bulk created Documents in collection:{}, partition:{}, insertedCount:{}, account:{}",
+        log.info("Bulk created Documents in collection:{}, partition:{}, createdCount:{}, account:{}",
                 coll, partition, inserted.size(), getAccount());
 
         // generate the bulk result
@@ -1517,7 +1517,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         var totalModifiedCount = bulkWriteResult.getModifiedCount() + bulkWriteResult.getUpserts().size();
 
-        log.info("Bulk created Documents in collection:{}, partition:{}, upsertedCount:{}, account:{}",
+        log.info("Bulk upserted Documents in collection:{}, partition:{}, upsertedCount:{}, account:{}",
                 coll, partition, totalModifiedCount, getAccount());
 
         // generate the bulk result
