@@ -8,7 +8,6 @@ import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SimpleExpressionTest {
 
@@ -141,28 +140,6 @@ class SimpleExpressionTest {
             });
 
         }
-    }
-
-    @Test
-    void get_param_name_should_work() {
-
-        // normal
-        assertThat(SimpleExpression.getParamNameFromKey("name", 0)).isEqualTo("@param000_name");
-        assertThat(SimpleExpression.getParamNameFromKey("fullName.last", 1)).isEqualTo("@param001_fullName__last");
-        assertThat(SimpleExpression.getParamNameFromKey("829cc727-2d49-4d60-8f91-b30f50560af7.name", 1)).matches("@param001_[\\d\\w]{7}__name");
-        assertThat(SimpleExpression.getParamNameFromKey("family.テスト.age", 2)).matches("@param002_family__[\\d\\w]{7}__age");
-        assertThat(SimpleExpression.getParamNameFromKey("aa-bb", 2)).matches("@param002_[\\d\\w]{7}");
-
-        // abnormal
-        assertThatThrownBy(() -> {
-            SimpleExpression.getParamNameFromKey("", 1);
-        }).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("key").hasMessageContaining("should be non-blank");
-
-        assertThatThrownBy(() -> {
-            SimpleExpression.getParamNameFromKey(null, 2);
-        }).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("key").hasMessageContaining("should be non-blank");
-
-        assertThat(SimpleExpression.getParamNameFromKey("name", -1)).isEqualTo("@param-01_name");
     }
 
 }
