@@ -18,7 +18,7 @@ import org.bson.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.swing.text.html.parser.Entity;
+import java.sql.SQLException;
 import java.util.*;
 
 import static com.mongodb.client.model.Filters.eq;
@@ -1067,62 +1067,45 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         doCheckBeforeBatch(coll, data, partition);
 
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        var documents = new ArrayList<Document>();
-//
-//        // Prepare documents for insertion
-//        for (Object obj : data) {
-//            var map = JsonUtil.toMap(obj);
-//
-//            // Add partition info
-//            map.put(Cosmos.getDefaultPartitionKey(), partition);
-//
-//            // Handle ID
-//            var id = addId4Mongo(map);
-//
-//            // Add _ts field
-//            addTimestamp(map);
-//
-//            // add _expireAt if ttl is set
-//            addExpireAt4Mongo(map);
-//
-//            // add etag for optimistic lock if enabled
-//            addEtag4Mongo(map);
-//
-//
-//            documents.add(new Document(map));
-//        }
-//
-//        // Start a client session
-//        try (var session = this.client.startSession()) {
-//            // Start a transaction
-//            session.startTransaction();
-//
-//            try {
-//                // Perform batch insertion within the transaction
-//                container.insertMany(session, documents);
-//
-//                // Commit the transaction
-//                session.commitTransaction();
-//
-//                log.info("Batch created Documents in collection:{}, partition:{}, insertedCount:{}, account:{}",
-//                        coll, partition, documents.size(), getAccount());
-//
-//            } catch (Exception e) {
-//                // Abort the transaction if something goes wrong
-//                session.abortTransaction();
-//
-//                if (e instanceof MongoException) {
-//                    throw new CosmosException((MongoException) e);
-//                }
-//                throw new CosmosException(500, "500", "batchCreate Transaction failed: " + e.getMessage(), e);
-//            }
-//        }
-//
-//        return documents.stream().map(doc -> getCosmosDocument(doc)).collect(Collectors.toList());
-        throw new NotImplementedException();
+        coll = TableUtil.checkAndNormalizeValidEntityName(coll);
 
+        var records = new ArrayList<PostgresRecord>();
+
+        for(var datum : data) {
+            Map<String, Object> map = JsonUtil.toMap(datum);
+
+            // add partition info
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
+
+            // set id(for java-cosmos) before insert
+            var id = addId4Postgres(map);
+
+            // add timestamp field "_ts"
+            addTimestamp(map);
+
+            // add _expireAt if ttl is set
+            addExpireAt(map);
+
+            // add etag for optimistic lock if enabled
+            addEtag4(map);
+
+            records.add(new PostgresRecord(id, map));
+        }
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        try (var conn = this.dataSource.getConnection()) {
+            // TODO: RetryUtil.executeWithRetry
+            TableUtil.batchInsertRecords(conn, coll, partition, records);
+            if (log.isInfoEnabled()){
+                log.info("batch created Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
+            }
+        } catch (SQLException e){
+            log.warn("Error when batch creating records from table '{}.{}'. records size:{}. ", coll, partition, records.size(), e);
+            throw e;
+        }
+
+        return records.stream().map(r -> getCosmosDocument(r)).toList();
     }
 
     /**
@@ -1138,69 +1121,45 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     public List<CosmosDocument> batchUpsert(String coll, List<?> data, String partition) throws Exception {
         doCheckBeforeBatch(coll, data, partition);
 
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        var bulkOperations = new ArrayList<WriteModel<Document>>();
-//
-//        var documents = new ArrayList<Document>();
-//
-//        for (Object obj : data) {
-//            Map<String, Object> map = JsonUtil.toMap(obj);
-//
-//            // Add partition info
-//            map.put(Cosmos.getDefaultPartitionKey(), partition);
-//
-//            // Handle ID
-//            var id = addId4Mongo(map);
-//
-//            // Add _ts field
-//            addTimestamp(map);
-//
-//            // add _expireAt if ttl is set
-//            addExpireAt4Mongo(map);
-//
-//            // add etag for optimistic lock if enabled
-//            addEtag4Mongo(map);
-//
-//            var document = new Document(map);
-//
-//            // Create upsert operation
-//            var filter = Filters.eq("_id", id);
-//            var update = new Document("$set", document);
-//            var updateOneModel = new UpdateOneModel<Document>(filter, update, new UpdateOptions().upsert(true));
-//
-//            bulkOperations.add(updateOneModel);
-//            documents.add(document);
-//        }
-//
-//        // Start a client session
-//        try (var session = this.client.startSession()) {
-//            // Start a transaction
-//            session.startTransaction();
-//
-//            try {
-//                // Perform batch insertion within the transaction
-//                container.bulkWrite(session, bulkOperations);
-//
-//                // Commit the transaction
-//                session.commitTransaction();
-//
-//                log.info("Batch created Documents in collection:{}, partition:{}, insertedCount:{}, account:{}",
-//                        coll, partition, documents.size(), getAccount());
-//
-//            } catch (Exception e) {
-//                // Abort the transaction if something goes wrong
-//                session.abortTransaction();
-//
-//                if (e instanceof MongoException) {
-//                    throw new CosmosException((MongoException) e);
-//                }
-//                throw new CosmosException(500, "500", "batchUpsert Transaction failed: " + e.getMessage(), e);
-//            }
-//        }
-//
-//        return documents.stream().map(doc -> getCosmosDocument(doc)).collect(Collectors.toList());
-        throw new NotImplementedException();
+        coll = TableUtil.checkAndNormalizeValidEntityName(coll);
+
+        var records = new ArrayList<PostgresRecord>();
+
+        for (var datum : data) {
+            Map<String, Object> map = JsonUtil.toMap(datum);
+
+            // add partition info
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
+
+            // set id(for java-cosmos) before upsert
+            var id = addId4Postgres(map);
+
+            // add timestamp field "_ts"
+            addTimestamp(map);
+
+            // add _expireAt if ttl is set
+            addExpireAt(map);
+
+            // add etag for optimistic lock if enabled
+            addEtag4(map);
+
+            records.add(new PostgresRecord(id, map));
+        }
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        try (var conn = this.dataSource.getConnection()) {
+            // TODO: RetryUtil.executeWithRetry
+            TableUtil.batchUpsertRecords(conn, coll, partition, records);
+            if (log.isInfoEnabled()) {
+                log.info("batch upserted Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
+            }
+        } catch (SQLException e) {
+            log.warn("Error when batch upserting records from table '{}.{}'. records size:{}. ", coll, partition, records.size(), e);
+            throw e;
+        }
+
+        return records.stream().map(r -> getCosmosDocument(r)).toList();
     }
 
     /**
@@ -1216,48 +1175,31 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     public List<CosmosDocument> batchDelete(String coll, List<?> data, String partition) throws Exception {
         doCheckBeforeBatch(coll, data, partition);
 
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        var ids = new ArrayList<String>();
-//
-//        // Extract IDs from data to be deleted
-//        for (var obj : data) {
-//            var id = getId(obj);
-//            checkValidId(id);
-//            if (StringUtils.isNotEmpty(id)) {
-//                ids.add(id);
-//            }
-//        }
-//
-//        // Start a client session
-//        try (var session = this.client.startSession()) {
-//            // Start a transaction
-//            session.startTransaction();
-//
-//            try {
-//                // Perform batch insertion within the transaction
-//                var result = container.deleteMany(session, Filters.in("_id", ids));
-//
-//                // Commit the transaction
-//                session.commitTransaction();
-//
-//                log.info("Batch created Documents in collection:{}, partition:{}, insertedCount:{}, account:{}",
-//                        coll, partition, ids.size(), getAccount());
-//
-//
-//            } catch (Exception e) {
-//                // Abort the transaction if something goes wrong
-//                session.abortTransaction();
-//
-//                if (e instanceof MongoException) {
-//                    throw new CosmosException((MongoException) e);
-//                }
-//                throw new CosmosException(500, "500", "batchDelete Transaction failed: " + e.getMessage(), e);
-//            }
-//        }
-//
-//        return ids.stream().map(id -> new CosmosDocument(Map.of("id", id))).collect(Collectors.toList());
-        throw new NotImplementedException();
+        var ids = new ArrayList<String>();
+
+        // Extract IDs from data to be deleted
+        for (var obj : data) {
+            var id = getId(obj);
+            checkValidId(id);
+            if (StringUtils.isNotEmpty(id)) {
+                ids.add(id);
+            }
+        }
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        try (var conn = this.dataSource.getConnection()) {
+            // TODO: RetryUtil.executeWithRetry
+            TableUtil.batchDeleteRecords(conn, coll, partition, ids);
+            if (log.isInfoEnabled()){
+                log.info("batch deleted Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, ids.size(), partition, getAccount());
+            }
+        } catch(SQLException e){
+            log.warn("Error when batch deleting records from table '{}.{}'. records size:{}. ", coll, partition, ids.size(), e);
+            throw e;
+        }
+
+        return ids.stream().map(id -> new CosmosDocument(Map.of("id", id))).toList();
     }
 
 
@@ -1289,58 +1231,44 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         doCheckBeforeBulk(coll, data, partition);
 
-//        var documents = new ArrayList<Document>();
-//
-//        // id -> document map in order to generate the return value
-//        var documentsMap = new LinkedHashMap<String, Document>();
-//
-//        for (Object obj : data) {
-//            Map<String, Object> map = JsonUtil.toMap(obj);
-//
-//            // add partition info
-//            map.put(Cosmos.getDefaultPartitionKey(), partition);
-//
-//            // add _id for mongo
-//            var id = addId4Mongo(map);
-//
-//            // add _ts field
-//            addTimestamp(map);
-//
-//            // add _expireAt if ttl is set
-//            addExpireAt4Mongo(map);
-//
-//            // add etag for optimistic lock if enabled
-//            addEtag4Mongo(map);
-//
-//            var document = new Document(map);
-//            // prepare documents to insert
-//            documents.add(document);
-//            documentsMap.put(id, document);
-//        }
-//
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        // do bulk operations
-//        var result = container.insertMany(documents);
-//
-//        var inserted = result.getInsertedIds();
-//        log.info("Bulk created Documents in collection:{}, partition:{}, insertedCount:{}, account:{}",
-//                coll, partition, inserted.size(), getAccount());
-//
-//        // generate the bulk result
-//        var ret = new CosmosBulkResult();
-//        var insertedIdSet = inserted.entrySet().stream().map(k -> k.getValue().asString().getValue()).collect(Collectors.toCollection(LinkedHashSet::new));
-//
-//        for (var id : documentsMap.keySet()) {
-//            if (insertedIdSet.contains(id)) {
-//                ret.successList.add(getCosmosDocument(documentsMap.get(id)));
-//            } else {
-//                ret.fatalList.add(new CosmosException(500, id, "Failed to insert"));
-//            }
-//        }
-//
-//        return ret;
-        throw new NotImplementedException();
+        coll = TableUtil.checkAndNormalizeValidEntityName(coll);
+
+        var records = new ArrayList<PostgresRecord>();
+
+        for(var datum : data) {
+            Map<String, Object> map = JsonUtil.toMap(datum);
+
+            // add partition info
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
+
+            // set id(for java-cosmos) before insert
+            var id = addId4Postgres(map);
+
+            // add timestamp field "_ts"
+            addTimestamp(map);
+
+            // add _expireAt if ttl is set
+            addExpireAt(map);
+
+            // add etag for optimistic lock if enabled
+            addEtag4(map);
+
+            records.add(new PostgresRecord(id, map));
+        }
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        try (var conn = this.dataSource.getConnection()) {
+            // TODO: RetryUtil.executeWithRetry
+            var ret = TableUtil.bulkInsertRecords(conn, coll, partition, records);
+            if (log.isInfoEnabled()){
+                log.info("bulk created Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
+            }
+            return ret;
+        } catch (SQLException e){
+            log.warn("Error when bulk creating records from table '{}.{}'. records size:{}. ", coll, partition, records.size(), e);
+            throw e;
+        }
 
     }
 
@@ -1357,65 +1285,44 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         doCheckBeforeBulk(coll, data, partition);
 
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        var bulkOperations = new ArrayList<WriteModel<Document>>();
-//
-//        // id -> document map in order to generate the return value
-//        var documentsMap = new LinkedHashMap<String, Document>();
-//
-//        for (Object obj : data) {
-//            Map<String, Object> map = JsonUtil.toMap(obj);
-//
-//            // Add partition info
-//            map.put(Cosmos.getDefaultPartitionKey(), partition);
-//
-//            // Handle ID
-//            var id = addId4Mongo(map);
-//
-//            // Add _ts field
-//            addTimestamp(map);
-//
-//            // add _expireAt if ttl is set
-//            addExpireAt4Mongo(map);
-//
-//            // add etag for optimistic lock if enabled
-//            addEtag4Mongo(map);
-//
-//            var document = new Document(map);
-//
-//            // Create upsert operation
-//            var filter = Filters.eq("_id", id);
-//            var update = new Document("$set", document);
-//            var updateOneModel = new UpdateOneModel<Document>(filter, update, new UpdateOptions().upsert(true));
-//
-//            bulkOperations.add(updateOneModel);
-//            documentsMap.put(id, document);
-//        }
-//
-//        // Execute bulkWrite operation
-//        var bulkWriteResult = container.bulkWrite(bulkOperations, new BulkWriteOptions().ordered(true));
-//
-//        var totalModifiedCount = bulkWriteResult.getModifiedCount() + bulkWriteResult.getUpserts().size();
-//
-//        log.info("Bulk created Documents in collection:{}, partition:{}, upsertedCount:{}, account:{}",
-//                coll, partition, totalModifiedCount, getAccount());
-//
-//        // generate the bulk result
-//        var ret = new CosmosBulkResult();
-//
-//        var index = 0;
-//        for (var entry : documentsMap.entrySet()) {
-//            if (index < totalModifiedCount) {
-//                ret.successList.add(getCosmosDocument(entry.getValue()));
-//            } else {
-//                ret.fatalList.add(new CosmosException(500, entry.getKey(), "Failed to upsert"));
-//            }
-//            index++;
-//        }
-//
-//        return ret;
-        throw new NotImplementedException();
+        coll = TableUtil.checkAndNormalizeValidEntityName(coll);
+
+        var records = new ArrayList<PostgresRecord>();
+
+        for(var datum : data) {
+            Map<String, Object> map = JsonUtil.toMap(datum);
+
+            // add partition info
+            map.put(Cosmos.getDefaultPartitionKey(), partition);
+
+            // set id(for java-cosmos) before upsert
+            var id = addId4Postgres(map);
+
+            // add timestamp field "_ts"
+            addTimestamp(map);
+
+            // add _expireAt if ttl is set
+            addExpireAt(map);
+
+            // add etag for optimistic lock if enabled
+            addEtag4(map);
+
+            records.add(new PostgresRecord(id, map));
+        }
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        try (var conn = this.dataSource.getConnection()) {
+            // TODO: RetryUtil.executeWithRetry
+            var ret = TableUtil.bulkUpsertRecords(conn, coll, partition, records);
+            if (log.isInfoEnabled()){
+                log.info("bulk upserted Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
+            }
+            return ret;
+        } catch (SQLException e){
+            log.warn("Error when bulk upserting records from table '{}.{}'. records size:{}. ", coll, partition, records.size(), e);
+            throw e;
+        }
 
     }
 
@@ -1430,43 +1337,32 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     public CosmosBulkResult bulkDelete(String coll, List<?> data, String partition) throws Exception {
 
-//        doCheckBeforeBulk(coll, data, partition);
-//
-//        var ids = new ArrayList<String>();
-//
-//        // Extract IDs from data to be deleted
-//        for (var obj : data) {
-//            var id = getId(obj);
-//            checkValidId(id);
-//            if (StringUtils.isNotEmpty(id)) {
-//                ids.add(id);
-//            }
-//        }
-//
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        // Perform deleteMany operation using the list of IDs
-//        var filter = Filters.in("_id", ids);
-//        var deleteResult = container.deleteMany(filter);
-//
-//        log.info("Bulk deleted Documents in collection:{}, partition:{}, deletedCount:{}, account:{}",
-//                coll, partition, deleteResult.getDeletedCount(), getAccount());
-//
-//        // Generate the bulk result
-//        var ret = new CosmosBulkResult();
-//
-//        if (deleteResult.getDeletedCount() > 0) {
-//            ret.successList = ids.stream()
-//                    .map(it -> new CosmosDocument(Map.of("id", it)))
-//                    .collect(Collectors.toList());
-//        } else {
-//            for (String id : ids) {
-//                ret.fatalList.add(new CosmosException(500, id, "Failed to delete"));
-//            }
-//        }
-//
-//        return ret;
-        throw new NotImplementedException();
+        doCheckBeforeBulk(coll, data, partition);
+
+        var ids = new ArrayList<String>();
+
+        // Extract IDs from data to be deleted
+        for (var obj : data) {
+            var id = getId(obj);
+            checkValidId(id);
+            if (StringUtils.isNotEmpty(id)) {
+                ids.add(id);
+            }
+        }
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        try (var conn = this.dataSource.getConnection()) {
+            // TODO: RetryUtil.executeWithRetry
+            var ret = TableUtil.bulkDeleteRecords(conn, coll, partition, ids);
+            if (log.isInfoEnabled()){
+                log.info("bulk deleted Document:{}/docs/, deleted count:{}, partition:{}, account:{}", collectionLink, ids.size(), partition, getAccount());
+            }
+            return ret;
+        } catch (SQLException e){
+            log.warn("Error when bulk deleting records from table '{}.{}'. records size:{}. ", coll, partition, ids.size(), e);
+            throw e;
+        }
     }
 
 

@@ -1,6 +1,9 @@
 package io.github.thunderz99.cosmos.util;
 
+import com.google.common.collect.Maps;
+import io.github.thunderz99.cosmos.CosmosDocument;
 import io.github.thunderz99.cosmos.CosmosException;
+import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresRecord;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
@@ -12,8 +15,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Utility class that provides methods to create and check the existence of a table in a postgres database.
@@ -68,11 +70,11 @@ public class TableUtil {
             // create table
 
             var createTableSQL = String.format("""
-                CREATE TABLE %s.%s (
-                    %s TEXT NOT NULL PRIMARY KEY,
-                    %s JSONB NOT NULL
-                )
-            """, schemaName, tableName, ID, DATA);
+                        CREATE TABLE %s.%s (
+                            %s TEXT NOT NULL PRIMARY KEY,
+                            %s JSONB NOT NULL
+                        )
+                    """, schemaName, tableName, ID, DATA);
 
             try (PreparedStatement pstmt = conn.prepareStatement(createTableSQL)) {
                 pstmt.executeUpdate();
@@ -130,7 +132,7 @@ public class TableUtil {
      */
     public static String checkAndNormalizeValidEntityName(String entityName) {
 
-        Checker.checkNotBlank(entityName,"entityName");
+        Checker.checkNotBlank(entityName, "entityName");
 
         // the following characters are not allowed in entity names
         // https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
@@ -144,10 +146,10 @@ public class TableUtil {
     /**
      * Inserts a record into a table and returns the inserted record.
      *
-     * @param conn the database connection
+     * @param conn       the database connection
      * @param schemaName the name of the schema
-     * @param tableName the name of the table
-     * @param record the record to insert
+     * @param tableName  the name of the table
+     * @param record     the record to insert
      * @return the inserted record as a PostgresRecord
      * @throws SQLException if a database error occurs
      */
@@ -166,18 +168,18 @@ public class TableUtil {
         var json = JsonUtil.toJson(map);
 
         // insert into table and return the result
-        var insertTableSQL = String.format("""
-        INSERT INTO %s.%s (%s, %s)
-        VALUES (?, ?)
-        RETURNING *
-        """, schemaName, tableName, ID, DATA);
+        var insertSQL = String.format("""
+                INSERT INTO %s.%s (%s, %s)
+                VALUES (?, ?)
+                RETURNING *
+                """, schemaName, tableName, ID, DATA);
 
-        try (var pstmt = conn.prepareStatement(insertTableSQL)) {
+        try (var pstmt = conn.prepareStatement(insertSQL)) {
             pstmt.setString(1, id);
             pstmt.setObject(2, json, Types.OTHER);
 
             // Execute the query and return the result
-            try(var resultSet = pstmt.executeQuery()) {
+            try (var resultSet = pstmt.executeQuery()) {
                 if (resultSet.next()) {
                     return new PostgresRecord(resultSet.getString(ID), JsonUtil.toMap(resultSet.getString(DATA)));
                 }
@@ -198,23 +200,24 @@ public class TableUtil {
     /**
      * Read a record from a table by id.
      *
-     * @param conn the database connection
+     * @param conn       the database connection
      * @param schemaName the name of the schema
-     * @param tableName the name of the table
-     * @param id the id of the record
+     * @param tableName  the name of the table
+     * @param id         the id of the record
      * @return the record as a PostgresRecord
      * @throws SQLException if a database error occurs
      */
     public static PostgresRecord readRecord(Connection conn, String schemaName, String tableName, String id) throws Exception {
         return readRecord(conn, schemaName, tableName, id, false);
     }
+
     /**
      * Read a record from a table by id.
      *
-     * @param conn the database connection
+     * @param conn       the database connection
      * @param schemaName the name of the schema
-     * @param tableName the name of the table
-     * @param id the id of the record
+     * @param tableName  the name of the table
+     * @param id         the id of the record
      * @return the record as a PostgresRecord
      * @throws SQLException if a database error occurs
      */
@@ -226,18 +229,18 @@ public class TableUtil {
         Checker.checkNotEmpty(id, "id");
 
         // query the table and return the result
-        var queryTableSQL = String.format("""
-        SELECT * FROM %s.%s WHERE %s = ?
-        """, schemaName, tableName, ID);
+        var querySQL = String.format("""
+                SELECT * FROM %s.%s WHERE %s = ?
+                """, schemaName, tableName, ID);
 
-        if(selectForUpdate){
-            queryTableSQL = queryTableSQL + " FOR UPDATE";
+        if (selectForUpdate) {
+            querySQL = querySQL + " FOR UPDATE";
         }
 
-        try (var pstmt = conn.prepareStatement(queryTableSQL)) {
+        try (var pstmt = conn.prepareStatement(querySQL)) {
             pstmt.setString(1, id);
             // Execute the query and return the result
-            try(var resultSet = pstmt.executeQuery()) {
+            try (var resultSet = pstmt.executeQuery()) {
                 if (resultSet.next()) {
                     return new PostgresRecord(resultSet.getString(ID), JsonUtil.toMap(resultSet.getString(DATA)));
                 }
@@ -252,10 +255,10 @@ public class TableUtil {
     /**
      * Update a record in a table.
      *
-     * @param conn the database connection
+     * @param conn       the database connection
      * @param schemaName the name of the schema
-     * @param tableName the name of the table
-     * @param record the record to update
+     * @param tableName  the name of the table
+     * @param record     the record to update
      * @throws SQLException if a database error occurs
      */
     public static PostgresRecord updateRecord(Connection conn, String schemaName, String tableName, PostgresRecord record) throws Exception {
@@ -273,19 +276,19 @@ public class TableUtil {
         var data = JsonUtil.toJson(map);
 
         // update table
-        var updateTableSQL = String.format("""
-        UPDATE %s.%s
-        SET %s = ?
-        WHERE %s = ?
-        RETURNING *
-        """, schemaName, tableName, DATA, ID);
+        var updateSQL = String.format("""
+                UPDATE %s.%s
+                SET %s = ?
+                WHERE %s = ?
+                RETURNING *
+                """, schemaName, tableName, DATA, ID);
 
-        try (var pstmt = conn.prepareStatement(updateTableSQL)) {
+        try (var pstmt = conn.prepareStatement(updateSQL)) {
             pstmt.setObject(1, data, Types.OTHER);
             pstmt.setString(2, id);
 
             // Execute the query and return the result
-            try(var resultSet = pstmt.executeQuery()) {
+            try (var resultSet = pstmt.executeQuery()) {
                 if (resultSet.next()) {
                     return new PostgresRecord(resultSet.getString(ID), JsonUtil.toMap(resultSet.getString(DATA)));
                 }
@@ -301,10 +304,10 @@ public class TableUtil {
     /**
      * Partially update a record's data column in a table.
      *
-     * @param conn the database connection
+     * @param conn       the database connection
      * @param schemaName the name of the schema
-     * @param tableName the name of the table
-     * @param record partial data to update
+     * @param tableName  the name of the table
+     * @param record     partial data to update
      * @throws Exception if a database error occurs
      */
     public static PostgresRecord updatePartialRecord(Connection conn, String schemaName, String tableName, PostgresRecord record) throws Exception {
@@ -332,19 +335,19 @@ public class TableUtil {
 
             var data = JsonUtil.toJson(merged);
 
-            var updateTableSQL = String.format("""
-            UPDATE %s.%s
-            SET %s = ?
-            WHERE %s = ?
-            RETURNING *
-            """, schemaName, tableName, DATA, ID);
+            var updateSQL = String.format("""
+                    UPDATE %s.%s
+                    SET %s = ?
+                    WHERE %s = ?
+                    RETURNING *
+                    """, schemaName, tableName, DATA, ID);
 
-            try (var pstmt = conn.prepareStatement(updateTableSQL)) {
+            try (var pstmt = conn.prepareStatement(updateSQL)) {
                 pstmt.setObject(1, data, Types.OTHER);
                 pstmt.setString(2, id);
 
                 // Execute the query and return the result
-                try(var resultSet = pstmt.executeQuery()) {
+                try (var resultSet = pstmt.executeQuery()) {
                     if (resultSet.next()) {
                         var newRecord = new PostgresRecord(resultSet.getString(ID), JsonUtil.toMap(resultSet.getString(DATA)));
                         conn.commit();
@@ -369,10 +372,10 @@ public class TableUtil {
     /**
      * Upsert. Insert a record into a table if not exist, otherwise update the record.
      *
-     * @param conn the database connection
+     * @param conn       the database connection
      * @param schemaName the name of the schema
-     * @param tableName the name of the table
-     * @param record the record to upsert
+     * @param tableName  the name of the table
+     * @param record     the record to upsert
      * @throws SQLException if a database error occurs
      */
     public static PostgresRecord upsertRecord(Connection conn, String schemaName, String tableName, PostgresRecord record) throws Exception {
@@ -389,20 +392,20 @@ public class TableUtil {
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
 
-        // insert into table and return the result
-        var insertTableSQL = String.format("""
-        INSERT INTO %s.%s (%s,%s)
-        VALUES (?, ?)
-        ON CONFLICT (%s) DO UPDATE SET %s = excluded.%s
-        RETURNING *
-        """, schemaName, tableName, ID, DATA, ID, DATA, DATA);
+        // upsert into table and return the result
+        var upsertSQL = String.format("""
+                INSERT INTO %s.%s (%s,%s)
+                VALUES (?, ?)
+                ON CONFLICT (%s) DO UPDATE SET %s = excluded.%s
+                RETURNING *
+                """, schemaName, tableName, ID, DATA, ID, DATA, DATA);
 
-        try (var pstmt = conn.prepareStatement(insertTableSQL)) {
+        try (var pstmt = conn.prepareStatement(upsertSQL)) {
             pstmt.setString(1, id);
             pstmt.setObject(2, data, Types.OTHER);
 
             // Execute the query and return the result
-            try(var resultSet = pstmt.executeQuery()) {
+            try (var resultSet = pstmt.executeQuery()) {
                 if (resultSet.next()) {
                     return new PostgresRecord(resultSet.getString(ID), JsonUtil.toMap(resultSet.getString(DATA)));
                 }
@@ -417,9 +420,9 @@ public class TableUtil {
     /**
      * patch a record using JsonPatch format.
      *
-     * @param conn the database connection
+     * @param conn       the database connection
      * @param schemaName the name of the schema
-     * @param tableName the name of the table
+     * @param tableName  the name of the table
      * @throws Exception if a database error occurs
      */
     public static PostgresRecord patchRecord(Connection conn, String schemaName, String tableName, String id, PatchOperations operations) throws Exception {
@@ -430,7 +433,7 @@ public class TableUtil {
         Checker.checkNotEmpty(id, "id");
         Checker.checkNotNull(operations, "operations");
 
-        if(CollectionUtils.isEmpty(operations.getPatchOperations())){
+        if (CollectionUtils.isEmpty(operations.getPatchOperations())) {
             log.warn("operations is empty. do nothing in table '{}.{}'. id:{}.", schemaName, tableName, id);
             return new PostgresRecord(id, Map.of());
         }
@@ -449,29 +452,29 @@ public class TableUtil {
 
         // update table's data column and return the result
         var patchTableSQL = String.format("""
-        UPDATE %s.%s 
-        SET %s = %s
-        WHERE %s = ?
-        RETURNING *
-        """, schemaName, tableName, DATA, subSql, ID);
+                UPDATE %s.%s 
+                SET %s = %s
+                WHERE %s = ?
+                RETURNING *
+                """, schemaName, tableName, DATA, subSql, ID);
 
         try (var pstmt = conn.prepareStatement(patchTableSQL)) {
 
             var index = 1;
-            for(var param : params){
-                if(param.value instanceof String strValue){
+            for (var param : params) {
+                if (param.value instanceof String strValue) {
                     pstmt.setString(index, "\"" + strValue + "\"");
                 } else {
                     pstmt.setString(index, JsonUtil.toJson(param.value));
                 }
-                index ++;
+                index++;
             }
 
             // add params used in WHERE clause
             pstmt.setString(index, id);
 
             // Execute the query and return the result
-            try(var resultSet = pstmt.executeQuery()) {
+            try (var resultSet = pstmt.executeQuery()) {
                 if (resultSet.next()) {
                     return new PostgresRecord(resultSet.getString(ID), JsonUtil.toMap(resultSet.getString(DATA)));
                 }
@@ -486,10 +489,10 @@ public class TableUtil {
     /**
      * Delete a record in a table.
      *
-     * @param conn the database connection
+     * @param conn       the database connection
      * @param schemaName the name of the schema
-     * @param tableName the name of the table
-     * @param id the id of the record to delete
+     * @param tableName  the name of the table
+     * @param id         the id of the record to delete
      * @throws SQLException if a database error occurs
      */
     public static String deleteRecord(Connection conn, String schemaName, String tableName, String id) throws Exception {
@@ -500,16 +503,16 @@ public class TableUtil {
         tableName = checkAndNormalizeValidEntityName(tableName);
 
         // delete record
-        var deleteRecordSQL = String.format("""
-        DELETE FROM %s.%s
-        WHERE %s = ?
-        """, schemaName, tableName, ID);
+        var deleteSQL = String.format("""
+                DELETE FROM %s.%s
+                WHERE %s = ?
+                """, schemaName, tableName, ID);
 
-        try (var pstmt = conn.prepareStatement(deleteRecordSQL)) {
+        try (var pstmt = conn.prepareStatement(deleteSQL)) {
             pstmt.setString(1, id);
             var count = pstmt.executeUpdate();
             if (count == 0 && log.isInfoEnabled()) {
-                log.info("record not found when deleting from table '{}.{}}'. id:{}}.".formatted(schemaName, tableName, id));
+                log.info("record not found when deleting from table '{}.{}}'. id:{}}.", schemaName, tableName, id);
             }
             return id;
         } catch (SQLException e) {
@@ -518,4 +521,545 @@ public class TableUtil {
         }
     }
 
+    /**
+     * Insert a batch of records into a table(Transaction is managed in this method).
+     *
+     * <p>
+     * This method will call commit automatically. If you want to manage transaction by yourself, please use bulkInsertRecords
+     * </p>
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param records    the list of records to insert
+     * @return an array of CosmosDocument representing the number of rows inserted for each record
+     * @throws Exception if a database error occurs
+     */
+    public static List<CosmosDocument> batchInsertRecords(Connection conn, String schemaName, String tableName, List<PostgresRecord> records) throws Exception {
+
+        try {
+            conn.setAutoCommit(false); // start transaction
+            var ret = _insertRecords(conn, schemaName, tableName, records, true);
+
+            conn.commit(); // do the commit
+            return ret.successList;
+
+        } catch (SQLException e) {
+            try {
+                if (conn != null) {
+                    conn.rollback(); // do rollback if failed
+                    log.warn("Transaction rolled back due to an error when batch inserting records into table '{}.{}'. records size:{}.", schemaName, tableName, records.size());
+                }
+            } catch (SQLException rollbackEx) {
+                log.error("Failed to roll back transaction when batch inserting records into table '{}.{}'. records size:{}.", schemaName, tableName, records.size(), e);
+            }
+            throw e;
+        } finally {
+            conn.setAutoCommit(true);
+        }
+    }
+
+    /**
+     * Delete records in a batch(Transaction is managed in this method).
+     *
+     * <p>
+     * This method will call commit automatically. If you want to manage transaction by yourself, please use bulkDeleteRecords
+     * </p>
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param ids        the list of ids to delete
+     * @return an array of CosmosDocument representing the number of rows deleted for each record
+     * @throws Exception if a database error occurs
+     */
+    public static List<CosmosDocument> batchDeleteRecords(Connection conn, String schemaName, String tableName, List<String> ids) throws Exception {
+
+        try {
+            conn.setAutoCommit(false); // start transaction
+            var ret = _deleteRecords(conn, schemaName, tableName, ids, true);
+
+            conn.commit(); // do the commit
+            return ret.successList;
+
+        } catch (SQLException e) {
+            try {
+                if (conn != null) {
+                    conn.rollback();
+                    log.warn("Transaction rolled back due to an error when batch deleting records from table '{}.{}'. records size:{}. ", schemaName, tableName, ids.size());
+                }
+            } catch (SQLException rollbackEx) {
+                log.error("Failed to roll back transaction when batch deleting records from table '{}.{}'. records size:{}. ", schemaName, tableName, ids.size(), e);
+            }
+            throw e;
+        } finally {
+            conn.setAutoCommit(true);
+        }
+    }
+
+
+    /**
+     * Upsert records in a batch(Transaction is managed in this method).
+     *
+     * <p>
+     * This method will call commit automatically. If you want to manage transaction by yourself, please use bulkUpsertRecords
+     * </p>
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param records    the list of records to upsert
+     * @return an array of CosmosDocument representing the number of rows upserted for each record
+     * @throws Exception if a database error occurs
+     */
+    public static List<CosmosDocument> batchUpsertRecords(Connection conn, String schemaName, String tableName, List<PostgresRecord> records) throws Exception {
+
+        try {
+            conn.setAutoCommit(false); // start transaction
+            var ret = _upsertRecords(conn, schemaName, tableName, records, true);
+
+            conn.commit(); // do the commit
+            return ret.successList;
+
+        } catch (SQLException e) {
+            try {
+                if (conn != null) {
+                    conn.rollback();
+                    log.warn("Transaction rolled back due to an error when batch upserting records into table '{}.{}'. records size:{}. ", schemaName, tableName, records.size());
+                }
+            } catch (SQLException rollbackEx) {
+                log.error("Failed to roll back transaction when batch upserting records into table '{}.{}'. records size:{}. ", schemaName, tableName, records.size(), e);
+            }
+            throw e;
+        } finally {
+            conn.setAutoCommit(true);
+        }
+    }
+
+
+    /**
+     * bulk insert records into a table without transaction.
+     *
+     * <p>
+     * This method will NOT begin a transaction. You can manage transaction by yourself, or you can use batchInsertRecords.
+     * </p>
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param records    the list of records to insert
+     * @return CosmosBulkResult instance including successList and fatalList
+     * @throws Exception if a database error occurs
+     */
+    public static CosmosBulkResult bulkInsertRecords(Connection conn, String schemaName, String tableName, List<PostgresRecord> records) throws Exception {
+        return _insertRecords(conn, schemaName, tableName, records, false);
+    }
+
+    /**
+     * Bulk delete records(without transaction).
+     *
+     * <p>
+     * This method will NOT begin a transaction. You can manage transaction by yourself, or you can use batchDeleteRecords
+     * </p>
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param ids        the list of ids to delete
+     * @return CosmosBulkResult instance including successList and fatalList
+     * @throws Exception if a database error occurs
+     */
+    public static CosmosBulkResult bulkDeleteRecords(Connection conn, String schemaName, String tableName, List<String> ids) throws Exception {
+        return _deleteRecords(conn, schemaName, tableName, ids, false);
+    }
+
+    /**
+     * Bulk upsert records (without transaction).
+     *
+     * <p>
+     * This method will NOT begin a transaction. You can manage transaction by yourself, or you can use batchUpsertRecords
+     * </p>
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param records    the list of records to upsert
+     * @return CosmosBulkResult instance including successList and fatalList
+     * @throws Exception if a database error occurs
+     */
+    public static CosmosBulkResult bulkUpsertRecords(Connection conn, String schemaName, String tableName, List<PostgresRecord> records) throws Exception {
+        return _upsertRecords(conn, schemaName, tableName, records, false);
+    }
+
+    /**
+     * Inner method: Insert a bulk of records into a table(Transaction is NOT managed in this method).
+     *
+     * <p>
+     * This method will call NOT commit automatically. You must manage transaction yourself. see also: batchInsertRecords
+     * </p>
+     *
+     * @param conn           the database connection
+     * @param schemaName     the name of the schema
+     * @param tableName      the name of the table
+     * @param records        the list of records to insert
+     * @param throwException if true, throw exception if a database error occurs(used in batch). if false, record the results in ret and return it instead of throw an exception(used in bulk)
+     * @return an array of integers representing the number of rows inserted for each record
+     * @throws Exception if a database error occurs
+     */
+    public static CosmosBulkResult _insertRecords(Connection conn, String schemaName, String tableName, List<PostgresRecord> records, boolean throwException) throws Exception {
+
+        Checker.checkNotNull(records, "records");
+
+        var ret = new CosmosBulkResult();
+
+        if (records.isEmpty()) {
+            // do nothing if records is empty.
+            return ret;
+        }
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+
+
+        // insert into table
+        var insertSQL = String.format("""
+                INSERT INTO %s.%s (%s, %s)
+                VALUES (?, ?)
+                """, schemaName, tableName, ID, DATA);
+
+        try (var pstmt = conn.prepareStatement(insertSQL)) {
+
+            var count = 0;
+            var chunkSize = 100;
+
+            // Add multiple records to the batch
+            for (var record : records) {
+
+                var id = record.id;
+                var map = new HashMap<>(record.data);
+
+                // add ID fields to map, for the compatibility with CosmosDB/MongoDB
+                map.put(ID, id);
+                var json = JsonUtil.toJson(map);
+
+
+                pstmt.setString(1, id);
+                pstmt.setObject(2, json, Types.OTHER);
+
+                pstmt.addBatch();
+
+                count++;
+
+                // execute the batch in chunks, in order to reduce memory consumption
+                if (count % chunkSize == 0) {
+                    var expOccurred = executeAndRecordResult(schemaName, tableName, records, throwException, pstmt, chunkSize, count, ret);
+                    if (expOccurred) {
+
+                        // if exception occurred, do not execute the remained chunks. instead add all the remained records to fatalList.
+                        // Then return and fail fast
+                        for (var i = count; i < records.size(); i++) {
+                            var docId = records.get(i).id;
+                            ret.fatalList.add(new CosmosException(500, docId, "Skipped because database error occurred when batch inserting records into table '%s.%s'. id:%s, index:%d.".formatted(schemaName, tableName, docId, i)));
+                        }
+                        return ret;
+                    }
+                }
+
+            }
+
+            // Execute any remaining records in the batch
+            executeAndRecordResult(schemaName, tableName, records, throwException, pstmt, chunkSize, count, ret);
+            return ret;
+        }
+    }
+
+
+    /**
+     * Inner method: Bulk delete records (Transaction is NOT done in this method).
+     *
+     * <p>
+     * This method will NOT call commit automatically. You must manage transaction your self. see also batchDeleteRecords
+     * </p>
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param ids        the list of ids to delete
+     * @param throwException if true, throw exception if a database error occurs(used in batch). if false, record the results in ret and return it instead of throw an exception(used in bulk)
+     * @return an array of integers representing the number of rows affected for each record
+     * @throws Exception if a database error occurs
+     */
+    public static CosmosBulkResult _deleteRecords(Connection conn, String schemaName, String tableName, List<String> ids, boolean throwException) throws Exception {
+
+        Checker.checkNotNull(ids, "ids");
+
+        var ret = new CosmosBulkResult();
+        if (ids.isEmpty()) {
+            // do nothing if records is empty.
+            return ret;
+        }
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+
+
+        var deleteSQL = String.format("DELETE FROM %s.%s WHERE id = ?", schemaName, tableName);
+
+        try (var pstmt = conn.prepareStatement(deleteSQL)) {
+
+            int count = 0;
+            int chunkSize = 100;
+            for (var id : ids) {
+
+                pstmt.setString(1, id);
+                pstmt.addBatch();
+
+                count++;
+
+                // execute the batch in chunks, in order to reduce memory consumption
+                if (count % chunkSize == 0) {
+                    var expOccurred = executeDeletionAndRecordResult(schemaName, tableName, ids, throwException, pstmt, chunkSize, count, ret);
+
+                    if (expOccurred) {
+
+                        // if exception occurred, do not execute the remained chunks. instead add all the remained records to fatalList.
+                        // Then return and fail fast
+                        for (var i = count; i < ids.size(); i++) {
+                            var docId = ids.get(i);
+                            ret.fatalList.add(new CosmosException(500, docId, "Skipped because database error occurred when batch deleting records into table '%s.%s'. id:%s, index:%d.".formatted(schemaName, tableName, docId, i)));
+                        }
+                        return ret;
+
+                    }
+                }
+            }
+
+            // Execute any remaining records in the batch
+            executeDeletionAndRecordResult(schemaName, tableName, ids, throwException, pstmt, chunkSize, count, ret);
+
+            return ret;
+
+        }
+    }
+
+
+    /**
+     * Inner method: Upsert a bulk of records into a table(Transaction is NOT managed in this method).
+     *
+     * <p>
+     * This method will call NOT commit automatically. You must manage transaction yourself. see also: batchUpsertRecords
+     * </p>
+     *
+     * @param conn           the database connection
+     * @param schemaName     the name of the schema
+     * @param tableName      the name of the table
+     * @param records        the list of records to upsert
+     * @param throwException if true, throw exception if a database error occurs(used in batch). if false, record the results in ret and return it instead of throw an exception(used in bulk)
+     * @return an array of integers representing the number of rows affected for each record
+     * @throws Exception if a database error occurs
+     */
+    static CosmosBulkResult _upsertRecords(Connection conn, String schemaName, String tableName, List<PostgresRecord> records, boolean throwException) throws Exception {
+
+        Checker.checkNotNull(records, "records");
+
+        var ret = new CosmosBulkResult();
+        if (records.isEmpty()) {
+            // do nothing if records is empty.
+            return ret;
+        }
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+
+        // upsert into table and return the result
+        var upsertSQL = String.format("""
+                INSERT INTO %s.%s (%s,%s)
+                VALUES (?, ?)
+                ON CONFLICT (%s) DO UPDATE SET %s = excluded.%s
+                """, schemaName, tableName, ID, DATA, ID, DATA, DATA);
+
+        try (var pstmt = conn.prepareStatement(upsertSQL)) {
+
+            int count = 0;
+            int chunkSize = 100;
+
+            for (var record : records) {
+
+                checkValidRecord(record);
+
+                pstmt.setString(1, record.id);
+                pstmt.setObject(2, JsonUtil.toJson(record.data), Types.OTHER);
+                pstmt.addBatch();
+
+                count++;
+
+                // execute the batch in chunks, in order to reduce memory consumption
+                if (count % 100 == 0) {
+                    var expOccurred = executeAndRecordResult(schemaName, tableName, records, throwException, pstmt, chunkSize, count, ret);
+                    if (expOccurred) {
+
+                        // if exception occurred, do not execute the remained chunks. instead add all the remained records to fatalList.
+                        // Then return and fail fast
+                        for (var i = count; i < records.size(); i++) {
+                            var docId = records.get(i).id;
+                            ret.fatalList.add(new CosmosException(500, docId, "Skipped because database error occurred when batch upserting records into table '%s.%s'. id:%s, index:%d.".formatted(schemaName, tableName, docId, i)));
+                        }
+                        return ret;
+
+                    }
+                }
+            }
+            // Execute any remaining records in the batch
+            executeAndRecordResult(schemaName, tableName, records, throwException, pstmt, chunkSize, count, ret);
+
+            return ret;
+
+        }
+    }
+
+    /**
+     * execute the batch in chunks, and record the results in cosmosBulkResult
+     *
+     * @param schemaName       the name of the schema
+     * @param tableName        the name of the table
+     * @param records          the list of records to insert/upsert
+     * @param throwException   if true, throw exception if a database error occurs(used in batch). if false, record the results in ret and return it instead of throw an exception(used in bulk)
+     * @param pstmt            the prepared statement
+     * @param chunkSize        the size of each chunk
+     * @param count            the current count of record
+     * @param cosmosBulkResult the result of bulk operations
+     * @return true/false whether SQLException occurred.
+     * @throws SQLException if a database error occurs
+     */
+    static boolean executeAndRecordResult(String schemaName, String tableName, List<PostgresRecord> records, boolean throwException, PreparedStatement pstmt, int chunkSize, int count, CosmosBulkResult cosmosBulkResult) throws SQLException {
+
+        var processedCount = cosmosBulkResult.successList.size() + cosmosBulkResult.fatalList.size() + cosmosBulkResult.retryList.size();
+        if(processedCount >= records.size()) {
+            // if processedCount is over record's size, no need to execute anymore
+            return false;
+        }
+        // from index and to index for this chunk
+        int from, to;
+        if (count % chunkSize == 0) {
+            // if this is a chunk that fit the chunkSize
+            from = count - chunkSize;
+            to = count;
+        } else {
+            // if this is a batch that not fit the chunkSize
+            from = count - (count % chunkSize);
+            to = count;
+        }
+
+        // size of this chunk
+        var size = to - from;
+
+        try {
+
+            var part = pstmt.executeBatch();
+
+            // record this chunk execution's result to cosmosBulkResult
+            for (var i = 0; i < size; i++) {
+                var docIndex = from + i;
+                if (part[i] > 0) {
+                    cosmosBulkResult.successList.add(getCosmosDocument(records.get(docIndex)));
+                } else {
+                    var docId = records.get(docIndex).id;
+                    cosmosBulkResult.fatalList.add(new CosmosException(500, docId, "Failed to executeBulk. %s.%s, id:%s".formatted(schemaName, tableName, docId)));
+                }
+            }
+            // no SQLException occurred
+            return false;
+        } catch (SQLException e) {
+            // if throwException is true, throw the exception
+            if (throwException) {
+                throw e;
+            } else {
+                log.warn("Failed to executeBatch. {}.{}, from:{}, to:{}", schemaName, tableName, from, to, e);
+                // record this batch execution's result to cosmosBulkResult
+                for (var i = 0; i < size; i++) {
+                    var docIndex = from + i;
+                    var docId = records.get(docIndex).id;
+                    cosmosBulkResult.fatalList.add(new CosmosException(500, docId, "Failed to executeBulk. %s.%s, id:%s, index:%s".formatted(schemaName, tableName, docId, docIndex), e));
+                }
+            }
+            // SQLException occurred
+            return true;
+        }
+    }
+
+    /**
+     * execute the batch in chunks, and record the results in cosmosBulkResult
+     *
+     * @param schemaName       the name of the schema
+     * @param tableName        the name of the table
+     * @param ids              the list of ids to delete
+     * @param throwException   if true, throw exception if a database error occurs(used in batch). if false, record the results in ret and return it instead of throw an exception(used in bulk)
+     * @param pstmt            the prepared statement
+     * @param chunkSize        the size of each chunk
+     * @param count            the current count of record
+     * @param cosmosBulkResult the result of bulk operations
+     * @return true/false whether SQLException occurred.
+     * @throws SQLException if a database error occurs
+     */
+    static boolean executeDeletionAndRecordResult(String schemaName, String tableName, List<String> ids, boolean throwException, PreparedStatement pstmt, int chunkSize, int count, CosmosBulkResult cosmosBulkResult) throws SQLException {
+
+        // from index and to index for this chunk
+        int from, to;
+        if (count % chunkSize == 0) {
+            // if this is a chunk that fit the chunkSize
+            from = count - chunkSize;
+            to = count;
+        } else {
+            // if this is a batch that not fit the chunkSize
+            from = count - (count % chunkSize);
+            to = count;
+        }
+
+        // size of this chunk
+        var size = to - from;
+
+        try {
+
+            pstmt.executeBatch();
+
+            // record this chunk execution's result to cosmosBulkResult
+            for (var i = 0; i < size; i++) {
+                var docIndex = from + i;
+                cosmosBulkResult.successList.add(new CosmosDocument(Map.of("id", ids.get(docIndex))));
+            }
+            // no SQLException occurred
+            return false;
+        } catch (SQLException e) {
+            // if throwException is true, throw the exception
+            if (throwException) {
+                throw e;
+            } else {
+                log.warn("Failed to executeBatch. {}.{}, from:{}, to:{}", schemaName, tableName, from, to, e);
+                // record this batch execution's result to cosmosBulkResult
+                for (var i = 0; i < size; i++) {
+                    var docIndex = from + i;
+                    var docId = ids.get(docIndex);
+                    cosmosBulkResult.fatalList.add(new CosmosException(500, docId, "Failed to executeDeletion. %s.%s, id:%s, index:%s".formatted(schemaName, tableName, docId, docIndex), e));
+                }
+            }
+            // SQLException occurred
+            return true;
+        }
+    }
+
+    /**
+     * convert PostgresRecord to CosmosDocument
+     * @param record
+     * @return
+     */
+    static CosmosDocument getCosmosDocument(PostgresRecord record) {
+
+        var map = record.data;
+
+        if(MapUtil.isImmutableMap(map)){
+            map = Maps.newLinkedHashMap(record.data);
+        }
+        map.put(TableUtil.ID, record.id);
+        return new CosmosDocument(map);
+    }
 }
