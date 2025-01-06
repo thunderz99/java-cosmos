@@ -17,35 +17,42 @@ public class Checker {
 
 	}
 
-	public static void checkNotNull(Object target, String name) {
+	public static Object checkNotNull(Object target, String name) {
 
 		if (target == null) {
 			throw new IllegalArgumentException(String.format("%s should not be null", name));
 		}
 
+        return target;
+
 	}
 
-	public static void checkNotBlank(String target, String name) {
+	public static String checkNotBlank(String target, String name) {
 
 		if (StringUtils.isBlank(target)) {
 			throw new IllegalArgumentException(String.format("%s should be non-blank", name));
 		}
 
+        return target;
+
 	}
 
-	public static void checkNotEmpty(String target, String name) {
+	public static String checkNotEmpty(String target, String name) {
 
 		if (StringUtils.isEmpty(target)) {
 			throw new IllegalArgumentException(String.format("%s should be non-empty", name));
 		}
 
+        return target;
+
 	}
 
-    public static void checkNotEmpty(Collection<?> target, String name) {
+    public static <T> Collection<T> checkNotEmpty(Collection<T> target, String name) {
 
         if (target == null || target.isEmpty()) {
             throw new IllegalArgumentException(String.format("%s should not be empty collection", name));
         }
 
+        return target;
     }
 }

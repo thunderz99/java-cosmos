@@ -77,7 +77,7 @@ public class PatchOperations {
      * Add an "remove operation"
      *
      * @param path json path
-     * @return PatchOperations it self
+     * @return PatchOperations itself
      */
 
     public PatchOperations remove(String path) {

@@ -14,6 +14,17 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres
+          # refer: https://hub.docker.com/_/postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: mysecretpassword
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+
     steps:
       - uses: actions/checkout@v2
       - name: Set up JDK 17

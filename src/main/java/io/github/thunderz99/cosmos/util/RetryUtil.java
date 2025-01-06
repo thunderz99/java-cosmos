@@ -109,7 +109,7 @@ public class RetryUtil {
                         log.warn("retryAfterInMilliseconds {} is minus. Will retry by defaultWaitTime(2000ms)", wait, cosmosException);
                     }
                 }
-                log.warn("RetryUtil 429 occurred. Code:{}, Wait:{} ms", cosmosException.getStatusCode(), wait);
+                log.warn("RetryUtil 429 occurred. Code:{}, Wait:{} ms, Message:{}", cosmosException.getStatusCode(), wait, cosmosException.getMessage());
                 Thread.sleep(wait);
             } else {
                 throw cosmosException;

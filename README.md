@@ -11,7 +11,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 ## Disclaimer
 
 * This is an alpha version, and features are focused to CRUD and find at present.
-* Mininum supported Java runtime: JDK 11
+* Mininum supported Java runtime: JDK 17
 
 ## Quickstart
 

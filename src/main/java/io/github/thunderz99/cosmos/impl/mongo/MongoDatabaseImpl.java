@@ -106,8 +106,6 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        checkValidId(map);
-
         var container = this.client.getDatabase(coll).getCollection(partition);
         var response = RetryUtil.executeWithRetry(() -> container.insertOne(
                 new Document(map)
@@ -185,12 +183,13 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     }
 
     static String getId(Object object) {
-        // TODO, extract util method
         String id;
         if (object instanceof String) {
             id = (String) object;
         } else if (object instanceof BsonObjectId) {
             id = ((BsonObjectId) object).getValue().toHexString();
+        } else if (object instanceof Map map){
+            id = map.getOrDefault("id", "").toString();
         } else {
             var map = JsonUtil.toMap(object);
             id = map.getOrDefault("id", "").toString();
@@ -201,26 +200,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
     static void checkValidId(List<?> data) {
         for (Object datum : data) {
-            if (datum instanceof String) {
-                checkValidId((String) datum);
-            } else {
-                Map<String, Object> map = JsonUtil.toMap(datum);
-                checkValidId(map);
-            }
+            checkValidId(getId(datum));
         }
-    }
-
-    /**
-     * Id cannot contain "\t", "\r", "\n", or cosmosdb will create invalid data.
-     *
-     * @param objectMap
-     */
-    static void checkValidId(Map<String, Object> objectMap) {
-        if (objectMap == null) {
-            return;
-        }
-        var id = getId(objectMap);
-        checkValidId(id);
     }
 
     static void checkValidId(String id) {
@@ -839,86 +820,6 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         return maps;
     }
 
-    /**
-     * Merge the sub array to origin array
-     * This function will traverse the result of join part and replaced by new result that is found by sub query.
-     *
-     * @param coll           collection name
-     * @param cond           merge the content of the sub array to origin array
-     * @param querySpec      querySpec
-     * @param requestOptions request options
-     * @return docs list
-     * @throws Exception error exception
-     */
-    List<Map<String, Object>> mergeSubArrayToDoc(String coll, Condition cond, CosmosSqlQuerySpec querySpec, CosmosQueryRequestOptions requestOptions) throws Exception {
-
-        throw new NotImplementedException();
-//        Map<String, String[]> keyMap = new LinkedHashMap<>();
-//
-//        var container = this.clientV4.getDatabase(db).getContainer(coll);
-//
-//        var queryText = initJoinSelectPart(cond, querySpec, keyMap);
-//        var pagedDocs = RetryUtil.executeWithRetry(
-//                () -> container.queryItems(new SqlQuerySpec(queryText, querySpec.getParametersv4()),  // use new querySpec with join
-//                        requestOptions, mapInstance.getClass()));
-//        // cast the docs to Map<String, Object> type (want to do this more elegantly in the future)
-//        var docs = pagedDocs.stream().map(x -> (Map<String, Object>) x).collect(Collectors.toList());
-//        var result = mergeArrayValueToDoc(docs, keyMap);
-//
-//        return result.isEmpty() ? docs : result;
-    }
-
-    /**
-     * This function will traverse the result of join part and replaced by new result that is found by sub query.
-     *
-     * @param docs   docs
-     * @param keyMap join part map
-     * @return the merged sub array
-     */
-    List<Map<String, Object>> mergeArrayValueToDoc(List<Map<String, Object>> docs, Map<String, String[]> keyMap) {
-        List<Map<String, Object>> result = new ArrayList<>();
-
-        for (var doc : docs) {
-            var docMain = JsonUtil.toMap(doc.get("c"));
-
-            for (Map.Entry<String, String[]> entry : keyMap.entrySet()) {
-                if (Objects.nonNull(doc.get(entry.getKey()))) {
-                    Map<String, Object> docSubListItem = Map.of(entry.getKey(), doc.get(entry.getKey()));
-                    traverseListValueToDoc(docMain, docSubListItem, entry, 0);
-                }
-            }
-            result.add(docMain);
-        }
-
-        return result;
-    }
-
-    /**
-     * Traverse and merge the content of the list to origin list
-     * This function will traverse the result of join part and replaced by new result that is found by sub query.
-     *
-     * @param docMap    the map of doc
-     * @param newSubMap new sub map
-     * @param entry     entry
-     * @param count     count
-     */
-    void traverseListValueToDoc(Map<String, Object> docMap, Map<String, Object> newSubMap, Map.Entry<String, String[]> entry, int count) {
-
-        var aliasName = entry.getKey();
-        var subValue = entry.getValue();
-
-        if (count == subValue.length - 1) {
-            if (newSubMap.get(aliasName) instanceof List) {
-                docMap.put(subValue[entry.getValue().length - 1], newSubMap.get(aliasName));
-            }
-            return;
-        }
-
-        if (docMap.get(subValue[count]) instanceof Map) {
-            traverseListValueToDoc((Map) docMap.get(subValue[count++]), newSubMap, entry, count);
-        }
-    }
-
 
     /**
      * do an aggregate query by Aggregate and Condition
@@ -1143,37 +1044,6 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         log.info("patched Document:{}, id:{}, partition:{}, account:{}", documentLink, id, partition, getAccount());
         return checkAndGetCosmosDocument(document);
-    }
-
-    /**
-     * like Object.assign(m1, m2) in javascript, but support nested merge.
-     *
-     * @param m1
-     * @param m2
-     * @return map after merge
-     */
-    static Map<String, Object> merge(Map<String, Object> m1, Map<String, Object> m2) {
-
-        for (var entry : m1.entrySet()) {
-            var key = entry.getKey();
-            var value = entry.getValue();
-
-            var value2 = m2.get(key);
-
-            // do nested merge
-            if (value != null && value instanceof Map<?, ?> && value2 != null && value2 instanceof Map<?, ?>) {
-                var subMap1 = (Map<String, Object>) value;
-                var subMap2 = (Map<String, Object>) value2;
-
-                subMap1 = merge(subMap1, subMap2);
-                m2.put(key, subMap1);
-            }
-
-        }
-
-
-        m1.putAll(m2);
-        return m1;
     }
 
     /**

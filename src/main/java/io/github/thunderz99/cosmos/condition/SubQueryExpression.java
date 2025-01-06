@@ -10,6 +10,7 @@ import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
+import io.github.thunderz99.cosmos.util.ParamUtil;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 
@@ -59,8 +60,7 @@ public class SubQueryExpression implements Expression {
 
         // joinKey.filterKey -> fullName.last -> @param001_fullName__last
         var key = List.of(this.joinKey, this.filterKey).stream().filter(StringUtils::isNotEmpty).collect(Collectors.joining("."));
-        var paramName = SimpleExpression.getParamNameFromKey(key, paramIndex.get());
-
+        var paramName = ParamUtil.getParamNameFromKey(key, paramIndex.get());
         var paramValue = this.value;
 
         paramIndex.getAndIncrement();
