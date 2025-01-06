@@ -1,9 +1,6 @@
 package io.github.thunderz99.cosmos.util;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Queues;
@@ -171,6 +168,15 @@ public class MapUtilTest {
                 .containsEntry("addresses", Lists.newArrayList("NY", "Houston")) //updated
         ;
 
+    }
+
+
+    @Test
+    void isImmutableMap_should_work() {
+        assertThat(MapUtil.isImmutableMap(null)).isFalse();
+        assertThat(MapUtil.isImmutableMap(Map.of())).isTrue();
+        assertThat(MapUtil.isImmutableMap(Collections.singletonMap("a", "b"))).isTrue();
+        assertThat(MapUtil.isImmutableMap(Collections.unmodifiableMap(Map.of("a", "b")))).isTrue();
     }
 
 }

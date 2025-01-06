@@ -11,7 +11,10 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.Map;
+import java.util.UUID;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -31,7 +34,7 @@ class TableUtilTest {
 
     @AfterAll
     static void afterAll() throws Exception {
-        if(cosmos != null) {
+        if (cosmos != null) {
             cosmos.deleteCollection(dbName, schemaName);
             cosmos.closeClient();
         }
@@ -43,7 +46,7 @@ class TableUtilTest {
 
         var tableName = "create_table_if_not_exist_" + RandomStringUtils.randomAlphanumeric(6);
 
-        try (var conn = cosmos.getDataSource().getConnection()){
+        try (var conn = cosmos.getDataSource().getConnection()) {
             {
 
                 //table does not exist
@@ -70,7 +73,7 @@ class TableUtilTest {
             }
 
         } finally {
-            try(var conn = cosmos.getDataSource().getConnection()) {
+            try (var conn = cosmos.getDataSource().getConnection()) {
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
             }
         }
@@ -83,7 +86,7 @@ class TableUtilTest {
 
         var tableName = "crud_test_" + RandomStringUtils.randomAlphanumeric(6);
 
-        try (var conn = cosmos.getDataSource().getConnection()){
+        try (var conn = cosmos.getDataSource().getConnection()) {
             {
 
                 //create table
@@ -132,7 +135,7 @@ class TableUtilTest {
 
 
         } finally {
-            try(var conn = cosmos.getDataSource().getConnection()) {
+            try (var conn = cosmos.getDataSource().getConnection()) {
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
             }
         }
@@ -147,7 +150,7 @@ class TableUtilTest {
 
         var tenantId = "Data_upsert_" + RandomStringUtils.randomAlphanumeric(6);
 
-        try (var conn = cosmos.getDataSource().getConnection()){
+        try (var conn = cosmos.getDataSource().getConnection()) {
             {
 
                 // create table
@@ -210,7 +213,7 @@ class TableUtilTest {
             }
 
         } finally {
-            try(var conn = cosmos.getDataSource().getConnection()) {
+            try (var conn = cosmos.getDataSource().getConnection()) {
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
             }
         }
@@ -225,7 +228,7 @@ class TableUtilTest {
         var tenantId = "Data_upsertPartial_" + RandomStringUtils.randomAlphanumeric(6);
 
         try {
-            try(var conn = cosmos.getDataSource().getConnection()) {
+            try (var conn = cosmos.getDataSource().getConnection()) {
                 TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
                 var id = RandomStringUtils.randomAlphanumeric(6);
@@ -274,7 +277,7 @@ class TableUtilTest {
 
 
         } finally {
-            try(var conn = cosmos.getDataSource().getConnection()) {
+            try (var conn = cosmos.getDataSource().getConnection()) {
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
             }
         }
@@ -299,14 +302,14 @@ class TableUtilTest {
                     var operations = PatchOperations.create()
                             .set("/age", 24)
                             .add("/address/city", "NY") // nested fields
-                    ;
+                            ;
                     var patched = TableUtil.patchRecord(conn, schemaName, tableName, id, operations);
                     assertThat(patched).isNotNull();
                     assertThat(patched.id).isEqualTo(id);
                     assertThat(patched.data.get("id")).isEqualTo(id);
                     assertThat(patched.data.get("name")).isEqualTo("John Doe"); // not updated
                     assertThat(patched.data.get("age")).isEqualTo(24); // updated
-                    assertThat((Map<String, Object>)patched.data.get("address")).containsEntry("city", "NY"); // added
+                    assertThat((Map<String, Object>) patched.data.get("address")).containsEntry("city", "NY"); // added
                 }
 
                 // irregular input values
@@ -333,6 +336,156 @@ class TableUtilTest {
                     assertThat(record.id).isEqualTo(id);
                     assertThat(record.data).isEmpty();
                 }
+            }
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void batchInsertRecords_should_work() throws Exception {
+        var tableName = "batchInsertRecords_test_" + RandomStringUtils.randomAlphanumeric(6);
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+            // normal case
+            {
+                var records = IntStream.range(0, 202).mapToObj(i -> new PostgresRecord(UUID.randomUUID().toString(), Map.of("id", i, "name", "John Doe " + i))).toList();
+                var ret = TableUtil.batchInsertRecords(conn, schemaName, tableName, records);
+                assertThat(ret.size()).isEqualTo(202);
+                assertThat(ret.stream().map(doc -> doc.toMap().getOrDefault("id", "")).toList())
+                        .isEqualTo(records.stream().map(r -> r.id).toList());
+            }
+
+            // irregular input values
+            {
+                // records are null
+                assertThatThrownBy(() -> TableUtil.batchInsertRecords(conn, schemaName, tableName, null))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("records should not be null");
+            }
+            {
+                // records are empty
+                var records = new ArrayList<PostgresRecord>();
+                var ret = TableUtil.batchInsertRecords(conn, schemaName, tableName, records);
+                assertThat(ret).isEmpty();
+            }
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+
+    @Test
+    void batchDeleteRecords_should_work() throws Exception {
+        var tableName = "batchDeleteRecords_test_" + RandomStringUtils.randomAlphanumeric(6);
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+            // normal case
+            {
+                var records = IntStream.range(0, 200).mapToObj(i -> new PostgresRecord(UUID.randomUUID().toString(), Map.of("id", i))).toList();
+                var inserted = TableUtil.batchInsertRecords(conn, schemaName, tableName, records);
+                assertThat(inserted).hasSize(200);
+
+                var deleteRecords = records.subList(3, 7).stream().map(r -> r.id).toList();
+                var ret = TableUtil.batchDeleteRecords(conn, schemaName, tableName, deleteRecords);
+                assertThat(ret).hasSize(4);
+                assertThat(ret.stream().map(m -> m.toMap().getOrDefault("id", "")).toList())
+                        .isEqualTo(deleteRecords);
+
+                var record2 = TableUtil.readRecord(conn, schemaName, tableName, records.get(2).id);
+                assertThat(record2.id).isEqualTo(records.get(2).id);
+
+                var record8 = TableUtil.readRecord(conn, schemaName, tableName, records.get(8).id);
+                assertThat(record8.id).isEqualTo(records.get(8).id);
+
+            }
+
+            // irregular input values
+            {
+                // records are null
+                assertThatThrownBy(() -> TableUtil.batchDeleteRecords(conn, schemaName, tableName, null))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("ids should not be null");
+            }
+            {
+                // records are empty
+                var records = new ArrayList<String>();
+                var ret = TableUtil.batchDeleteRecords(conn, schemaName, tableName, records);
+                assertThat(ret).isEmpty();
+            }
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+
+    @Test
+    void batchUpsertRecords_should_work() throws Exception {
+        var tableName = "batchUpsertRecords_test_" + RandomStringUtils.randomAlphanumeric(6);
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+            // normal case for insert
+            {
+                var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord("upsert" + i, Map.of("id", i, "name", "John Doe " + i))).toList();
+                var ret = TableUtil.batchUpsertRecords(conn, schemaName, tableName, records);
+                assertThat(ret.size()).isEqualTo(10);
+                assertThat(ret.stream().map(doc -> doc.toMap().getOrDefault("id", "")).toList())
+                        .isEqualTo(records.stream().map(r -> r.id).toList());
+            }
+
+            // normal case for half insert, half update
+            {
+                var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord("half_upsert" + i, Map.of("id", i, "name", "John Insert " + i))).toList();
+                // insert half records
+                TableUtil.batchInsertRecords(conn, schemaName, tableName, records.subList(0, 5));
+
+                // replace name from Insert to Upsert, to get ready for upsert.
+                var records2 = records.stream().map(record -> new PostgresRecord(record.id, Map.of("name", record.data.get("name").toString().replace("Insert", "Upsert")))).toList();
+                var start = 2;
+                var end = 8;
+                var ret = TableUtil.batchUpsertRecords(conn, schemaName, tableName, records2.subList(start, end));
+                assertThat(ret.size()).isEqualTo(end - start);
+
+                // for inserted or upserted
+                for(var i = 0; i < end; i++) {
+                    var record = TableUtil.readRecord(conn, schemaName, tableName, records.get(i).id);
+                    if(i < start || i >= end) {
+                        // insert only (not upserted)
+                        assertThat(record.data.get("name")).isEqualTo("John Insert " + i);
+                    } else {
+                        // upserted
+                        assertThat(record.data.get("name")).isEqualTo("John Upsert " + i);
+                    }
+                }
+
+                // for not upserted
+                for(var i = end; i < 10; i++) {
+                    var record = TableUtil.readRecord(conn, schemaName, tableName, records.get(i).id);
+                    assertThat(record).isNull();
+                }
+            }
+
+            // irregular input values
+            {
+                // records are null
+                assertThatThrownBy(() -> TableUtil.batchUpsertRecords(conn, schemaName, tableName, null))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("records should not be null");
+            }
+            {
+                // records are empty
+                var records = new ArrayList<PostgresRecord>();
+                var ret = TableUtil.batchUpsertRecords(conn, schemaName, tableName, records);
+                assertThat(ret).isEmpty();
             }
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {

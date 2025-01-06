@@ -2979,7 +2979,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void batchCreate_should_work() throws Exception {
         int size = 100;
         var userList = new ArrayList<>(size);
@@ -2995,7 +2995,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void batchDelete_should_work() throws Exception {
         int size = 100;
         var userList = new ArrayList<User>(size);
@@ -3014,7 +3014,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void batchUpsert_should_work() throws Exception {
         int size = 100;
         var userList = new ArrayList<>(size);
@@ -3043,7 +3043,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void bulkCreate_should_work() throws Exception {
         int size = 120;
         var userList = new ArrayList<>(size);
@@ -3061,7 +3061,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void bulkDelete_should_work() throws Exception {
         int size = 120;
         var userList = new ArrayList<User>(size);
@@ -3083,7 +3083,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void bulkUpsert_should_work() throws Exception {
         int size = 120;
         var userList = new ArrayList<>(size);
@@ -3119,7 +3119,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void bulkUpsert_should_work_containing_both_create_and_update() throws Exception {
 
         var partition = "Users";

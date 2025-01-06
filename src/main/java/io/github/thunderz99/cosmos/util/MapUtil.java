@@ -164,4 +164,21 @@ public class MapUtil {
         m1.putAll(m2);
         return m1;
     }
+
+    /**
+     * Check if a map is immutable.
+     *
+     * Note: This method is not 100% reliable, but it should work for most cases.
+     *
+     * @param map
+     * @return true/false
+     */
+    public static boolean isImmutableMap(Map<?, ?> map) {
+        if(map == null){
+            return false;
+        }
+        var className = map.getClass().getName();
+        return className.contains("Immutable") || className.contains("Unmodifiable") || className.contains("SingletonMap");
+    }
+
 }
