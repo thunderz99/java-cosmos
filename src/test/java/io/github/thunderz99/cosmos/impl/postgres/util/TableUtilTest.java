@@ -1,9 +1,11 @@
-package io.github.thunderz99.cosmos.util;
+package io.github.thunderz99.cosmos.impl.postgres.util;
 
 import io.github.thunderz99.cosmos.CosmosException;
+import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImplTest;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresRecord;
+import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -24,7 +26,7 @@ class TableUtilTest {
     static PostgresImpl cosmos;
 
     static final String dbName = "java_cosmos";
-    static final String schemaName = "table_util_test_schema_" + StringUtils.lowerCase(RandomStringUtils.randomAlphanumeric(6));
+    static final String schemaName = "table_util_test_schema_" + RandomStringUtils.randomAlphanumeric(6).toLowerCase();
 
     @BeforeAll
     static void beforeAll() throws Exception {
@@ -58,9 +60,10 @@ class TableUtilTest {
                 TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
                 //table exists
-                var conn2 = cosmos.getDataSource().getConnection();
-                var tableExist = TableUtil.tableExist(conn2, schemaName, tableName);
-                assertThat(tableExist).isTrue();
+                try(var conn2 = cosmos.getDataSource().getConnection()){
+                    var tableExist = TableUtil.tableExist(conn2, schemaName, tableName);
+                    assertThat(tableExist).isTrue();
+                }
             }
 
             {
@@ -224,15 +227,14 @@ class TableUtilTest {
     @Test
     void updatePartial_should_work() throws Exception {
 
-        var tableName = "upsert_partial_test_" + RandomStringUtils.randomAlphanumeric(6);
-        var tenantId = "Data_upsertPartial_" + RandomStringUtils.randomAlphanumeric(6);
+        var tableName = "upsert_partial_test_" + RandomStringUtils.randomAlphanumeric(6).toLowerCase();
 
         try {
             try (var conn = cosmos.getDataSource().getConnection()) {
                 TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
                 var id = RandomStringUtils.randomAlphanumeric(6);
-                Map<String, Object> data = Map.of("id", id, "name", "Tom Partial", "address", "NY");
+                Map<String, Object> data = Map.of("id", id, "name", "Tom Partial", "address", "NY", TableUtil.ETAG, RandomStringUtils.randomAlphanumeric(6));
                 TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, data));
 
                 // normal update partial
@@ -273,6 +275,58 @@ class TableUtilTest {
                             .isInstanceOf(IllegalArgumentException.class)
                             .hasMessage("record.map should not be null");
                 }
+
+
+                {
+                    // with option.checkEtag = true, and with normal etag
+                    var record = TableUtil.readRecord(conn, schemaName, tableName, id);
+                    var etag = record.data.getOrDefault(TableUtil.ETAG, "").toString();
+                    assertThat(etag).isNotEmpty();
+                    Map<String, Object> updatedData = Map.of("age", 26, "address", "FL");
+                    var option = PartialUpdateOption.checkETag(true);
+                    var updated = TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData), option, etag);
+                    assertThat(updated).isNotNull();
+                    assertThat(updated.id).isEqualTo(id);
+                    assertThat(updated.data.get("id")).isEqualTo(id);
+                    assertThat(updated.data.get("name")).isEqualTo("Tom Partial"); // not updated
+                    assertThat(updated.data.get("age")).isEqualTo(26); // updated
+                    assertThat(updated.data.get("address")).isEqualTo("FL"); // updated
+                }
+
+                {
+                    // with option.checkEtag = true, and with etag = ""
+                    Map<String, Object> updatedData = Map.of("age", 26, "address", "WS");
+                    var option = PartialUpdateOption.checkETag(true);
+                    var updated = TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData), option, "");
+                    assertThat(updated).isNotNull();
+                    assertThat(updated.id).isEqualTo(id);
+                    assertThat(updated.data.get("address")).isEqualTo("WS"); // updated
+                }
+
+                {
+                    // with option.checkEtag = false, and with etag = "not correct tag"
+                    Map<String, Object> updatedData = Map.of("age", 26, "address", "AB");
+                    var option = PartialUpdateOption.checkETag(false);
+                    var updated = TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData), option, "not correct tag");
+                    assertThat(updated).isNotNull();
+                    assertThat(updated.id).isEqualTo(id);
+                    assertThat(updated.data.get("address")).isEqualTo("AB"); // updated
+                }
+
+                {
+                    // with option.checkEtag = true, and with etag = "not correct tag"
+                    Map<String, Object> updatedData = Map.of("age", 26, "address", "LA");
+                    var option = PartialUpdateOption.checkETag(true);
+
+                    assertThatThrownBy( () -> TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData), option, "not correct tag"))
+                            .isInstanceOfSatisfying(CosmosException.class, e -> {
+                                assertThat(e.getStatusCode()).isEqualTo(412);
+                                assertThat(e.getCode()).isEqualTo("412 Precondition Failed");
+                                assertThat(e.getMessage()).contains("table:'%s.%s', id:%s".formatted(schemaName, tableName, id));
+                            });
+                }
+
+
             }
 
 

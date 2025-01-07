@@ -9,8 +9,8 @@ import io.github.thunderz99.cosmos.CosmosDatabase;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosContainerResponse;
 import io.github.thunderz99.cosmos.dto.UniqueKeyPolicy;
+import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.Checker;
-import io.github.thunderz99.cosmos.util.TableUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
@@ -190,7 +190,7 @@ public class PostgresImpl implements Cosmos {
     }
 
     /**
-     * Create the db and coll if not exist. Coll creation will be skipped if empty.
+     * Create the db and coll if not exist. coll will be mapped to postgres's schema. Coll creation will be skipped if empty.
      *
      * <p>
      * No uniqueKeyPolicy will be used.

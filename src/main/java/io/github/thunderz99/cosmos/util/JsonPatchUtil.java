@@ -14,6 +14,7 @@ import com.mongodb.client.model.PushOptions;
 import com.mongodb.client.model.Updates;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
+import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;

@@ -421,7 +421,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
                 if (confirmDoc != null) {
                     // etag not match, throw 412 pre-condition not met Exception
-                    throw new CosmosException(412, "412 Precondition Failed", "etag not match");
+                    throw new CosmosException(412, "412 Precondition Failed", "failed to updatePartial because etag not match. coll:%s, partition:%s, id:%s, etag:%s".formatted(coll, partition, id, etag));
                 }
             }
 
