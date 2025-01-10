@@ -22,7 +22,7 @@ public class TTLUtil {
      * @param tableName         the table name
      * @param intervalInMinutes interval in minutes
      * @return jobId of the scheduled job. return -1 if job is not created.
-     * @throws IllegalArgumentException if intervalInMinutes <= 0
+     * @throws IllegalArgumentException if intervalInMinutes is less than or equal to 0
      * @throws SQLException if the table does not exist
      * @throws SQLException if a database error occurs
      *
