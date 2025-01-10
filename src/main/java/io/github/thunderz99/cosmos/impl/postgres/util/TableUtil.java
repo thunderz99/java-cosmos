@@ -1,10 +1,12 @@
-package io.github.thunderz99.cosmos.util;
+package io.github.thunderz99.cosmos.impl.postgres.util;
 
 import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.CosmosDocument;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
+import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresRecord;
+import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -32,6 +34,11 @@ public class TableUtil {
      * data column(JSONB type). used to store the main json data
      */
     public static final String DATA = "data";
+
+    /**
+     * field automatically added to contain the etag value for optimistic lock
+     */
+    public static final String ETAG = "_etag";
 
     /**
      * Checks if a table exists in the specified schema.
@@ -311,6 +318,21 @@ public class TableUtil {
      * @throws Exception if a database error occurs
      */
     public static PostgresRecord updatePartialRecord(Connection conn, String schemaName, String tableName, PostgresRecord record) throws Exception {
+        return updatePartialRecord(conn, schemaName, tableName, record, new PartialUpdateOption(), "");
+    }
+
+    /**
+     * Partially update a record's data column in a table.
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param record     partial data to update
+     * @param option     partial update option
+     * @param etag       etag for optimistic concurrency check
+     * @throws Exception if a database error occurs
+     */
+    public static PostgresRecord updatePartialRecord(Connection conn, String schemaName, String tableName, PostgresRecord record, PartialUpdateOption option, String etag) throws Exception {
         checkValidRecord(record);
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
@@ -335,16 +357,32 @@ public class TableUtil {
 
             var data = JsonUtil.toJson(merged);
 
-            var updateSQL = String.format("""
-                    UPDATE %s.%s
-                    SET %s = ?
-                    WHERE %s = ?
-                    RETURNING *
-                    """, schemaName, tableName, DATA, ID);
+            String updateSQL;
+            if(option.checkETag && StringUtils.isNotEmpty(etag)) {
+                // check etag before update
+                updateSQL = String.format("""
+                        UPDATE %s.%s
+                        SET %s = ?
+                        WHERE %s = ? AND %s ->> '%s' = ?
+                        RETURNING *
+                        """, schemaName, tableName, DATA, ID, DATA, ETAG);
+            } else {
+                updateSQL = String.format("""
+                        UPDATE %s.%s
+                        SET %s = ?
+                        WHERE %s = ?
+                        RETURNING *
+                        """, schemaName, tableName, DATA, ID);
+            }
+
 
             try (var pstmt = conn.prepareStatement(updateSQL)) {
                 pstmt.setObject(1, data, Types.OTHER);
                 pstmt.setString(2, id);
+
+                if(option.checkETag && StringUtils.isNotEmpty(etag)){
+                    pstmt.setString(3, etag);
+                }
 
                 // Execute the query and return the result
                 try (var resultSet = pstmt.executeQuery()) {
@@ -353,7 +391,12 @@ public class TableUtil {
                         conn.commit();
                         return newRecord;
                     }
-                    throw new IllegalStateException("resultSet is empty(Not Found) when updating partial record in table '%s.%s'. id:%s.".formatted(schemaName, tableName, id));
+                    if(option.checkETag) {
+                        // etag not match
+                        throw new CosmosException(412, "412 Precondition Failed", "failed to updatePartial because etag not match. table:'%s.%s', id:%s, etag:%s".formatted(schemaName, tableName, id, etag));
+                    } else {
+                        throw new IllegalStateException("resultSet is empty(Not Found) when updating partial record in table '%s.%s'. id:%s.".formatted(schemaName, tableName, id));
+                    }
                 }
             }
         } catch (Exception e) {
@@ -368,6 +411,7 @@ public class TableUtil {
             conn.setAutoCommit(true);
         }
     }
+
 
     /**
      * Upsert. Insert a record into a table if not exist, otherwise update the record.

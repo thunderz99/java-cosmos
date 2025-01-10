@@ -9,9 +9,12 @@ import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.impl.postgres.util.TTLUtil;
+import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 import org.bson.Document;
@@ -42,11 +45,6 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     public static final String EXPIRE_AT = "_expireAt";
 
-    /**
-     * field automatically added to contain the etag value for optimistic lock
-     */
-    public static final String ETAG = "_etag";
-
     String db;
     HikariDataSource dataSource;
 
@@ -70,11 +68,10 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     public String createTableIfNotExists(String schemaName, String tableName) throws Exception {
 
-        var conn = dataSource.getConnection();
-
-        TableUtil.createTableIfNotExists(conn, schemaName, tableName);
-
-        return tableName;
+        try(var conn = dataSource.getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+            return tableName;
+        }
     }
 
     /**
@@ -85,9 +82,9 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     public void dropTableIfExists(String schemaName, String tableName) throws Exception {
 
-        var conn = dataSource.getConnection();
-
-        TableUtil.dropTableIfExists(conn, schemaName, tableName);
+        try(var conn = dataSource.getConnection()) {
+            TableUtil.dropTableIfExists(conn, schemaName, tableName);
+        }
     }
 
     /**
@@ -168,7 +165,6 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     Date addExpireAt(Map<String, Object> objectMap) {
 
-        // TODO
         var account = (PostgresImpl) this.getCosmosAccount();
         if (!account.expireAtEnabled) {
             return null;
@@ -201,14 +197,13 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     String addEtag4(Map<String, Object> objectMap) {
 
-        // TODO
         var account = (PostgresImpl) this.getCosmosAccount();
         if (!account.etagEnabled) {
             return null;
         }
 
         var etag = UUID.randomUUID().toString();
-        objectMap.put(ETAG, etag);
+        objectMap.put(TableUtil.ETAG, etag);
 
         return etag;
     }
@@ -264,7 +259,27 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     static CosmosDocument getCosmosDocument(PostgresRecord record) {
         record.data.put(TableUtil.ID, record.id);
         TimestampUtil.processTimestampPrecision(record.data);
+        convertExpireAt2Date(record.data);
         return new CosmosDocument(record.data);
+    }
+
+    static void convertExpireAt2Date(Map<String, Object> map) {
+        if (MapUtils.isEmpty(map)) {
+            return;
+        }
+
+        var expireAt = map.get(EXPIRE_AT);
+
+        if (expireAt == null) {
+            // do nothing
+            return;
+        }
+
+        if (expireAt instanceof Long expireAtLong){
+            map.put(EXPIRE_AT, new Date(expireAtLong));
+        }
+
+        // otherwise, do nothing and return
     }
 
 
@@ -417,6 +432,8 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         addExpireAt(map);
 
         // add etag for optimistic lock if enabled
+        var etag = map.getOrDefault(TableUtil.ETAG, "").toString();
+        // add etag for optimistic lock if enabled
         addEtag4(map);
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
@@ -425,8 +442,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         try (var conn = this.dataSource.getConnection()) {
             // TODO: RetryUtil.executeWithRetry
-            // TODO: etag search and 412 error
-            record = TableUtil.updatePartialRecord(conn, coll, partition, new PostgresRecord(id, map));
+            record = TableUtil.updatePartialRecord(conn, coll, partition, new PostgresRecord(id, map), option, etag);
         }
 
         if (log.isInfoEnabled()){
@@ -1403,4 +1419,70 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         return this.db;
     }
 
+    /**
+     * Enable TTL feature for a given collection and partition.
+     *
+     * @param coll         collection name
+     * @param partition    partition name
+     * @return             job name
+     * @throws Exception   if the table does not exist or a database error occurs
+     */
+    public String enableTTL(String coll, String partition) throws Exception {
+        // default to 1min
+        return enableTTL(coll, partition, 1);
+    }
+
+    /**
+     * Enable TTL feature for a given collection and partition.
+     *
+     * @param coll         collection name
+     * @param partition    partition name
+     * @param intervalInMinutes interval in minutes
+     * @return             job name
+     * @throws Exception   if the table does not exist or a database error occurs
+     */
+    public String enableTTL(String coll, String partition, int intervalInMinutes) throws Exception {
+
+        try(var conn = this.dataSource.getConnection()){
+
+            try {
+                conn.setAutoCommit(false);
+
+                if (TTLUtil.jobExists(conn, coll, partition)) {
+                    return TTLUtil.getJobName(coll, partition);
+                }
+
+                TTLUtil.scheduleJob(conn, coll, partition, intervalInMinutes);
+                conn.commit();
+                return TTLUtil.getJobName(coll, partition);
+
+            } catch (SQLException e){
+                log.warn("Error when enableTTL for partition '{}.{}'.", coll, partition, e);
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackEx) {
+                    log.error("Failed to rollback when enableTTL for partition '{}.{}'. id:{}.", coll, partition, rollbackEx);
+                }
+                throw e;
+            }
+            finally {
+                conn.setAutoCommit(true);
+            }
+        }
+
+    }
+
+    /**
+     * Disable TTL feature for a given collection and partition.
+     *
+     * @param coll         collection name
+     * @param partition    partition name
+     * @return true if the job is successfully disabled, false if the job is not found
+     * @throws Exception   if the table does not exist or a database error occurs
+     */
+    public boolean disableTTL(String coll, String partition) throws Exception {
+        try(var conn = this.dataSource.getConnection()){
+            return TTLUtil.unScheduleJob(conn, coll, partition);
+        }
+    }
 }

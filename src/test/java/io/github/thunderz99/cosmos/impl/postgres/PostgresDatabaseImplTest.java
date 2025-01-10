@@ -14,6 +14,8 @@ import io.github.thunderz99.cosmos.dto.EvalSkip;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosImpl;
 import io.github.thunderz99.cosmos.impl.mongo.MongoImpl;
+import io.github.thunderz99.cosmos.impl.postgres.util.TTLUtil;
+import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -99,6 +101,9 @@ class PostgresDatabaseImplTest {
         db.createTableIfNotExists(host, "PatchPojoTests");
         db.createTableIfNotExists(host, "IncrementTests");
         db.createTableIfNotExists(host, "NumberTest");
+        db.createTableIfNotExists(host, "TTLTests");
+        db.createTableIfNotExists(host, "TTLDeleteTests");
+        db.createTableIfNotExists(host, "EtagTests");
 
         initFamiliesData();
         initData4ComplexQuery();
@@ -507,7 +512,7 @@ class PostgresDatabaseImplTest {
 
     }
 
-    @Disabled
+    @Test
     void updatePartial_should_work_with_optimistic_concurrency_control() throws Exception {
         var partition = "SheetContents";
 
@@ -3148,27 +3153,8 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
-    void addExpireAt_should_work() {
-
-
-        { // expireAt should not be added if expireAtEnabled is false
-
-            var cosmosExpireOff = new CosmosBuilder().withDatabaseType("postgres")
-                    .withExpireAtEnabled(false)
-                    .withConnectionString(EnvUtil.getOrDefault("POSTGRES_CONNECTION_STRING", PostgresImplTest.LOCAL_CONNECTION_STRING))
-                    .build();
-            var dbExpireOff = (PostgresDatabaseImpl) cosmosExpireOff.createIfNotExist(host, "");
-
-            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", 60));
-
-            var expireAt = dbExpireOff.addExpireAt(map);
-
-            assertThat(expireAt).isNull();
-            assertThat(map).doesNotContainKey(PostgresDatabaseImpl.EXPIRE_AT);
-
-        }
-
+    @Test
+    void addExpireAt_addEtag_should_work() {
         var mdb = (PostgresDatabaseImpl) db;
 
         { // expireAt should not be added if "ttl" does not exist
@@ -3251,39 +3237,14 @@ class PostgresDatabaseImplTest {
             assertThat(map.get(PostgresDatabaseImpl.EXPIRE_AT)).isEqualTo(expireAt);
 
         }
-    }
-
-    @Disabled
-    void addEtag4_should_work() {
-
-
-        { // expireAt should not be added if expireAtEnabled is false
-
-            var cosmosExpireOff = new CosmosBuilder().withDatabaseType("mongodb")
-                    .withEtagEnabled(false)
-                    .withConnectionString(EnvUtil.getOrDefault("POSTGRES_CONNECTION_STRING", PostgresImplTest.LOCAL_CONNECTION_STRING))
-                    .build();
-            var dbEtagOff = (PostgresDatabaseImpl) cosmosExpireOff.createIfNotExist(host, "");
-
-            Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", 60));
-
-            var etag = dbEtagOff.addEtag4(map);
-
-            assertThat(etag).isNull();
-            assertThat(map).doesNotContainKey(PostgresDatabaseImpl.ETAG);
-
-        }
-
-        var mdb = (PostgresDatabaseImpl) db;
 
         { // etag should be added
 
             Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1"));
-
             var etag = mdb.addEtag4(map);
 
             assertThat(etag).isNotEmpty();
-            assertThat(map).containsKey(PostgresDatabaseImpl.ETAG);
+            assertThat(map).containsKey(TableUtil.ETAG);
 
             // to check if it can be parsed as a UUID:
             assertThatCode(() -> UUID.fromString(etag)).doesNotThrowAnyException();
@@ -3291,15 +3252,16 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void expireAt_should_be_added_if_ttl_is_set() throws Exception {
         var partition = "TTLTests";
 
+        var id = "expireAt_should_be_added_if_ttl_is_set" + RandomStringUtils.randomAlphanumeric(8);
+
         try {
 
-            var id = "expireAt_should_be_added_if_ttl_is_set" + RandomStringUtils.randomAlphanumeric(8);
             { // create
-                var data1 = Map.of("id", RandomStringUtils.randomAlphanumeric(8), "ttl", 0);
+                var data1 = Map.of("id", id, "ttl", 0);
                 var result = db.create(host, data1, partition).toMap();
 
                 assertThat(result).containsKey("_expireAt");
@@ -3326,51 +3288,100 @@ class PostgresDatabaseImplTest {
 
 
         } finally {
-            var data = db.find(host, Condition.filter(), partition).toMap();
-            db.batchDelete(host, data, partition);
+            db.delete(host, id, partition);
         }
 
     }
 
     @Disabled
+    void expireAt_should_be_deleted_after_1min() throws Exception {
+        var partition = "TTLDeleteTests";
+
+        var id = "expireAt_should_be_deleted_after_1min" + RandomStringUtils.randomAlphanumeric(8);
+
+        try {
+            db.enableTTL(host, partition, 1);
+
+            { // create
+                var data1 = Map.of("id", RandomStringUtils.randomAlphanumeric(8), "ttl", 1);
+                var result = db.create(host, data1, partition).toMap();
+
+                assertThat(result).containsKey("_expireAt");
+                assertThat((Date) result.get("_expireAt")).isBetween(Instant.now().minusSeconds(1), Instant.now().plusSeconds(1));
+
+                // ttl = 1s, interval is 60s, so it will be deleted after 62s
+                Thread.sleep(62 * 1000);
+
+                // assertThat the record is deleted
+                var read = db.readSuppressing404(host, id, partition);
+                assertThat(read).isNull();
+            }
+
+
+        } finally {
+            db.delete(host, id, partition);
+            db.disableTTL(host, partition);
+        }
+
+    }
+
+
+    @Test
     void etag_should_be_added() throws Exception {
         var partition = "EtagTests";
 
+        var id = "etag_should_be_added" + RandomStringUtils.randomAlphanumeric(8);
         try {
 
-            var id = "etag_should_be_added" + RandomStringUtils.randomAlphanumeric(8);
             { // create
-                var data1 = Map.of("id", RandomStringUtils.randomAlphanumeric(8));
+                var data1 = Map.of("id", id);
                 var result = db.create(host, data1, partition).toMap();
 
-                assertThat(result).containsKey(PostgresDatabaseImpl.ETAG);
-                assertThat((String) result.get(PostgresDatabaseImpl.ETAG)).isNotEmpty();
+                assertThat(result).containsKey(TableUtil.ETAG);
+                assertThat((String) result.get(TableUtil.ETAG)).isNotEmpty();
 
             }
 
             { // upsert
-                var data1 = Map.of("id", id, "ttl", 0);
+                var data1 = Map.of("id", id, "score", 0);
                 var result = db.upsert(host, data1, partition).toMap();
 
-                assertThat(result).containsKey(PostgresDatabaseImpl.ETAG);
-                assertThat((String) result.get(PostgresDatabaseImpl.ETAG)).isNotEmpty();
+                assertThat(result).containsKey(TableUtil.ETAG);
+                assertThat((String) result.get(TableUtil.ETAG)).isNotEmpty();
             }
 
             { // update
                 var data1 = Map.of("id", id, "ttl", 60);
                 var result = db.update(host, data1, partition).toMap();
 
-                assertThat(result).containsKey(PostgresDatabaseImpl.ETAG);
-                assertThat((String) result.get(PostgresDatabaseImpl.ETAG)).isNotEmpty();
+                assertThat(result).containsKey(TableUtil.ETAG);
+                assertThat((String) result.get(TableUtil.ETAG)).isNotEmpty();
 
             }
 
 
         } finally {
-            var data = db.find(host, Condition.filter(), partition).toMap();
-            db.batchDelete(host, data, partition);
+            db.delete(host, id, partition);
         }
 
+    }
+
+    @Test
+    void enableTTL_disableTTL_should_work() throws Exception {
+        var partition = "Families";
+
+        try {
+            var jobName = db.enableTTL(host, partition);
+            assertThat(jobName).isEqualTo(TTLUtil.getJobName(host, partition));
+
+            var disableResult = db.disableTTL(host, partition);
+            assertThat(disableResult).isEqualTo(true);
+
+        } finally {
+            try(var conn = db.dataSource.getConnection()){
+                TTLUtil.unScheduleJob(conn, host, partition);
+            }
+        }
     }
 
 

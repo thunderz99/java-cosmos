@@ -16,7 +16,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres
+        image: cleisonfmelo/postgres-pg-cron
           # refer: https://hub.docker.com/_/postgres
         env:
           POSTGRES_USER: postgres
