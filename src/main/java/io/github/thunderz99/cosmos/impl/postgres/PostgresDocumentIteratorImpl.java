@@ -1,21 +1,20 @@
-package io.github.thunderz99.cosmos.impl.mongo;
+package io.github.thunderz99.cosmos.impl.postgres;
 
-import com.azure.cosmos.util.CosmosPagedIterable;
-import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoIterable;
 import io.github.thunderz99.cosmos.CosmosDocument;
 import io.github.thunderz99.cosmos.CosmosDocumentIterator;
+import io.github.thunderz99.cosmos.CosmosDocumentList;
 import io.github.thunderz99.cosmos.dto.MapIterator;
 import io.github.thunderz99.cosmos.dto.TypedIterator;
 import io.github.thunderz99.cosmos.util.Checker;
-import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.bson.Document;
 
-import java.util.*;
-import java.util.stream.Stream;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 
 /**
- * A mongodb implementation of {@link CosmosDocumentIterator} interface, use to iterate {@link CosmosDocument} from an iterable of Map.
+ * A postgres implementation of {@link CosmosDocumentIterator} interface, use to iterate {@link CosmosDocument} from an iterable of Map.
  *
  * <p>
  * {@link CosmosDocumentIterator} is an interface that represent an iterator of documents.
@@ -23,15 +22,15 @@ import java.util.stream.Stream;
  * So we need this class to convert the {@link Iterable<Map>} to a {@link Iterable<CosmosDocument>}
  * </p>
  */
-public class MongoDocumentIteratorImpl implements CosmosDocumentIterator {
+public class PostgresDocumentIteratorImpl implements CosmosDocumentIterator {
 
-    MongoIterable<Document> iterable;
+    CosmosDocumentList docs;
     Iterator<? extends Map> iterator;
 
-    MongoDocumentIteratorImpl() {}
+    PostgresDocumentIteratorImpl() {}
 
-    MongoDocumentIteratorImpl(MongoIterable<Document> iterable) {
-        setDocumentIterable(iterable);
+    PostgresDocumentIteratorImpl(CosmosDocumentList docs) {
+        setDocumentIterable(docs);
     }
 
     @Override
@@ -64,12 +63,12 @@ public class MongoDocumentIteratorImpl implements CosmosDocumentIterator {
     }
 
     /**
-     * set the document iterable and the iterator will be reset to the beginning of the iterable
-     * @param iterable the iterable to set
+     * set the documents and the iterator will be reset to the beginning of the iterable
+     * @param docs the docs to set
      */
-    public void setDocumentIterable(MongoIterable<Document> iterable) {
-        this.iterable = iterable;
-        this.iterator = iterable.iterator();
+    public void setDocumentIterable(CosmosDocumentList docs) {
+        this.docs = docs;
+        this.iterator = docs.toMap().iterator();
     }
 
     @Override
@@ -79,7 +78,7 @@ public class MongoDocumentIteratorImpl implements CosmosDocumentIterator {
 
     @Override
     public void close() {
-        iterable.iterator().close();
+        // todo
     }
 
 }

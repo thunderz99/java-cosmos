@@ -117,5 +117,17 @@ public class CosmosSqlQuerySpec extends RecordData {
     public void setParameters(List<CosmosSqlParameter> params){
         this.params = params;
     }
+
+
+    /**
+     * add a parameter to the query
+     * @param param parameter to add
+     */
+    public void addParameter(CosmosSqlParameter param){
+        if (param == null) {
+            return;
+        }
+        this.params.add(param);
+    }
 }
 

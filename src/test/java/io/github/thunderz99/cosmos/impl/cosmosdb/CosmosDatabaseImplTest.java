@@ -567,6 +567,54 @@ class CosmosDatabaseImplTest {
             assertThat(count).isEqualTo(2);
         }
 
+        // test enum
+        {
+            var cond = Condition.filter( //
+                            "skills ARRAY_CONTAINS", Skill.Python, //
+                            "age <", 100) //
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            // test find
+            var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+            assertThat(users.size()).isEqualTo(1);
+            assertThat(users.get(0).id).isEqualTo(user3.id);
+        }
+
+        // test query cross-partition
+        {
+            // simple query
+            var cond = Condition.filter("id LIKE", "id_find_filter%").sort("id", "ASC").crossPartition(true);
+            var result = db.find(coll, cond).toList(FullNameUser.class);
+            assertThat(result).hasSizeGreaterThanOrEqualTo(4);
+            assertThat(result.get(0).id).isEqualTo("id_find_filter1");
+            assertThat(result.get(3).id).isEqualTo("id_find_filter4");
+        }
+
+        // aggregate with cross-partition
+        {
+            var aggregate = Aggregate.function("COUNT(1) as facetCount")
+                    .groupBy("_partition")
+                    .conditionAfterAggregate(Condition.filter().sort("_partition", "ASC"));
+            var cond = Condition.filter("_partition", Set.of("Users", "Users2")).crossPartition(true);
+            var result = db.aggregate(coll, aggregate, cond).toMap();
+            assertThat(result).hasSize(2);
+            assertThat(result.get(0).get("_partition")).isEqualTo("Users");
+            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(3);
+            assertThat(result.get(1).get("_partition")).isEqualTo("Users2");
+            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
+
+            System.out.println(result);
+
+        }
+
+    }
+
+    @Test
+    void find_should_work_for_array_contains_any_all() throws Exception {
+        var partition = "Families";
         // test ARRAY_CONTAINS_ANY
         {
             var cond = Condition.filter( //
@@ -672,50 +720,6 @@ class CosmosDatabaseImplTest {
 
             assertThat(count).isEqualTo(2);
         }
-
-        // test enum
-        {
-            var cond = Condition.filter( //
-                            "skills ARRAY_CONTAINS", Skill.Python, //
-                            "age <", 100) //
-                    .sort("id", "ASC") //
-                    .limit(10) //
-                    .offset(0);
-
-            // test find
-            var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
-
-            assertThat(users.size()).isEqualTo(1);
-            assertThat(users.get(0).id).isEqualTo(user3.id);
-        }
-
-        // test query cross-partition
-        {
-            // simple query
-            var cond = Condition.filter("id LIKE", "id_find_filter%").sort("id", "ASC").crossPartition(true);
-            var result = db.find(coll, cond).toList(FullNameUser.class);
-            assertThat(result).hasSizeGreaterThanOrEqualTo(4);
-            assertThat(result.get(0).id).isEqualTo("id_find_filter1");
-            assertThat(result.get(3).id).isEqualTo("id_find_filter4");
-        }
-
-        // aggregate with cross-partition
-        {
-            var aggregate = Aggregate.function("COUNT(1) as facetCount")
-                    .groupBy("_partition")
-                    .conditionAfterAggregate(Condition.filter().sort("_partition", "ASC"));
-            var cond = Condition.filter("_partition", Set.of("Users", "Users2")).crossPartition(true);
-            var result = db.aggregate(coll, aggregate, cond).toMap();
-            assertThat(result).hasSize(2);
-            assertThat(result.get(0).get("_partition")).isEqualTo("Users");
-            assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(3);
-            assertThat(result.get(1).get("_partition")).isEqualTo("Users2");
-            assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
-
-            System.out.println(result);
-
-        }
-
     }
 
     @Test

@@ -292,7 +292,9 @@ public class Condition {
         // offset and limit
         queryText.append(String.format(" OFFSET %d LIMIT %d", offset, limit));
 
-        log.info("queryText:{}", queryText);
+        if(log.isInfoEnabled()) {
+            log.info("queryText:{}", queryText);
+        }
 
         return new CosmosSqlQuerySpec(queryText.toString(), params);
 
@@ -417,7 +419,9 @@ public class Condition {
             params = filterQueryAgg.params;
         }
 
-        log.info("queryText:{}", queryText);
+        if(log.isInfoEnabled()) {
+            log.info("queryText:{}", queryText);
+        }
 
         return new CosmosSqlQuerySpec(queryText.toString(), params);
 
@@ -645,7 +649,7 @@ public class Condition {
         return StringUtils.removeStart(subFilterQuery, " ()");
     }
 
-	private String removeConnectPart(String subQueryText) {
+	static String removeConnectPart(String subQueryText) {
 		return StringUtils.removeStart(StringUtils.removeStart(subQueryText, " WHERE"), " AND").trim();
 	}
 

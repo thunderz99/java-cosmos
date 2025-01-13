@@ -1,5 +1,6 @@
 package io.github.thunderz99.cosmos.util;
 
+import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import org.apache.commons.lang3.StringUtils;
@@ -61,7 +62,7 @@ public class NamedParameterUtil {
                 throw new IllegalArgumentException("Parameter '" + paramName + "' not found in the parameter map");
             }
 
-            params.add(new CosmosSqlParameter(paramName, paramMap.get(paramName))); // Add the parameter value to the list
+            params.add(Condition.createSqlParameter(paramName, paramMap.get(paramName))); // Add the parameter value to the list
             parsedSql.append("?");              // Replace the named parameter with a positional one
 
             lastIndex = matcher.end();

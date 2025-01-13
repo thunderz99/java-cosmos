@@ -154,4 +154,9 @@ public class CosmosDocumentIteratorImpl implements CosmosDocumentIterator {
             traverseListValueToDoc((Map) docMap.get(subValue[count++]), newSubMap, entry, count);
         }
     }
+
+    @Override
+    public void close() throws Exception {
+        // do nothing, because CosmosPagedIterable does not need to close
+    }
 }

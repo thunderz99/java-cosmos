@@ -2,13 +2,13 @@ package io.github.thunderz99.cosmos.impl.postgres;
 
 import com.google.common.base.Preconditions;
 import com.mongodb.client.AggregateIterable;
-import com.mongodb.client.MongoIterable;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.impl.postgres.util.PGConditionUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TTLUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.*;
@@ -571,9 +571,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        var docs = _findToIterable(coll, cond, partition).into(new ArrayList<>());
-
-        var ret = new CosmosDocumentList(docs);
+        var ret = _findToIterator(coll, cond, partition).docs;
 
         if (log.isInfoEnabled()) {
             log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
@@ -612,54 +610,55 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      */
     public CosmosDocumentIterator findToIterator(String coll, Condition cond, String partition) throws Exception {
 
-//        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
-//
-//        var findIterable = _findToIterable(coll, cond, partition);
-//
-//        var ret = new MongoDocumentIteratorImpl(findIterable);
-//
-//        if (log.isInfoEnabled()) {
-//            log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
-//        }
-//
-//        return ret;
-        throw new NotImplementedException();
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        var iterator = _findToIterator(coll, cond, partition);
+
+        if (log.isInfoEnabled()) {
+            log.info("findToIterator Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
+        }
+
+        return iterator;
     }
 
-    MongoIterable<Document> _findToIterable(String coll, Condition cond, String partition) throws Exception {
+    /**
+     * A helper method to do findToIterator by condition. find method is also based on this inner method,
+     * converting iterator to List.
+     *
+     * @param coll      collection name
+     * @param cond      condition to find
+     * @param partition partition name
+     * @return CosmosDocumentIteratorImpl
+     * @throws Exception Cosmos client exception
+     */
+    PostgresDocumentIteratorImpl _findToIterator(String coll, Condition cond, String partition) throws Exception {
+
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
 
         if (cond == null) {
             cond = new Condition();
         }
 
-        if (CollectionUtils.isNotEmpty(cond.join) && !cond.returnAllSubArray) {
-            // When doing join and only return the matching part of subArray,
-            // we have to use findWithJoin method, which do a special aggregate pipeline to achieve this
-            return _findToIterableWithJoin(coll, cond, partition);
-        }
+        // TODO join
+//        if (CollectionUtils.isNotEmpty(cond.join) && !cond.returnAllSubArray) {
+//            // When doing join and only return the matching part of subArray,
+//            // we have to use findWithJoin method, which do a special aggregate pipeline to achieve this
+//            return _findToIterableWithJoin(coll, cond, partition);
+//        }
 
         // TODO crossPartition query
 
-//        var filter = ConditionUtil.toBsonFilter(cond);
-//
-//        // process sort
-//        var sort = ConditionUtil.toBsonSort(cond.sort);
-//
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        var ret = new CosmosDocumentList();
-//
-//        var findIterable = container.find(filter)
-//                .sort(sort).skip(cond.offset).limit(cond.limit);
-//
-//        var fields = ConditionUtil.processFields(cond.fields);
-//        if (!fields.isEmpty()) {
-//            // process fields
-//            findIterable.projection(fields(excludeId(), include(fields)));
-//        }
-//
-//        return findIterable;
-        throw new NotImplementedException();
+        var querySpec = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+        // TODO: RetryUtil.executeWithRetry
+
+        try(var conn = this.dataSource.getConnection()) {
+            var records = TableUtil.findRecords(conn, coll, partition, querySpec);
+            var maps = records.stream().map(r -> r.data).toList();
+            return new PostgresDocumentIteratorImpl(new CosmosDocumentList(maps));
+        }
+
     }
 
     /**
@@ -969,23 +968,26 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
     public int count(String coll, Condition cond, String partition) throws Exception {
 
-//        var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
-//
-//        // TODO crossPartition query
-//
-//        var filter = ConditionUtil.toBsonFilter(cond);
-//
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//
-//        var ret = RetryUtil.executeWithRetry(() -> container.countDocuments(filter));
-//
-//        if (log.isInfoEnabled()) {
-//            log.info("count:{}, Document:{}, cond:{}, partition:{}, account:{}", ret, collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
-//        }
-//
-//        return Math.toIntExact(ret);
-        throw new NotImplementedException();
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        if (cond == null) {
+            cond = new Condition();
+        }
+
+        var querySpec = PGConditionUtil.toQuerySpecForCount(coll, cond, partition);
+
+        // TODO: RetryUtil.executeWithRetry
+
+        try(var conn = this.dataSource.getConnection()) {
+            var count = TableUtil.countRecords(conn, coll, partition, querySpec);
+            if(log.isInfoEnabled()) {
+                log.info("count Document:{}, cond:{}, collection:{}, partition:{}, account:{}", coll, cond, collectionLink, partition, getAccount());
+            }
+            return count;
+        }
     }
 
     /**
