@@ -17,13 +17,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * A class representing simple expression for postgres
  * <p>
  * {@code
- * data->>'id' = "001", (data->>'age')::int > 15,  data->'skills' ? 'java' (means CONTAINS "java"), and other simple filter
+ * data->>'id' = "001", (data->>'age')::int > 15,  data->'skills' @> 'java' (means CONTAINS "java"), and other simple filter
  * }
  */
 public class PGSimpleExpression implements Expression {
@@ -93,13 +92,13 @@ public class PGSimpleExpression implements Expression {
                 params.add(Condition.createSqlParameter(paramName, paramValue));
             } else {
                 //the default operator for collection
-                //ARRAY_CONTAINS
+                // c.foo IN ['A','B','C']
                 if (coll.isEmpty()) {
                     //if paramValue is empty, return a FALSE queryText.
                     ret.setQueryText(" (1=0)");
 				} else {
-					// use ARRAY_CONTAINS by default to minimize the sql length
-					ret.setQueryText(buildArrayContains(this.key, paramName, coll, params));
+					// use IN array
+					ret.setQueryText(buildInArray(this.key, paramName, coll, params));
 				}
 			}
 
@@ -186,49 +185,22 @@ public class PGSimpleExpression implements Expression {
 
     }
 
-
     @Override
     public String toString() {
         return JsonUtil.toJson(this);
     }
 
-    /**
-     * A helper function to generate c.foo IN (...) queryText
-     * <p>
-     * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
-     * "( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )", and add
-     * paramsValue into params
-     */
-    static String buildArray(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params) {
-        var ret = new StringBuilder(String.format(" (%s IN (", Condition.getFormattedKey(key)));
-
-        int index = 0;
-
-        var paramNameList = new ArrayList<String>();
-        for (var v : paramValue) {
-            var paramNameIdx = String.format("%s__%d", paramName, index);
-            paramNameList.add(paramNameIdx);
-            params.add(Condition.createSqlParameter(paramNameIdx, v));
-            index++;
-        }
-        ret.append(paramNameList.stream().collect(Collectors.joining(", ")));
-
-        ret.append("))");
-
-        return ret.toString();
-    }
 
     /**
-     * A helper function to generate c.foo ARRAY_CONTAINS (...) queryText
+     * A helper function to generate c.foo IN @param000_array1 queryText
      * <p>
      * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
-     * "(ARRAY_CONTAINS("@parentId", c["parentId"]))", and add
+     * (data->>'parentId' = ANY("@parentId")), and add
      * paramsValue into params
+     * </p>
      */
-    static String buildArrayContains(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params) {
-
+    static String buildInArray(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params) {
         var ret = String.format(" (%s = ANY(%s))", PGKeyUtil.getFormattedKey(key), paramName);
-
         params.add(Condition.createSqlParameter(paramName, paramValue));
         return ret;
     }
