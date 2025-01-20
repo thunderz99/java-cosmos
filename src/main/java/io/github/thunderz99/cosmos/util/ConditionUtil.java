@@ -20,7 +20,7 @@ import org.bson.conversions.Bson;
 import static io.github.thunderz99.cosmos.condition.SubConditionType.*;
 
 /**
- * An util class to convert condition's filter/sort/limit/offset to bson filter/sort/limit/offset for mongo
+ * A util class to convert condition's filter/sort/limit/offset to bson filter/sort/limit/offset for mongo
  */
 public class ConditionUtil {
 

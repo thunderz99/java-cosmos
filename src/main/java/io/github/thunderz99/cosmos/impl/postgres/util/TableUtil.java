@@ -1,18 +1,24 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.CosmosDocument;
 import io.github.thunderz99.cosmos.CosmosException;
+import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
+import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
+import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresRecord;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.postgresql.jdbc.PgArray;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -1106,4 +1112,148 @@ public class TableUtil {
         map.put(TableUtil.ID, record.id);
         return new CosmosDocument(map);
     }
+
+
+    /**
+     * find records from a table with condition in a querySpec(queryText and params)
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param querySpec       the querySpec to find(including queryText and params)
+     * @return list of PostgresRecords
+     * @throws SQLException if a database error occurs
+     */
+    public static List<PostgresRecord> findRecords(Connection conn, String schemaName, String tableName, CosmosSqlQuerySpec querySpec) throws Exception {
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+
+        Checker.checkNotNull(querySpec, "querySpec");
+        Checker.checkNotBlank(querySpec.queryText, "querySpec.queryText");
+
+        querySpec = NamedParameterUtil.convert(querySpec);
+
+        var findSQL = querySpec.queryText;
+        var params = querySpec.params;
+
+
+        try (var pstmt = conn.prepareStatement(findSQL)) {
+
+            setParamsForStatement(conn, params, pstmt);
+            var ret = new ArrayList<PostgresRecord>();
+            // Execute the query and return the result
+            try (var resultSet = pstmt.executeQuery()) {
+                while (resultSet.next()) {
+                    ret.add(new PostgresRecord(resultSet.getString(ID), JsonUtil.toMap(resultSet.getString(DATA))));
+                }
+                return ret;
+            }
+        } catch (SQLException e) {
+            log.warn("Error when find records in table'{}.{}'. sql:{}", schemaName, tableName, querySpec.queryText, e);
+            throw e;
+        }
+    }
+
+    /**
+     * count records from a table with condition in a querySpec(queryText and params)
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param querySpec       the querySpec to find(including queryText and params)
+     * @return count of records in int type
+     * @throws SQLException if a database error occurs
+     */
+    public static int countRecords(Connection conn, String schemaName, String tableName, CosmosSqlQuerySpec querySpec) throws Exception {
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+
+        Checker.checkNotNull(querySpec, "querySpec");
+        Checker.checkNotBlank(querySpec.queryText, "querySpec.queryText");
+
+
+        querySpec = NamedParameterUtil.convert(querySpec);
+
+        var findSQL = querySpec.queryText;
+        var params = querySpec.params;
+
+
+        try (var pstmt = conn.prepareStatement(findSQL)) {
+
+            setParamsForStatement(conn, params, pstmt);
+            var ret = new ArrayList<PostgresRecord>();
+            // Execute the query and return the result
+            try (var resultSet = pstmt.executeQuery()) {
+                if (resultSet.next()) {
+                    return resultSet.getInt(1);
+                }
+                return 0;
+            }
+        } catch (SQLException e) {
+            log.warn("Error when count records in table'{}.{}'. sql:{}", schemaName, tableName, querySpec.queryText, e);
+            throw e;
+        }
+    }
+
+    /**
+     * Sets the parameters for the given {@link PreparedStatement} with the given
+     * parameters. The parameters are expected to be in the same order as the
+     * parameter placeholders in the SQL query string.
+     *
+     * @param conn  the database connection
+     * @param params the list of parameters
+     * @param pstmt  the prepared statement
+     * @throws SQLException if a database error occurs
+     */
+    static void setParamsForStatement(Connection conn, List<CosmosSqlParameter> params, PreparedStatement pstmt) throws SQLException {
+        var index = 1;
+        for (var param : params) {
+            if (param.value instanceof String strValue) {
+                pstmt.setString(index, strValue);
+            } else if (param.value instanceof Long longValue) {
+                pstmt.setLong(index, longValue);
+            } else if (param.value instanceof Integer intValue) {
+                pstmt.setInt(index, intValue);
+            } else if (param.value instanceof Boolean boolValue) {
+                pstmt.setBoolean(index, boolValue);
+            } else if (param.value instanceof Float floatValue) {
+                pstmt.setFloat(index, floatValue);
+            } else if (param.value instanceof BigDecimal bigDecimalValue) {
+                pstmt.setBigDecimal(index, bigDecimalValue);
+            } else if (param.value instanceof Collection<?> collectionValue) {
+                // Determine the SQL type of the array elements
+                var sqlType = getSqlType(collectionValue);
+                // Create the java.sql.Array instance
+                var sqlArray = conn.createArrayOf(sqlType, collectionValue.toArray());
+                pstmt.setArray(index, sqlArray);
+            } else {
+                pstmt.setString(index, JsonUtil.toJson(param.value));
+            }
+            index++;
+        }
+    }
+
+    /**
+     * Returns the SQL type that corresponds to the type of elements in the given collection.
+     *
+     * If the collection is empty, returns "text" as a default.
+     *
+     * @param collection the collection to determine the SQL type for
+     * @return the corresponding SQL type
+     */
+    static String getSqlType(Collection<?> collection) {
+        if (collection.isEmpty()) {
+            return "text"; // default to varchar if empty
+        }
+        var firstElement = collection.iterator().next();
+        if (firstElement instanceof String) return "text";
+        if (firstElement instanceof Integer) return "integer";
+        if (firstElement instanceof Long) return "bigint";
+        if (firstElement instanceof Double) return "double precision";
+        // Add more types as needed
+        return "text"; // default to varchar
+    }
+
 }

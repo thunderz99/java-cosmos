@@ -942,12 +942,6 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 () -> container.queryItems(querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass())
         );
 
-        if (log.isInfoEnabled()) {
-            docs.iterableByPage(FIND_PREFERRED_PAGE_SIZE).forEach(response -> {
-                log.info("count Document:{}/docs/, partition:{}, result size:{}, request charge:{}", collectionLink, partition, response.getResults().size(), response.getRequestCharge());
-            });
-        }
-
         var maps = docs.stream().collect(Collectors.toList());
 
         if (log.isInfoEnabled()) {

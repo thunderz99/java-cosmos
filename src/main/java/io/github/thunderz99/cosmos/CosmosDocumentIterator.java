@@ -11,7 +11,7 @@ import java.util.Iterator;
  * Having hasNext() and next() method to iterate.
  * </p>
  */
-public interface CosmosDocumentIterator extends Iterator<CosmosDocument> {
+public interface CosmosDocumentIterator extends Iterator<CosmosDocument>, AutoCloseable {
 
     /**
      * @param clazz

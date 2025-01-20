@@ -1,6 +1,8 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
 import io.github.thunderz99.cosmos.CosmosException;
+import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
+import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImplTest;
@@ -541,6 +543,118 @@ class TableUtilTest {
                 var ret = TableUtil.batchUpsertRecords(conn, schemaName, tableName, records);
                 assertThat(ret).isEmpty();
             }
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void findRecords_should_work() throws Exception {
+        var tableName = "findRecords_test_" + RandomStringUtils.randomAlphanumeric(6);
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+            var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord(String.valueOf(i), Map.of(
+                    "id", String.valueOf(i),
+                    "name", "John Doe " + i,
+                    "age", i,
+                    "address", Map.of("city", "NY" + i)
+            )
+            )).toList();
+            TableUtil.batchUpsertRecords(conn, schemaName, tableName, records);
+
+            {
+                // normal case
+
+                // filtering with id
+                var querySpec = new CosmosSqlQuerySpec();
+                querySpec.setQueryText("SELECT * FROM %s.%s WHERE id = @param000_id".formatted(schemaName, tableName));
+                querySpec.addParameter(new CosmosSqlParameter("@param000_id", "5"));
+                var found = TableUtil.findRecords(conn, schemaName, tableName, querySpec);
+                assertThat(found).hasSize(1);
+                assertThat(found.get(0).id).isEqualTo(records.get(5).id);
+                assertThat(found.get(0).data).isEqualTo(records.get(5).data);
+            }
+
+            {
+                // filtering with name and age
+                var querySpec = new CosmosSqlQuerySpec();
+                querySpec.setQueryText("SELECT * FROM %s.%s WHERE (data->>'name' > @param000_name) AND ((data->>'age')::int < @param001_age)".formatted(schemaName, tableName));
+                querySpec.addParameter(new CosmosSqlParameter("@param000_name", "John Doe 2"));
+                querySpec.addParameter(new CosmosSqlParameter("@param001_age", 6));
+                var found = TableUtil.findRecords(conn, schemaName, tableName, querySpec);
+                assertThat(found).hasSize(3);
+                assertThat(found.get(0).id).isEqualTo(records.get(3).id);
+                assertThat(found.get(1).data).isEqualTo(records.get(4).data);
+                assertThat(found.get(2).id).isEqualTo(records.get(5).id);
+            }
+
+            {
+                // filtering address.city (nested fields)
+                var querySpec = new CosmosSqlQuerySpec();
+                querySpec.setQueryText("SELECT * FROM %s.%s WHERE (data->'address'->>'city' = @param000_city)".formatted(schemaName, tableName));
+                querySpec.addParameter(new CosmosSqlParameter("@param000_city", "NY5"));
+                var found = TableUtil.findRecords(conn, schemaName, tableName, querySpec);
+                assertThat(found).hasSize(1);
+                assertThat(found.get(0).id).isEqualTo(records.get(5).id);
+                assertThat(found.get(0).data).isEqualTo(records.get(5).data);
+            }
+
+            {
+                // irregular input values
+                // filter is null
+                assertThatThrownBy(() -> TableUtil.findRecords(conn, schemaName, tableName, null))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("querySpec should not be null");
+            }
+            {
+                // filter is empty
+                assertThatThrownBy(() -> TableUtil.findRecords(conn, schemaName, tableName, new CosmosSqlQuerySpec()))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("querySpec.queryText should be non-blank");
+            }
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void countRecords_should_work() throws Exception {
+        var tableName = "countrecords_" + RandomStringUtils.randomAlphanumeric(4).toLowerCase();
+        var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord(String.valueOf(i), Map.of("name", "John Doe " + i, "age", i))).toList();
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+            var ret = TableUtil.batchInsertRecords(conn, schemaName, tableName, records);
+            assertThat(ret.size()).isEqualTo(10);
+
+            {
+                // normal case
+                var querySpec = new CosmosSqlQuerySpec();
+                querySpec.setQueryText("SELECT COUNT(*) FROM %s.%s WHERE data->>'name' = @param000_name".formatted(schemaName, tableName));
+                querySpec.addParameter(new CosmosSqlParameter("@param000_name", "John Doe 2"));
+                var count = TableUtil.countRecords(conn, schemaName, tableName, querySpec);
+                assertThat(count).isEqualTo(1);
+            }
+            {
+                // irregular input values
+                // filter is null
+                assertThatThrownBy(() -> TableUtil.countRecords(conn, schemaName, tableName, null))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("querySpec should not be null");
+
+                // querySpec.queryText is empty
+                var querySpec = new CosmosSqlQuerySpec();
+                assertThatThrownBy(() -> TableUtil.countRecords(conn, schemaName, tableName, querySpec))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("querySpec.queryText should be non-blank");
+            }
+
+
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);

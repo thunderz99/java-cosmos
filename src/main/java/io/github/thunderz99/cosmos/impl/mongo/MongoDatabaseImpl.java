@@ -634,8 +634,6 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         var container = this.client.getDatabase(coll).getCollection(partition);
 
-        var ret = new CosmosDocumentList();
-
         var findIterable = container.find(filter)
                 .sort(sort).skip(cond.offset).limit(cond.limit);
 

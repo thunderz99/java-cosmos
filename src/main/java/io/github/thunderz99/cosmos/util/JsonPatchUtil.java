@@ -12,6 +12,7 @@ import com.azure.cosmos.implementation.patch.PatchOperationCore;
 import com.google.common.primitives.Primitives;
 import com.mongodb.client.model.PushOptions;
 import com.mongodb.client.model.Updates;
+import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
@@ -186,7 +187,7 @@ public class JsonPatchUtil {
                     var subSql4Array = generateAddOperation4ArrayPostgres(subSql.toString(), pathList, paramName);
 
                     subSql = new StringBuilder(subSql4Array);
-                    params.add(new CosmosSqlParameter(paramName, value));  // Remove leading '/' from path
+                    params.add(Condition.createSqlParameter(paramName, value));  // Remove leading '/' from path
                     index.getAndIncrement();
                     continue;
                 }
