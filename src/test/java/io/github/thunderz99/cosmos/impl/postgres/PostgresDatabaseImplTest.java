@@ -2908,7 +2908,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void patch_should_work_with_nested_pojo() throws Exception {
         var partition = "PatchPojoTests";
         var id = "patch_should_work_with_nested_pojo";
@@ -3424,8 +3424,11 @@ class PostgresDatabaseImplTest {
 
         // prepare
         db.upsert(host, user1, "Users");
+        Thread.sleep(1); // let "_ts" be different for each record
         db.upsert(host, user2, "Users");
+        Thread.sleep(1);
         db.upsert(host, user3, "Users");
+        Thread.sleep(1);
         // different partition
         db.upsert(host, user4, "Users2");
     }
