@@ -83,31 +83,6 @@ public class SubQueryExpression implements Expression {
         return JsonUtil.toJson(this);
     }
 
-    /**
-     * A helper function to generate c.foo IN (...) queryText
-     * <p>
-     * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
-     * "( c.parentId IN (@parentId__0, @parentId__1, @parentId__2) )", and add
-     * paramsValue into params
-     */
-    static String buildArray(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params) {
-        var ret = new StringBuilder(String.format(" (%s IN (", Condition.getFormattedKey(key)));
-
-        int index = 0;
-
-        var paramNameList = new ArrayList<String>();
-        for (var v : paramValue) {
-            var paramNameIdx = String.format("%s__%d", paramName, index);
-            paramNameList.add(paramNameIdx);
-            params.add(Condition.createSqlParameter(paramNameIdx, v));
-            index++;
-        }
-        ret.append(paramNameList.stream().collect(Collectors.joining(", ")));
-
-        ret.append("))");
-
-        return ret.toString();
-    }
 
     /**
      * A helper function to generate c.items ARRAY_CONTAINS_ANY List.of(item1, item2) queryText

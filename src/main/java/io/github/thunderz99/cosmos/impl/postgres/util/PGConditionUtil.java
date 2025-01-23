@@ -10,6 +10,7 @@ import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.impl.postgres.condition.PGOrExpressions;
 import io.github.thunderz99.cosmos.impl.postgres.condition.PGSimpleExpression;
+import io.github.thunderz99.cosmos.impl.postgres.condition.PGSubQueryExpression;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.NotImplementedException;
@@ -55,16 +56,7 @@ public class PGConditionUtil {
 
         // sort
         if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
-            var sortMap = new LinkedHashMap<String, String>();
-            for (int i = 0; i < cond.sort.size(); i++) {
-                if (i % 2 == 0) {
-                    sortMap.put(cond.sort.get(i), cond.sort.get(i + 1));
-                }
-            }
-            var sorts = sortMap.entrySet().stream()
-                    .map(entry -> String.format(" %s %s", PGKeyUtil.getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
-                    .collect(Collectors.joining(",", " ORDER BY", ""));
-
+            var sorts = buildSorts(cond.sort);
             queryText.append(sorts);
         }
 
@@ -73,6 +65,45 @@ public class PGConditionUtil {
 
         return new CosmosSqlQuerySpec(queryText.toString(), params);
 
+    }
+
+
+    /**
+     * Generate the sort queryText
+     *
+     * @param sort list of sort key and orders
+     * @return sort queryText
+     */
+    static String buildSorts(List<String> sort) {
+
+        if(CollectionUtils.isEmpty(sort)){
+            return "";
+        }
+
+        var sortMap = new LinkedHashMap<String, String>();
+
+        // record the first order "ASC" or "DESC"
+        var firstOrder = "";
+
+        for (int i = 0; i < sort.size(); i++) {
+            if (i % 2 == 0) {
+                sortMap.put(sort.get(i), sort.get(i + 1));
+            }
+            if(i == 1){
+                firstOrder = sort.get(i);
+            }
+        }
+
+
+        if(!sortMap.keySet().contains("_ts")){
+            // when sort does not include "_ts", we add a second sort of _ts, in order to get a more stable sort result for postgres
+            sortMap.put("_ts", firstOrder);
+        }
+
+        var ret = sortMap.entrySet().stream()
+                .map(entry -> String.format(" %s %s", PGKeyUtil.getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
+                .collect(Collectors.joining(",", " ORDER BY", ""));
+        return ret;
     }
 
     /**
@@ -127,13 +158,13 @@ public class PGConditionUtil {
                                     AtomicInteger conditionIndex, AtomicInteger paramIndex, String selectAlias) {
 
         // process raw sql
-//        if (cond.rawQuerySpec != null) {
-//            conditionIndex.getAndIncrement();
-//            params.addAll(cond.rawQuerySpec.getParameters());
-//            String rawQueryText = processNegativeQuery(cond.rawQuerySpec.getQueryText(), cond.negative);
-//            return new FilterQuery(rawQueryText,
-//                    params, conditionIndex, paramIndex);
-//        }
+        if (cond.rawQuerySpec != null) {
+            conditionIndex.getAndIncrement();
+            params.addAll(cond.rawQuerySpec.getParameters());
+            String rawQueryText = processNegativeQuery(cond.rawQuerySpec.getQueryText(), cond.negative);
+            return new FilterQuery(rawQueryText,
+                    params, conditionIndex, paramIndex);
+        }
 
         // process filters
 
@@ -345,7 +376,7 @@ public class PGConditionUtil {
         var subqueryMatcher = Condition.subQueryExpressionPattern.matcher(key);
 
         if (subqueryMatcher.find()) {
-            return new SubQueryExpression(subqueryMatcher.group(1), subqueryMatcher.group(3), value, subqueryMatcher.group(2));
+            return new PGSubQueryExpression(subqueryMatcher.group(1), subqueryMatcher.group(3), value, subqueryMatcher.group(2));
         }
 
         //default key / value expression

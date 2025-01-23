@@ -91,7 +91,7 @@ public class PGSimpleExpression implements Expression {
                 ret.setQueryText(String.format(" (%s %s %s)", PGKeyUtil.getFormattedKeyWithAlias(this.key, selectAlias, paramValue), this.operator, paramName));
                 params.add(Condition.createSqlParameter(paramName, paramValue));
             } else {
-                //the default operator for collection
+                //the default operator for collection "IN"
                 // c.foo IN ['A','B','C']
                 if (coll.isEmpty()) {
                     //if paramValue is empty, return a FALSE queryText.
@@ -167,15 +167,12 @@ public class PGSimpleExpression implements Expression {
                 querySpec.setQueryText(String.format(" (%s ~ %s)", formattedKey, valuePart));
             }
             case "ARRAY_CONTAINS" -> {
-                // use contents->'skills' @> '"Java"'
+                // use data->'skills' ? 'Java'
+                // because ? is also a placeholder for PreparedStatement, ?? insteadof ? in JDBC
+                // https://stackoverflow.com/questions/26516204/how-do-i-escape-a-literal-question-mark-in-a-jdbc-prepared-statement
                 // modify the formattedKey from ->> to -> , because skills should be a json array to do ARRAY_CONTAINS
                 var jsonKey = formattedKey.replace("->>", "->");
-                querySpec.setQueryText(String.format(" (%s @> %s::jsonb)", jsonKey, valuePart));
-
-                // modify the paramValue to "\"paramValue\""
-                var currentIndex = params.size() - 1;
-                var param = params.get(currentIndex);
-                param.value = "\"" + param.getValue() + "\"";
+                querySpec.setQueryText(String.format(" (%s ?? %s)", jsonKey, valuePart));
             }
             default -> {
                 querySpec.setQueryText(String.format(" (%s(%s, %s))", this.operator, formattedKey, valuePart));
@@ -195,7 +192,7 @@ public class PGSimpleExpression implements Expression {
      * A helper function to generate c.foo IN @param000_array1 queryText
      * <p>
      * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
-     * (data->>'parentId' = ANY("@parentId")), and add
+     * (data->>'parentId' = ANY(@parentId))
      * paramsValue into params
      * </p>
      */
