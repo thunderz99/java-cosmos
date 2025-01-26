@@ -4,16 +4,15 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.condition.*;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.impl.postgres.condition.PGOrExpressions;
 import io.github.thunderz99.cosmos.impl.postgres.condition.PGSimpleExpression;
 import io.github.thunderz99.cosmos.impl.postgres.condition.PGSubQueryExpression;
+import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,9 +41,8 @@ public class PGConditionUtil {
         var schema = TableUtil.checkAndNormalizeValidEntityName(coll);
         var table = TableUtil.checkAndNormalizeValidEntityName(partition);
 
-        var select = generateSelect(cond);
 
-        var initialText = String.format("SELECT %s FROM %s.%s", select, schema, table);
+        var initialText = String.format("FROM %s.%s", schema, table);
         var initialParams = new ArrayList<CosmosSqlParameter>();
         var initialConditionIndex = new AtomicInteger(0);
         var initialParamIndex = new AtomicInteger(0);
@@ -53,6 +51,10 @@ public class PGConditionUtil {
 
         var queryText = filterQuery.queryText;
         var params = filterQuery.params;
+
+        // select
+        var select = generateSelect(cond);
+        queryText.insert(0, "SELECT %s ".formatted(select));
 
         // sort
         if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
@@ -185,24 +187,21 @@ public class PGConditionUtil {
             if (entry.getKey().startsWith(SubConditionType.AND)) {
                 // sub query AND
                 var subQueries = extractSubQueries(entry.getValue());
-                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", params, conditionIndex, paramIndex);
+                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", params, conditionIndex, paramIndex, cond.join);
 
             } else if (entry.getKey().startsWith(SubConditionType.OR)) {
                 // sub query OR
                 var subQueries = extractSubQueries(entry.getValue());
-                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", params, conditionIndex, paramIndex);
+                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", params, conditionIndex, paramIndex, cond.join);
 
             } else if (entry.getKey().startsWith(SubConditionType.NOT)) {
                 // sub query NOT
                 var subQueries = extractSubQueries(entry.getValue());
                 if (CollectionUtils.isNotEmpty(subQueries)) {
-                    var subQueryWithNot = Condition.filter(SubConditionType.AND, subQueries).not();
+                    var subQueryWithNot = Condition.filter(SubConditionType.AND, subQueries).join(cond.join).not();
                     // recursively generate the filterQuery with negative flag true
                     var filterQueryWithNot = generateFilterQuery(subQueryWithNot, "", params, conditionIndex, paramIndex, selectAlias);
                     subFilterQueryToAdd = " " + removeConnectPart(filterQueryWithNot.queryText.toString());
-                    // TODO join
-//                    saveOriginJoinCondition(subFilterQueryToAdd);
-//                    subFilterQueryToAdd = toJoinQueryText(subFilterQueryToAdd, subFilterQueryToAdd, paramIndex);
                 }
             } else if (entry.getKey().startsWith(SubConditionType.EXPRESSION)) {
                 // support expression using combination of function and the basic operators
@@ -223,8 +222,8 @@ public class PGConditionUtil {
                 subFilterQueryToAdd = expQuerySpec.getQueryText();
 
                 // TODO join
-                //saveOriginJoinCondition(subFilterQueryToAdd);
-                //subFilterQueryToAdd = toJoinQueryText(entry.getKey(), subFilterQueryToAdd, paramIndex);
+                saveOriginJoinCondition(cond, subFilterQueryToAdd);
+                subFilterQueryToAdd = buildArrayJoinQueryText(cond, entry.getKey(), subFilterQueryToAdd, expQuerySpec.params);
                 params.addAll(expQuerySpec.getParameters());
             }
 
@@ -249,6 +248,99 @@ public class PGConditionUtil {
         return new FilterQuery(queryText, params, conditionIndex, paramIndex);
     }
 
+
+    /**
+     * If the expression contains join part, translate it to join query
+     * e.g. "(data->'items'->>'name' == @param000_items) -> "(data @?? '$.items[*] ? (@.name == \"%s\")"')
+     * @param cond the filter condition
+     * @param keyWithOps the field name
+     * @param subFilterQueryToAdd the current query text
+     * @param params the sql params
+     * @return the translated query text
+     */
+    static String buildArrayJoinQueryText(Condition cond, String keyWithOps, String subFilterQueryToAdd, List<CosmosSqlParameter> params) {
+
+        Checker.checkNotNull(cond, "cond");
+        Checker.checkNotBlank(keyWithOps, "keyWithOps");
+        Checker.checkNotBlank(subFilterQueryToAdd, "subFilterQueryToAdd");
+        Checker.checkNotNull(params, "params");
+
+        // because the keyWithOps contains "> >= < <=", we have to remove the ops part
+        // e.g. "children.grade >", we should remove the " >" part
+        var keyParts = keyWithOps.split("\\s+");
+        var key = keyParts[0];
+
+        for (String joinPart : cond.join) {
+            if(key.contains(joinPart) || subFilterQueryToAdd.contains(PGKeyUtil.getFormattedKey4Json(joinPart))){
+
+                // key format used in jsonb_path. e.g. "$.area.city.street.rooms[*]" or "$.\"room*no-01\"[*]"
+                var keyPair = PGKeyUtil.getJsonbPathKey(joinPart, key);
+                var jsonbPath = keyPair.getLeft();
+                var jsonbKey = keyPair.getRight();
+
+                for(var i=0; i< params.size(); i++){
+                    var paramName = params.get(i).getName();
+                    var value = params.get(i).getValue();
+                    var valuePart = "%s";
+                    if(value instanceof String strValue){
+                        // escape the string. e.g.  "(@.no == \"%s\")";
+                        valuePart = "\"%s\"";
+                    }
+
+                    // replace the key. from "data->'area'->'city'->'street'->'rooms'->'no'" to "$.area.city.street.rooms[*] ? (@.no"
+
+                    var simpleKey = PGKeyUtil.getFormattedKey(key, value);
+                    if(subFilterQueryToAdd.contains(simpleKey)) {
+                        // simpleKey: (data->'area'->'city'->'street'->'rooms'->>'no')::int
+                        subFilterQueryToAdd = subFilterQueryToAdd.replace(simpleKey, "%s ? (%s".formatted(jsonbPath, jsonbKey));
+                    } else {
+                        // key4JsonOps: data->'area'->'city'->'street'->'rooms'->'no'
+                        subFilterQueryToAdd = subFilterQueryToAdd.replace(PGKeyUtil.getFormattedKey4Json(key), "%s ? (%s".formatted(jsonbPath, jsonbKey));
+                    }
+
+                    // replace the paramName. from "@param001_area__city__street__rooms__no" to "\"%s\""
+                    subFilterQueryToAdd = subFilterQueryToAdd.replace(paramName,valuePart+")");
+
+                    // replace = to == for jsonb path expression
+                    subFilterQueryToAdd = subFilterQueryToAdd.replace(" = "," == ");
+
+                    // replace ?? to == for jsonb path expression
+                    subFilterQueryToAdd = subFilterQueryToAdd.replace(" ?? "," == ");
+
+
+                    // replace %s to the real value
+                    subFilterQueryToAdd = subFilterQueryToAdd.formatted(value);
+
+                    // the new value is a string for jsonb path
+                    params.get(i).value =  new String(subFilterQueryToAdd);
+
+                    // the new filterQuery is a query using "data @??"
+                    subFilterQueryToAdd = " (data @?? %s::jsonpath)".formatted(paramName);
+
+                }
+
+                break;
+            }
+        }
+
+        return subFilterQueryToAdd;
+    }
+
+    /**
+     * Save the conditions of the join part to map.
+     * @param cond the filter condition
+     * @param originJoinConditionText condition text
+     */
+    static void saveOriginJoinCondition(Condition cond, String originJoinConditionText){
+        for (String joinPart : cond.join) {
+            if(originJoinConditionText.contains(PGKeyUtil.getFormattedKey(joinPart))){
+                var joinCondTextList= cond.joinCondText.getOrDefault(joinPart,new ArrayList<>());
+                joinCondTextList.add(originJoinConditionText);
+                cond.joinCondText.put(joinPart,joinCondTextList);
+                break;
+            }
+        }
+    }
 
     /**
      * add negative NOT operator for queryText, if not empty
@@ -308,39 +400,39 @@ public class PGConditionUtil {
 
     /**
      * @param conds          conditions
-     * @param joiner         "AND", "OR"
+     * @param operator4SubConds         "AND", "OR"
      * @param params         sql params
      * @param conditionIndex increment index for conditions (for uniqueness of param names)
      * @param paramIndex     increment index for params (for uniqueness of param names)
+     * @param join           join part of parent condition.
      * @return query text
      */
-    static String generateFilterQuery4List(List<Condition> conds, String joiner, List<CosmosSqlParameter> params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+    static String generateFilterQuery4List(List<Condition> conds, String operator4SubConds, List<CosmosSqlParameter> params, AtomicInteger conditionIndex, AtomicInteger paramIndex, Set<String> join) {
         List<String> subTexts = new ArrayList<>();
         //List<String> originSubTexts = new ArrayList<>();
 
         for (var subCond : conds) {
+
+            var originSubJoin = subCond.join;
+            subCond.join = join;
+
             var subFilterQuery = generateFilterQuery(subCond,"", params, conditionIndex,
                     paramIndex, TableUtil.DATA);
 
             var subText = removeConnectPart(subFilterQuery.queryText.toString());
             subTexts.add(subText);
 
-            // TODO join
-            //subTexts.add(toJoinQueryText(originSubText, originSubText, paramIndex));
-            //originSubTexts.add(originSubText);
             params = subFilterQuery.params;
             conditionIndex = subFilterQuery.conditionIndex;
             paramIndex = subFilterQuery.paramIndex;
+
+            // restore the join part
+            subCond.join = originSubJoin;
+
         }
 
         var subFilterQuery = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
-                .collect(Collectors.joining(" " + joiner + " ", " (", ")"));
-
-        //TODO join
-
-        //var originSubFilterQuery = originSubTexts.stream().filter(t -> StringUtils.isNotBlank(t))
-        //        .collect(Collectors.joining(" " + joiner + " ", " (", ")"));
-        //saveOriginJoinCondition(StringUtils.removeStart(originSubFilterQuery, " ()"));
+                .collect(Collectors.joining(" " + operator4SubConds + " ", " (", ")"));
 
         // remove empty sub queries
         return StringUtils.removeStart(subFilterQuery, " ()");
@@ -427,7 +519,7 @@ public class PGConditionUtil {
      */
     static String generateSelectByFields(Set<String> fieldsSet) {
 
-        // converts field to data.field, exludes empty fields
+        // converts field to data.field, excludes empty fields
         // ["id", "name", ""] -> ["data.id", "data.name"]
 
         var fields = fieldsSet.stream().filter(f -> StringUtils.isNotBlank(f)).map(f -> {

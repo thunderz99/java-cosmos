@@ -76,4 +76,45 @@ class PGKeyUtilTest {
         }
     }
 
+
+    @Test
+    void getJsonbPathKey_should_work() {
+        {
+            // normal cases: basic
+            var pair = PGKeyUtil.getJsonbPathKey("joinPart", "joinPart.key");
+            assertThat(pair.getLeft()).isEqualTo("$.\"joinPart\"[*]");
+            assertThat(pair.getRight()).isEqualTo("@.\"key\"");
+        }
+        {   // normal cases: nested joinPart and key
+            var pair = PGKeyUtil.getJsonbPathKey("join1.join2", "join1.join2.key1.key2");
+            assertThat(pair.getLeft()).isEqualTo("$.\"join1\".\"join2\"[*]");
+            assertThat(pair.getRight()).isEqualTo("@.\"key1\".\"key2\"");
+        }
+
+        {
+            // irregular cases for joinPart
+            assertThatThrownBy(() -> PGKeyUtil.getJsonbPathKey(null, "joinPart.key"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("joinPart should be non-blank");
+            assertThatThrownBy(() -> PGKeyUtil.getJsonbPathKey("", "joinPart.key"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("joinPart should be non-blank");
+            assertThatThrownBy(() -> PGKeyUtil.getJsonbPathKey(" ", "joinPart.key"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("joinPart should be non-blank");
+        }
+        {
+            // irregular cases for key
+            assertThatThrownBy(() -> PGKeyUtil.getJsonbPathKey("joinPart", null))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("key should be non-blank");
+            assertThatThrownBy(() -> PGKeyUtil.getJsonbPathKey("joinPart", ""))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("key should be non-blank");
+            assertThatThrownBy(() -> PGKeyUtil.getJsonbPathKey("joinPart", " "))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("key should be non-blank");
+        }
+    }
+
 }

@@ -8,9 +8,11 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PGConditionUtilTest {
@@ -385,6 +387,97 @@ class PGConditionUtilTest {
             assertThat(q).isEqualTo(" ORDER BY data->>'id' DESC, data->>'_ts' ASC");
         }
 
+    }
+
+    @Test
+    void buildArrayJoinQueryText_should_work() {
+        {
+            // normal case. simple key = value
+            var key = "area.city.street.rooms.no";
+            var value = "001";
+            var cond = Condition.filter(key, value).join(Set.of("area.city.street.rooms"));
+            var paramName = "@param000_area_city_street_rooms_no";
+            var subFilterQueryToAdd = " (data->'area'->'city'->'street'->'rooms'->>'no' = %s)".formatted(paramName);
+            var params = new ArrayList<CosmosSqlParameter>();
+            params.add(new CosmosSqlParameter(paramName, "001"));
+            var queryText = PGConditionUtil.buildArrayJoinQueryText(cond, key, subFilterQueryToAdd, params);
+
+            assertThat(queryText).isEqualTo(" (data @?? @param000_area_city_street_rooms_no::jsonpath)");
+            assertThat(params).hasSize(1);
+            assertThat(params.get(0).getName()).isEqualTo(paramName);
+            assertThat(params.get(0).getValue()).isEqualTo(" ($.\"area\".\"city\".\"street\".\"rooms\"[*] ? (@.\"no\" == \"001\"))");
+        }
+
+        {
+            // normal case. key > value
+            var key = "area.city.street.rooms.no";
+            var value = "001";
+            var cond = Condition.filter(key, value).join(Set.of("area.city.street.rooms"));
+            var paramName = "@param000_area_city_street_rooms_no";
+            var subFilterQueryToAdd = " (data->'area'->'city'->'street'->'rooms'->>'no' = %s)".formatted(paramName);
+            var params = new ArrayList<CosmosSqlParameter>();
+            params.add(new CosmosSqlParameter(paramName, "001"));
+            var queryText = PGConditionUtil.buildArrayJoinQueryText(cond, key, subFilterQueryToAdd, params);
+
+            assertThat(queryText).isEqualTo(" (data @?? @param000_area_city_street_rooms_no::jsonpath)");
+            assertThat(params).hasSize(1);
+            assertThat(params.get(0).getName()).isEqualTo(paramName);
+            assertThat(params.get(0).getValue()).isEqualTo(" ($.\"area\".\"city\".\"street\".\"rooms\"[*] ? (@.\"no\" == \"001\"))");
+        }
+
+        {
+
+            // irregular cases
+            var key = "area.city.street.rooms";
+            var value = "001";
+            var cond = Condition.filter(key, value).join(Set.of("area.city.street.rooms"));
+            var paramName = "@param000_area_city_street_rooms";
+            var subFilterQueryToAdd = " (data->'area'->'city'->'street'->'rooms'->>'no' = %s)".formatted(paramName);
+            var params = new ArrayList<CosmosSqlParameter>();
+            params.add(new CosmosSqlParameter(paramName, "001"));
+
+
+            assertThatThrownBy(() -> PGConditionUtil.buildArrayJoinQueryText(null, key, subFilterQueryToAdd, params))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("cond should not be null");
+            assertThatThrownBy(() -> PGConditionUtil.buildArrayJoinQueryText(cond, "", subFilterQueryToAdd, params))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("keyWithOps should be non-blank");
+            assertThatThrownBy(() -> PGConditionUtil.buildArrayJoinQueryText(cond, null, subFilterQueryToAdd, params))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("keyWithOps should be non-blank");
+            assertThatThrownBy(() -> PGConditionUtil.buildArrayJoinQueryText(cond, key, "", params))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("subFilterQueryToAdd should be non-blank");
+            assertThatThrownBy(() -> PGConditionUtil.buildArrayJoinQueryText(cond, key, subFilterQueryToAdd, null))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("params should not be null");
+
+        }
+
+    }
+
+    @Test
+    void generateSelectByFields_should_work(){
+        {
+            // normal case 1
+            var fields = Set.of("id", "name");
+            var expected = """
+                    id,
+                    jsonb_build_object('name', data->'name', 'id', data->'id') AS "data"
+                    """;
+            assertThat(PGConditionUtil.generateSelectByFields(fields)).isEqualTo(expected);
+        }
+
+        {
+            // normal case 2
+            var fields = Set.of("contents.sheet-1.name", "contents.sheet-2.address");
+            var expected = """
+                    id,
+                    jsonb_build_object('contents', jsonb_build_object('sheet-2', jsonb_build_object('address', data->'contents'->'sheet-2'->'address'), 'sheet-1', jsonb_build_object('name', data->'contents'->'sheet-1'->'name')), 'id', data->'id') AS "data"
+                    """;
+            assertThat(PGConditionUtil.generateSelectByFields(fields)).isEqualTo(expected);
+        }
 
     }
 

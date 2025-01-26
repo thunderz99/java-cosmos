@@ -2,9 +2,12 @@ package io.github.thunderz99.cosmos.impl.postgres.util;
 
 import io.github.thunderz99.cosmos.util.Checker;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * A util class for postgres data(JSONB) column's json key(e.g. data->>'age', data->'address'->>'city')
@@ -110,5 +113,39 @@ public class PGKeyUtil {
             // Fallback: treat it as String (no cast at all, depending on your preference)
             return basePath;
         }
+    }
+
+    /**
+     * Get the key format for jsonb path operators.
+     * <pre>
+     *     INPUT:
+     *     joinPart: area.city.street.rooms
+     *     key: area.city.street.rooms.no
+     *     OUTPUT: ($.area.city.street.rooms[*], @.no)
+     *
+     *     INPUT:
+     *     joinPart: room*no-01
+     *     key: room*no-01.area
+     *     OUTPUT: ($."room*no-01.area"[*], @.area)
+     *
+     * </pre>
+     * @param joinPart the key to the join array
+     * @param key the key to the field
+     * @return (joinPart, key) in jsonb path format
+     */
+    public static Pair<String, String> getJsonbPathKey(String joinPart, String key) {
+
+        Checker.checkNotBlank(joinPart, "joinPart");
+        Checker.checkNotBlank(key, "key");
+
+        var remainedKey = StringUtils.removeStart(key, joinPart + ".");
+
+        var joinPartArray = joinPart.split("\\.");
+        var keyArray = remainedKey.split("\\.");
+
+        var joinPartJsonbPath = Arrays.stream(joinPartArray).map(s -> "\""+s+"\"").collect(Collectors.joining(".", "$.", "[*]"));
+        var keyJsonbPath = Arrays.stream(keyArray).map(s -> "\""+s+"\"").collect(Collectors.joining(".", "@.", ""));
+        return Pair.of(joinPartJsonbPath, keyJsonbPath);
+
     }
 }

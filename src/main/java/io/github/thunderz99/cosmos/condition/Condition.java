@@ -481,6 +481,8 @@ public class Condition {
                     // recursively generate the filterQuery with negative flag true
                     var filterQueryWithNot = subQueryWithNot.generateFilterQuery("", params, conditionIndex, paramIndex, selectAlias);
                     subFilterQueryToAdd = " " + removeConnectPart(filterQueryWithNot.queryText.toString());
+
+                    // process JOIN
                     saveOriginJoinCondition(subFilterQueryToAdd);
                     subFilterQueryToAdd = toJoinQueryText(subFilterQueryToAdd, subFilterQueryToAdd, paramIndex);
                 }
@@ -501,6 +503,8 @@ public class Condition {
                 var exp = parse(entry.getKey(), entry.getValue());
                 var expQuerySpec = exp.toQuerySpec(paramIndex, selectAlias);
                 subFilterQueryToAdd = expQuerySpec.getQueryText();
+
+                // process JOIN
                 saveOriginJoinCondition(subFilterQueryToAdd);
                 subFilterQueryToAdd = toJoinQueryText(entry.getKey(), subFilterQueryToAdd, paramIndex);
                 params.addAll(expQuerySpec.getParameters());
@@ -526,7 +530,16 @@ public class Condition {
 		return new FilterQuery(queryText, params, conditionIndex, paramIndex);
 	}
 
-    private String toJoinQueryText(String key, String subFilterQueryToAdd, AtomicInteger paramIndex) {
+
+    /**
+     * If the expression contains join part, translate it to join query
+     * e.g. "c.items ARRAY_CONTAINS c.items.name" -> " EXISTS( SELECT VALUE c FROM c IN c.items WHERE c.name = c.name)"
+     * @param key the field name
+     * @param subFilterQueryToAdd the current query text
+     * @param paramIndex the index of param
+     * @return the translated query text
+     */
+    String toJoinQueryText(String key, String subFilterQueryToAdd, AtomicInteger paramIndex) {
         for (String joinPart : this.join) {
             if(key.contains(joinPart) ||subFilterQueryToAdd.contains(getFormattedKey(joinPart))){
                 var newAlias="j"+paramIndex;

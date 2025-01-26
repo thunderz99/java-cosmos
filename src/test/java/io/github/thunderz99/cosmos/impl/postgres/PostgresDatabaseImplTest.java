@@ -1715,130 +1715,200 @@ class PostgresDatabaseImplTest {
         assertThat(resultMaps.get(2).get("itemsWithinRange")).isInstanceOf(Integer.class).isEqualTo(Integer.MAX_VALUE); // Should remain Integer
     }
 
-    @Disabled
+    @Test
     public void find_should_work_with_join() throws Exception {
 
         // query with join
         {
             var cond = new Condition();
 
-            cond = Condition.filter("area.city.street.rooms.no", "001", "room*no-01.area", 10) //
-                    .sort("id", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("area.city.street.rooms", "room*no-01"))
-                    .returnAllSubArray(false);
+//            {
+//                cond = Condition.filter("area.city.street.rooms.no", "001", "room*no-01.area", 10) //
+//                        .sort("id", "ASC") //
+//                        .limit(10) //
+//                        .offset(0)
+//                        .join(Set.of("area.city.street.rooms", "room*no-01"))
+//                        .returnAllSubArray(false);
+//
+//                var result = db.find(host, cond, "Families").toMap();
+//                assertThat(result).hasSize(1);
+//                var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
+//                assertThat(rooms).hasSize(1);
+//                assertThat(rooms.get(0)).containsEntry("no", "001");
+//            }
 
-            var result = db.find(host, cond, "Families").toMap();
-            assertThat(result).hasSize(1);
-            var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
-            assertThat(rooms).hasSize(1);
-            assertThat(rooms.get(0)).containsEntry("no", "001");
+//            {
+//                cond = Condition.filter("area.city.street.rooms.no", "001") //
+//                        .sort("id", "ASC") //
+//                        .limit(10) //
+//                        .offset(0)
+//                        .join(Set.of("area.city.street.rooms"))
+//                        .returnAllSubArray(true);
+//                ;
+//
+//                var result = db.find(host, cond, "Families").toMap();
+//                assertThat(result).hasSize(1);
+//                var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
+//                assertThat(rooms).hasSize(2);
+//                assertThat(rooms.get(0)).containsEntry("no", "001");
+//                assertThat(rooms.get(1)).containsEntry("no", "002");
+//            }
 
-            cond = Condition.filter("area.city.street.rooms.no", "001") //
-                    .sort("id", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("area.city.street.rooms"))
-                    .returnAllSubArray(true);
-            ;
-
-            result = db.find(host, cond, "Families").toMap();
-            assertThat(result).hasSize(1);
-            rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
-            assertThat(rooms).hasSize(2);
-            assertThat(rooms.get(0)).containsEntry("no", "001");
-            assertThat(rooms.get(1)).containsEntry("no", "002");
-
-            cond = Condition.filter("parents.firstName", "Thomas", "parents.firstName", "Mary Kay", "children.gender", "female", "children.grade <", 6, "room*no-01.area", 10) //
-                    .sort("id", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("parents", "children", "room*no-01"))
-                    .returnAllSubArray(false);
-
-            result = db.find(host, cond, "Families").toMap();
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0)).containsEntry("_partition", "Families");
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Mary Kay"))).isTrue();
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("gender").toString().equals("female"))).isTrue();
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("room*no-01"))).stream().anyMatch(item -> item.get("area").toString().equals("10"))).isTrue();
+//            {
+//                cond = Condition.filter("parents.firstName", "Thomas", "parents.firstName", "Mary Kay", "children.gender", "female", "children.grade <", 6, "room*no-01.area", 10) //
+//                        .sort("id", "ASC") //
+//                        .limit(10) //
+//                        .offset(0)
+//                        .join(Set.of("parents", "children", "room*no-01"))
+//                        .returnAllSubArray(false);
+//
+//                var result = db.find(host, cond, "Families").toMap();
+//                assertThat(result).hasSize(1);
+//                assertThat(result.get(0)).containsEntry("_partition", "Families");
+//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
+//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Mary Kay"))).isTrue();
+//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("gender").toString().equals("female"))).isTrue();
+//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
+//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("room*no-01"))).stream().anyMatch(item -> item.get("area").toString().equals("10"))).isTrue();
+//            }
         }
 
         //Or query with join
-        {
-            var cond = Condition.filter(SubConditionType.OR, List.of( //
-                            Condition.filter("parents.firstName", "Thomas"), //
-                            Condition.filter("id", "WakefieldFamily"))) //
-                    .sort("id", "ASC")//
-                    .join(Set.of("parents", "children"))
-                    .returnAllSubArray(false);
-
-            var result = db.find(host, cond, "Families").toMap();
-            assertThat(result).hasSize(2);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
-            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
-            assertThat(result.get(1).get("creationDate")).hasToString("1431620462");
-        }
+//        {
+//            var cond = Condition.filter(SubConditionType.OR, List.of( //
+//                            Condition.filter("parents.firstName", "Thomas"), //
+//                            Condition.filter("id", "WakefieldFamily"))) //
+//                    .sort("id", "ASC")//
+//                    .join(Set.of("parents", "children"))
+//                    .returnAllSubArray(false);
+//
+//            var result = db.find(host, cond, "Families").toMap();
+//            assertThat(result).hasSize(2);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
+//            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
+//            assertThat(result.get(1).get("creationDate")).hasToString("1431620462");
+//        }
 
         //AND query with join
-        {
-            var cond = Condition.filter(SubConditionType.AND, List.of( //
-                            Condition.filter("parents.familyName", "Wakefield"), //
-                            Condition.filter("isRegistered", false))) //
-                    .sort("id", "ASC")//
-                    .join(Set.of("parents"))
-                    .returnAllSubArray(false);
-
-            var result = db.find(host, cond, "Families").toMap();
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("familyName", "Wakefield");
-        }
+//        {
+//            var cond = Condition.filter(SubConditionType.AND, List.of( //
+//                            Condition.filter("parents.familyName", "Wakefield"), //
+//                            Condition.filter("isRegistered", false))) //
+//                    .sort("id", "ASC")//
+//                    .join(Set.of("parents"))
+//                    .returnAllSubArray(false);
+//
+//            var result = db.find(host, cond, "Families").toMap();
+//            assertThat(result).hasSize(1);
+//            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("familyName", "Wakefield");
+//        }
 
         // NOT query with join
-        {
-            var cond = Condition
-                    .filter("$NOT", Map.of("address.state", "WA"), "$AND", Map.of("parents.familyName !=", "Wakefield"))
-                    .sort("id", "ASC")
-                    .join(Set.of("parents"))
-                    .returnAllSubArray(false);
+//        {
+//            var cond = Condition
+//                    .filter("$NOT", Map.of("address.state", "WA"), "$AND", Map.of("parents.familyName !=", "Wakefield"))
+//                    .sort("id", "ASC")
+//                    .join(Set.of("parents"))
+//                    .returnAllSubArray(false);
+//
+//            var items = db.find(host, cond, "Families").toMap();
+//
+//            assertThat(items).hasSize(1);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("parents")))).hasSize(1);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("parents"))).get(0)).containsEntry("familyName", "Miller");
+//            assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
+//        }
+//
 
-            var items = db.find(host, cond, "Families").toMap();
 
-            assertThat(items).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("parents")))).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("parents"))).get(0)).containsEntry("familyName", "Miller");
-            assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
-        }
-
-        var user = new User("joinTestArrayContainId", "firstNameJoin", "lostNameJoin");
-        var userMap = JsonUtil.toMap(user);
-        userMap.put("rooms", List.of(Map.of("no", List.of(1, 2, 3)), Map.of("no", List.of(1, 2, 4))));
-        db.upsert(host, userMap, "Users");
+        // ARRAY_CONTAINS_ANY query with join
+//        {
+//        var user = new User("joinTestArrayContainId", "firstNameJoin", "lostNameJoin");
+//        var userMap = JsonUtil.toMap(user);
+//        userMap.put("rooms", List.of(Map.of("no", List.of(1, 2, 3)), Map.of("no", List.of(1, 2, 4))));
+//        db.upsert(host, userMap, "Users");
+//            var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", 3) //
+//                    .sort("id", "ASC") //
+//                    .limit(10) //
+//                    .offset(0)
+//                    .join(Set.of("rooms"))
+//                    .returnAllSubArray(false);
+//
+//            // test find
+//            var items = db.find(host, cond, "Users").toMap();
+//
+//            assertThat(items).hasSize(1);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asList().contains(3);
+//            assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
+//
+//            db.delete(host, "joinTestArrayContainId", "Users");
+//        }
 
         // ARRAY_CONTAINS query with join
+
+
+
         {
-            var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", 3) //
-                    .sort("id", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("rooms"))
-                    .returnAllSubArray(false);
+            var user = new User("joinTestArrayContainAll", "firstNameJoin", "lostNameJoin");
+            var userMap = JsonUtil.toMap(user);
 
-            // test find
-            var items = db.find(host, cond, "Users").toMap();
+            var floors = """
+                    {
+                      "floors":[
+                        {
+                          "name": "floor1",
+                          "rooms": [
+                            {
+                              "no": 1,
+                              "name": "r1"
+                            },
+                            {
+                              "no": 2,
+                              "name": "r2"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "floor2",
+                          "rooms": [
+                            {
+                              "no": 3,
+                              "name": "r3"
+                            },
+                            {
+                              "no": 4,
+                              "name": "r4"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """;
 
-            assertThat(items).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asList().contains(3);
-            assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
+            userMap.putAll(JsonUtil.toMap(floors));
 
-            db.delete(host, "joinTestArrayContainId", "Users");
+            try {
+                db.upsert(host, userMap, "Users");
+                var cond = Condition.filter("floor.rooms ARRAY_CONTAINS_ALL no", List.of(3, 4)) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("floor"))
+                        .returnAllSubArray(true);
+
+                // test find
+                var items = db.find(host, cond, "Users").toMap();
+
+                assertThat(items).hasSize(1);
+                assertThat(items.get(0).get("id")).hasToString(user.id);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("floors")))).hasSize(2);
+            } finally {
+                db.delete(host, user.id, "Users");
+            }
         }
 
     }
