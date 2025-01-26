@@ -88,20 +88,20 @@ class PGConditionUtilTest {
             var expectedSQL= """
                     SELECT id,
                     jsonb_build_object('id', data->'id', 'name', data->'name') AS \"data\"
-                     FROM coll.partition ORDER BY data->>'name' ASC OFFSET 0 LIMIT 100
+                     FROM coll.partition ORDER BY data->>'name' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 100
                     """;
             var expectedFieldsSort = new CosmosSqlQuerySpec(expectedSQL.trim(), new ArrayList<>());
             assertThat(actualSpecFieldsSort).isEqualTo(expectedFieldsSort);
         }
 
-//        {
-//            // test with rawQuerySpec
-//            var rawQuerySpec = new CosmosSqlQuerySpec("SELECT * FROM data");
-//            var condRaw = new Condition();
-//            condRaw.rawQuerySpec = rawQuerySpec;
-//            var actualSpecRaw = PGConditionUtil.toQuerySpec("coll", condRaw, "partition");
-//            assertThat(actualSpecRaw).isEqualTo(rawQuerySpec);
-//        }
+        {
+            // test with rawQuerySpec
+            var rawQuerySpec = new CosmosSqlQuerySpec("SELECT * FROM data");
+            var condRaw = new Condition();
+            condRaw.rawQuerySpec = rawQuerySpec;
+            var actualSpecRaw = PGConditionUtil.toQuerySpec("coll", condRaw, "partition");
+            assertThat(actualSpecRaw).isEqualTo(rawQuerySpec);
+        }
     }
 
 
@@ -188,7 +188,7 @@ class PGConditionUtilTest {
 
 
     @Test
-    public void buildQuerySpec_should_work_for_and_nested_with_or() {
+    void buildQuerySpec_should_work_for_and_nested_with_or() {
 
         var cond = Condition.filter("isChecked", true,
                         "$OR or_first ",
@@ -201,7 +201,7 @@ class PGConditionUtilTest {
     }
 
     @Test
-    public void buildQuerySpec_should_work_for_sub_cond_or_from_the_beginning() {
+    void buildQuerySpec_should_work_for_sub_cond_or_from_the_beginning() {
 
         var cond = Condition.filter( //
                         SubConditionType.OR,
@@ -222,7 +222,7 @@ class PGConditionUtilTest {
 
 
     @Test
-    public void buildQuerySpec_should_work_for_sub_cond_and() {
+    void buildQuerySpec_should_work_for_sub_cond_and() {
 
         {
             // SUB_COND_AND mixed with sort, offset, limit
@@ -266,7 +266,7 @@ class PGConditionUtilTest {
                     )
                     ;
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
-            assertThat(q.getQueryText()).isEqualTo("SELECT * FROM schema1.table1 WHERE ((data->>'position' = @param000_position)) OFFSET 0 LIMIT 100");
+            assertThat(q.getQueryText()).isEqualTo("SELECT * FROM schema1.table1 WHERE ((data->>'position' = @param000_position)) AND (1=1) OFFSET 0 LIMIT 100");
             var params = List.copyOf(q.getParameters());
             assertThat(params).hasSize(1);
             assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
@@ -274,7 +274,7 @@ class PGConditionUtilTest {
     }
 
     @Test
-    public void buildQuerySpec_should_work_for_empty() {
+    void buildQuerySpec_should_work_for_empty() {
 
         var cond = Condition.filter();
         var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
@@ -286,7 +286,7 @@ class PGConditionUtilTest {
     }
 
     @Test
-    public void buildQuerySpec_should_work_for_empty_sub_query() {
+    void buildQuerySpec_should_work_for_empty_sub_query() {
 
         {
             var cond = Condition.filter(SubConditionType.OR, //
@@ -349,7 +349,7 @@ class PGConditionUtilTest {
     }
 
     @Test
-    public void processNegativeQuery_should_work() {
+    void processNegativeQuery_should_work() {
         assertThat(PGConditionUtil.processNegativeQuery(null, true)).isNull();
         assertThat(PGConditionUtil.processNegativeQuery(null, false)).isNull();
         assertThat(PGConditionUtil.processNegativeQuery("", true)).isEmpty();
@@ -359,5 +359,34 @@ class PGConditionUtilTest {
         assertThat(PGConditionUtil.processNegativeQuery("(data->>'age')::int >= 1", true)).isEqualTo(" NOT((data->>'age')::int >= 1)");
 
     }
+
+    @Test
+    void buildSorts_should_work() {
+        {
+            var sorts = new ArrayList<String>();
+            var q = PGConditionUtil.buildSorts(sorts);
+            assertThat(q).isEmpty();
+        }
+        {
+            var sorts = List.of("name", "ASC");
+            var q = PGConditionUtil.buildSorts(sorts);
+            assertThat(q).isEqualTo(" ORDER BY data->>'name' ASC, data->>'_ts' ASC");
+        }
+
+        {
+            var sorts = List.of("name", "ASC", "age", "DESC");
+            var q = PGConditionUtil.buildSorts(sorts);
+            assertThat(q).isEqualTo(" ORDER BY data->>'name' ASC, data->>'age' DESC, data->>'_ts' ASC");
+        }
+
+        {
+            var sorts = List.of("id", "DESC", "_ts", "ASC");
+            var q = PGConditionUtil.buildSorts(sorts);
+            assertThat(q).isEqualTo(" ORDER BY data->>'id' DESC, data->>'_ts' ASC");
+        }
+
+
+    }
+
 
 }

@@ -106,6 +106,8 @@ class PostgresDatabaseImplTest {
         db.createTableIfNotExists(host, "EtagTests");
         db.createTableIfNotExists(host, "FieldTest");
         db.createTableIfNotExists(host, "FindTests");
+        db.createTableIfNotExists(host, "SheetContents2");
+        db.createTableIfNotExists(host, "UserSorts");
 
         initFamiliesData();
         initData4ComplexQuery();
@@ -792,7 +794,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void find_should_work_for_array_contains_any_all() throws Exception {
         var partition = "Families";
 
@@ -899,7 +901,7 @@ class PostgresDatabaseImplTest {
     }
 
 
-    @Disabled
+    @Test
     void find_should_work_for_array_contains_any_field_query() throws Exception {
         var partition = "Families";
 
@@ -920,7 +922,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void find_with_true_false_condition_should_work() throws Exception {
         var partition = "Families";
 
@@ -961,7 +963,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void find_using_not_with_multiple_sub_conds_should_work() throws Exception {
         var partition = "Families";
 
@@ -1172,7 +1174,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void find_to_iterator_should_work_for_array_contains_any_field_query() throws Exception {
         var partition = "Families";
 
@@ -1480,7 +1482,7 @@ class PostgresDatabaseImplTest {
     }
 
     @Disabled
-    public void aggregate_should_work_with_condition_afterwards() throws Exception {
+    void aggregate_should_work_with_condition_afterwards() throws Exception {
 
         // test aggregate with afterwards filter
         {
@@ -2420,7 +2422,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void sort_with_createAt_should_work() throws Exception {
         var partition = "UserSorts";
         int size = 2;
@@ -2610,7 +2612,7 @@ class PostgresDatabaseImplTest {
 
     }
 
-    @Disabled
+    @Test
     void dynamic_field_should_work_for_ARRAY_CONTAINS_ALL() throws Exception {
         var partition = "SheetContents2";
 

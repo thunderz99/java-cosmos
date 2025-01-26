@@ -13,14 +13,24 @@ public class PGKeyUtil {
 
 
     /**
-     * Instead of data.key, return data->'key' or data->'address'->'city' for query
+     * Instead of data.key, return data->'key' or data->'address'->>'city' for query
      *
      * @param key filter's key
-     * @return formatted filter's key data->'key1'->'key2'
+     * @return formatted filter's key data->'key1'->>'key2'
      */
     public static String getFormattedKey(String key) {
 
         return getFormattedKeyWithAlias(key, "data", "");
+    }
+
+    /**
+     * Instead of data.key, return data->'key' or data->'address'->'city' for query(for json, with "->" instead of "->>")
+     *
+     * @param key filter's key
+     * @return formatted filter's key data->'key1'->'key2'
+     */
+    public static String getFormattedKey4Json(String key) {
+        return getFormattedKeyWithAlias(key, "data", List.of());
     }
 
     /**
