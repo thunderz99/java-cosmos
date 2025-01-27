@@ -4,12 +4,15 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
+import com.google.common.collect.Sets;
 import io.github.thunderz99.cosmos.condition.*;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.impl.postgres.condition.PGOrExpressions;
 import io.github.thunderz99.cosmos.impl.postgres.condition.PGSimpleExpression;
+import io.github.thunderz99.cosmos.impl.postgres.condition.PGSimpleExpression4JsonPath;
 import io.github.thunderz99.cosmos.impl.postgres.condition.PGSubQueryExpression;
+import io.github.thunderz99.cosmos.impl.postgres.dto.PGFilterOptions;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
@@ -175,6 +178,8 @@ public class PGConditionUtil {
         // filter parts
         var connectPart = getConnectPart(conditionIndex);
 
+        var filterOption = PGFilterOptions.create().join(Sets.newHashSet(cond.join));
+
         for (var entry : cond.filter.entrySet()) {
 
             if (StringUtils.isEmpty(entry.getKey())) {
@@ -217,14 +222,15 @@ public class PGConditionUtil {
 
             } else {
                 // normal "key = value" expression
-                var exp = parse(entry.getKey(), entry.getValue());
+                var exp = parse(entry.getKey(), entry.getValue(), filterOption);
                 var expQuerySpec = exp.toQuerySpec(paramIndex, selectAlias);
                 subFilterQueryToAdd = expQuerySpec.getQueryText();
-
-                // TODO join
-                saveOriginJoinCondition(cond, subFilterQueryToAdd);
-                subFilterQueryToAdd = buildArrayJoinQueryText(cond, entry.getKey(), subFilterQueryToAdd, expQuerySpec.params);
                 params.addAll(expQuerySpec.getParameters());
+
+                // TODO join(not needed any more. to be deleted)
+//                saveOriginJoinCondition(cond, subFilterQueryToAdd);
+//                subFilterQueryToAdd = buildArrayJoinQueryText(cond, entry.getKey(), subFilterQueryToAdd, expQuerySpec.params);
+//                params.addAll(expQuerySpec.getParameters());
             }
 
             if (StringUtils.isNotEmpty(subFilterQueryToAdd)) {
@@ -450,9 +456,10 @@ public class PGConditionUtil {
      * parse key and value to generate a valid expression
      * @param key filter's key
      * @param value filter's value
+     * @param filterOptions context of the Expression(e.g. under join which uses a json path expression)
      * @return expression for WHERE clause
      */
-    public static Expression parse(String key, Object value) {
+    public static Expression parse(String key, Object value, PGFilterOptions filterOptions) {
 
         //simple expression
         var simpleMatcher = Condition.simpleExpressionPattern.matcher(key);
@@ -460,7 +467,11 @@ public class PGConditionUtil {
             if (key.contains(" OR ")) {
                 return new PGOrExpressions(simpleMatcher.group(1), value, simpleMatcher.group(2));
             } else {
-                return new PGSimpleExpression(simpleMatcher.group(1), value, simpleMatcher.group(2));
+                if (CollectionUtils.isEmpty(filterOptions.join)) {
+                    return new PGSimpleExpression(simpleMatcher.group(1), value, simpleMatcher.group(2));
+                } else {
+                    return new PGSimpleExpression4JsonPath(simpleMatcher.group(1), value, simpleMatcher.group(2), filterOptions);
+                }
             }
         }
 
@@ -475,7 +486,11 @@ public class PGConditionUtil {
         if (key.contains(" OR ")) {
             return new PGOrExpressions(key, value);
         } else {
-            return new PGSimpleExpression(key, value);
+            if (CollectionUtils.isEmpty(filterOptions.join)) {
+                return new PGSimpleExpression(key, value);
+            } else {
+                return new PGSimpleExpression4JsonPath(key, value, filterOptions);
+            }
         }
     }
 

@@ -225,7 +225,7 @@ public class ConditionUtil {
                     break;
                 case "LIKE":
                     // Convert SQL-like wildcards to MongoDB regex equivalents
-                    String regexValue = value.toString()
+                    var regexValue = value.toString()
                             .replace("%", ".*")  // % to match any number of characters
                             .replace("_", ".");  // _ to match exactly one character
                     ret = Filters.regex(field, regexValue);

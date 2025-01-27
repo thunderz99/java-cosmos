@@ -57,8 +57,10 @@ public class PGSimpleExpression implements Expression {
         this.key = key;
         this.value = value;
         this.operator = operator;
-        this.type = binaryOperatorPattern.asPredicate().test(operator) ? OperatorType.BINARY_OPERATOR
-                : OperatorType.BINARY_FUNCTION;
+        if(!StringUtils.isEmpty(operator)){
+            this.type = binaryOperatorPattern.asPredicate().test(operator) ? OperatorType.BINARY_OPERATOR
+                    : OperatorType.BINARY_FUNCTION;
+        }
     }
 
     @Override
