@@ -8,10 +8,7 @@ import com.google.common.collect.Sets;
 import io.github.thunderz99.cosmos.condition.*;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
-import io.github.thunderz99.cosmos.impl.postgres.condition.PGOrExpressions;
-import io.github.thunderz99.cosmos.impl.postgres.condition.PGSimpleExpression;
-import io.github.thunderz99.cosmos.impl.postgres.condition.PGSimpleExpression4JsonPath;
-import io.github.thunderz99.cosmos.impl.postgres.condition.PGSubQueryExpression;
+import io.github.thunderz99.cosmos.impl.postgres.condition.*;
 import io.github.thunderz99.cosmos.impl.postgres.dto.PGFilterOptions;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
@@ -464,32 +461,50 @@ public class PGConditionUtil {
         //simple expression
         var simpleMatcher = Condition.simpleExpressionPattern.matcher(key);
         if (simpleMatcher.find()) {
-            if (key.contains(" OR ")) {
-                return new PGOrExpressions(simpleMatcher.group(1), value, simpleMatcher.group(2));
-            } else {
-                if (CollectionUtils.isEmpty(filterOptions.join)) {
-                    return new PGSimpleExpression(simpleMatcher.group(1), value, simpleMatcher.group(2));
-                } else {
-                    return new PGSimpleExpression4JsonPath(simpleMatcher.group(1), value, simpleMatcher.group(2), filterOptions);
-                }
-            }
+            var parsedKey = simpleMatcher.group(1);
+            var operator = simpleMatcher.group(2);
+            return parseExpression4SimpleMatcher(key, parsedKey, value, operator, filterOptions);
         }
 
         //subquery expression
         var subqueryMatcher = Condition.subQueryExpressionPattern.matcher(key);
 
         if (subqueryMatcher.find()) {
-            return new PGSubQueryExpression(subqueryMatcher.group(1), subqueryMatcher.group(3), value, subqueryMatcher.group(2));
+            var joinKey = subqueryMatcher.group(1);
+            var filterKey = subqueryMatcher.group(3);
+            var operator = subqueryMatcher.group(2);
+
+            if (CollectionUtils.isEmpty(filterOptions.join)) {
+                return new PGSubQueryExpression(joinKey, filterKey, value, operator);
+            } else {
+                return new PGSubQueryExpression4JsonPath(joinKey, filterKey, value, operator, filterOptions);
+            }
         }
 
         //default key / value expression
+        // TODO PGOrExpressions for JsonPath
+
+        return parseExpression4SimpleMatcher(key, key, value, "", filterOptions);
+    }
+
+    /**
+     * parse a key / value / operator to a valid simple expression
+     *
+     * @param key original key in the filter
+     * @param parsedKey parsed key in the filter
+     * @param value value in the filter
+     * @param operator operator for the expression
+     * @param filterOptions context of the Expression(e.g. under join which uses a json path expression)
+     * @return
+     */
+    static Expression parseExpression4SimpleMatcher(String key, String parsedKey, Object value, String operator, PGFilterOptions filterOptions) {
         if (key.contains(" OR ")) {
-            return new PGOrExpressions(key, value);
+            return new PGOrExpressions(parsedKey, value);
         } else {
             if (CollectionUtils.isEmpty(filterOptions.join)) {
-                return new PGSimpleExpression(key, value);
+                return new PGSimpleExpression(parsedKey, value, operator);
             } else {
-                return new PGSimpleExpression4JsonPath(key, value, filterOptions);
+                return new PGSimpleExpression4JsonPath(parsedKey, value, operator, filterOptions);
             }
         }
     }

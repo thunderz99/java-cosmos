@@ -1934,6 +1934,38 @@ class PostgresDatabaseImplTest {
 
     }
 
+    @Test
+    void find_should_work_with_join_using_array_contains_any() throws Exception {
+        // ARRAY_CONTAINS_ANY query with join
+        {
+            var user = new User("joinTestArrayContainId", "firstNameJoin", "lostNameJoin");
+            var userMap = JsonUtil.toMap(user);
+            userMap.put("rooms", List.of(Map.of("no", List.of(1, 2, 3)), Map.of("no", List.of(2, 4))));
+
+            try {
+                db.upsert(host, userMap, "Users");
+                var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", 3) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("rooms"))
+                        .returnAllSubArray(true);
+
+                // test find
+                var items = db.find(host, cond, "Users").toMap();
+
+                assertThat(items).hasSize(1);
+                assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(2);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asList().contains(3);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(1).get("no")).asList().contains(4);
+            } finally {
+                db.delete(host, "joinTestArrayContainId", "Users");
+            }
+
+        }
+    }
+
     @Disabled
     public void find_should_work_with_join_using_array_contains() throws Exception {
 
