@@ -1843,35 +1843,40 @@ class PostgresDatabaseImplTest {
 //            assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
         }
 
+    }
 
-
+    @Test
+    void find_should_work_with_join_using_array_contains_any_all() throws Exception {
         // ARRAY_CONTAINS_ANY query with join
         {
-        var user = new User("joinTestArrayContainId", "firstNameJoin", "lostNameJoin");
-        var userMap = JsonUtil.toMap(user);
-        userMap.put("rooms", List.of(Map.of("no", List.of(1, 2, 3)), Map.of("no", List.of(1, 2, 4))));
-        db.upsert(host, userMap, "Users");
-            var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", 3) //
-                    .sort("id", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("rooms"))
-                    .returnAllSubArray(false);
+            var user = new User("joinTestArrayContainId", "firstNameJoin", "lostNameJoin");
+            var userMap = JsonUtil.toMap(user);
+            userMap.put("rooms", List.of(Map.of("no", List.of(1, 2, 3)), Map.of("no", List.of(2, 4))));
 
-            // test find
-            var items = db.find(host, cond, "Users").toMap();
+            try {
+                db.upsert(host, userMap, "Users");
+                var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", 3) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("rooms"))
+                        .returnAllSubArray(true);
 
-            assertThat(items).hasSize(1);
-            assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(1);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asList().contains(3);
+                // test find
+                var items = db.find(host, cond, "Users").toMap();
 
-            db.delete(host, "joinTestArrayContainId", "Users");
+                assertThat(items).hasSize(1);
+                assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(2);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asList().contains(3);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(1).get("no")).asList().contains(4);
+            } finally {
+                db.delete(host, "joinTestArrayContainId", "Users");
+            }
+
         }
 
-        // ARRAY_CONTAINS query with join
-
-
+        // query with join. floors.rooms ARRAY_CONTAINS_ALL name. join:floors
 
         {
             var user = new User("joinTestArrayContainAll", "firstNameJoin", "lostNameJoin");
@@ -1914,55 +1919,22 @@ class PostgresDatabaseImplTest {
 
             try {
                 db.upsert(host, userMap, "Users");
-//                var cond = Condition.filter("floor.rooms ARRAY_CONTAINS_ALL no", List.of(3, 4)) //
-//                        .sort("id", "ASC") //
-//                        .limit(10) //
-//                        .offset(0)
-//                        .join(Set.of("floor"))
-//                        .returnAllSubArray(true);
-//
-//                // test find
-//                var items = db.find(host, cond, "Users").toMap();
-//
-//                assertThat(items).hasSize(1);
-//                assertThat(items.get(0).get("id")).hasToString(user.id);
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("floors")))).hasSize(2);
-            } finally {
-                db.delete(host, user.id, "Users");
-            }
-        }
-
-    }
-
-    @Test
-    void find_should_work_with_join_using_array_contains_any() throws Exception {
-        // ARRAY_CONTAINS_ANY query with join
-        {
-            var user = new User("joinTestArrayContainId", "firstNameJoin", "lostNameJoin");
-            var userMap = JsonUtil.toMap(user);
-            userMap.put("rooms", List.of(Map.of("no", List.of(1, 2, 3)), Map.of("no", List.of(2, 4))));
-
-            try {
-                db.upsert(host, userMap, "Users");
-                var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", 3) //
+                var cond = Condition.filter("floors.rooms ARRAY_CONTAINS_ALL name", List.of("r3", "r4")) //
                         .sort("id", "ASC") //
                         .limit(10) //
                         .offset(0)
-                        .join(Set.of("rooms"))
+                        .join(Set.of("floors"))
                         .returnAllSubArray(true);
 
                 // test find
                 var items = db.find(host, cond, "Users").toMap();
 
                 assertThat(items).hasSize(1);
-                assertThat(items.get(0).get("id")).hasToString("joinTestArrayContainId");
-                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms")))).hasSize(2);
-                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(0).get("no")).asList().contains(3);
-                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("rooms"))).get(1).get("no")).asList().contains(4);
+                assertThat(items.get(0).get("id")).hasToString(user.id);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("floors")))).hasSize(2);
             } finally {
-                db.delete(host, "joinTestArrayContainId", "Users");
+                db.delete(host, user.id, "Users");
             }
-
         }
     }
 

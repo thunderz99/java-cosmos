@@ -279,7 +279,7 @@ public class PGSimpleExpression4JsonPath implements Expression {
                 querySpec.setQueryText(queryText);
 
                 var valuePart =  (paramValue instanceof String strValue) ? "\"%s\"".formatted(strValue) : paramValue;
-                var value = " (%s ? (%s %s \"%s\"))".formatted(jsonbPath, jsonbKey, this.operator, valuePart);
+                var value = " (%s ? (%s %s %s))".formatted(jsonbPath, jsonbKey, this.operator, valuePart);
                 var param = Condition.createSqlParameter(paramName, value);
                 params.add(param);
             }

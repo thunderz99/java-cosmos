@@ -166,9 +166,6 @@ public class PGSubQueryExpression4JsonPath implements Expression {
          * data @? '$."floors"[*]."rooms"[*] ? (@."name" == "r1" || @."name" == "r2")'::jsonpath
          */
 
-        var index = 0;
-        var subQueries = new ArrayList<String>();
-
         // subQueryText is simple. e.g. "data @? @param000_floors_rooms_name::jsonpath"
         var queryText = " (data @?? %s::jsonpath)".formatted(paramName);
 
@@ -201,68 +198,32 @@ public class PGSubQueryExpression4JsonPath implements Expression {
     }
 
     /**
-     *
-     *  Builds a postgres JSONB expression for nested keys.
-     *  Example: For input "school.grade", "@param000_grade", returns:
-     *  "jsonb_build_array(jsonb_build_object('school', jsonb_build_object('grade', @param000_grade)))"
-     *
-     * @param key
-     * @param paramName
-     * @return
-     */
-    static String buildNestedJsonbExpression(String key, String paramName) {
-
-        Checker.checkNotBlank(key, "key");
-        Checker.checkNotBlank(paramName, "paramName");
-
-        var keyParts = key.split("\\.");
-
-        Checker.checkNotEmpty(keyParts, "parts");
-
-        // Build the innermost jsonb_build_object first
-        var expression = new StringBuilder();
-        expression.append("jsonb_build_object('")
-                .append(keyParts[keyParts.length - 1])
-                .append("', %s)".formatted(paramName));
-
-        // Wrap with outer jsonb_build_object calls
-        for (int i = keyParts.length - 2; i >= 0; i--) {
-            expression.insert(0, "jsonb_build_object('" + keyParts[i] + "', ");
-            expression.append(")");
-        }
-
-        // Wrap the final result in jsonb_build_array
-        return "jsonb_build_array(" + expression + ")";
-
-    }
-
-
-    /**
      * A helper function to generate data->'items' ARRAY_CONTAINS_ALL List.of(item1, item2) queryText
      *
      * <pre>
-     * INPUT: "items", "", "@items_009", ["id001", "id002"], params
+     * INPUT: "rooms.no", "", "@rooms_no_009", ["001", "002"], params, join:"rooms"
      * OUTPUT:
-     * " data->'items' @> '[\"id001\",\"id002\"]'::jsonb
+     *  data @? '$.rooms[*] ? (@.no[*] ? (@ == "001") && @.no[*] ? ( @ == "002"))'::jsonpath;
      *
      *
-     * INPUT: "tags", "name", "@tags_name_010", ["react", "java"], params
+     * INPUT: "floors.rooms", "name", "@floors_rooms_name_010", ["001", "002"], params
      * OUTPUT:
-     * "  (data->'tags' @> jsonb_build_array(jsonb_build_object('name', @tags_name_010__0)
-     * AND data->'tags' @> jsonb_build_array(jsonb_build_object('name', @tags_name_010__1)
+     *  data @? '$.floors[*] ? (@.rooms[*] ? (@.name == "r1") && @.rooms[*] ? (@.name == "r2"))'::jsonpath;
      *
      *  and add paramsValue into params
      * </pre>
      *
-     * @param joinKey e.g. items
-     * @param filterKey e.g. id
-     * @param paramName e.g. @items_009
-     * @param _paramValue e.g. ["id001", "id002"]
+     * @@aram baseKey e.g. floors
+     * @param joinKey e.g. rooms
+     * @param filterKey e.g. name
+     * @param paramName e.g. @floors_rooms_name_009
+     * @param _paramValue e.g. ["001", "002"]
      * @param params all params in order to build the querySpec
-     * @return subQuery text for ARRAY_CONTAINS_ALL
+     * @return subQuery text for ARRAY_CONTAINS_ANY
      */
     static String buildArrayContainsAll(String baseKey, String joinKey, String filterKey, String paramName, Object _paramValue, List<CosmosSqlParameter> params) {
 
+        Checker.checkNotBlank(baseKey, "baseKey");
         Checker.checkNotBlank(joinKey, "joinKey");
         Checker.checkNotNull(filterKey, "filterKey");
         Checker.checkNotBlank(paramName, "paramName");
@@ -281,51 +242,61 @@ public class PGSubQueryExpression4JsonPath implements Expression {
             return "(1=0)";
         }
 
-        if(StringUtils.isEmpty(filterKey)){
-
-            // paramValue contains only 1 element, do a ARRAY_CONTAINS 1 element query
-            if(paramValue.size() == 1){
-                // Condition.filter("items ARRAY_CONTAINS_ALL", List.of("A"))
-                // INPUT: "items", "", "@items_009", ["id001"], params
-                // OUTPUT: " data->'items' ?? @items_009"
-                var singleValue = paramValue.iterator().next();
-                params.add(Condition.createSqlParameter(paramName, singleValue));
-                return String.format(" (%s ?? %s)",
-                        PGKeyUtil.getFormattedKey4Json(joinKey), paramName);
-            }
-
-            // Condition.filter("items ARRAY_CONTAINS_ALL", List.of("A","B"))
-            // INPUT: "items", "", "@items_009", ["id001", "id002", "id005"], params
-            // OUTPUT: " data->'items' @> @items_009::jsonb"
-            params.add(Condition.createSqlParameter(paramName, JsonUtil.toJson(paramValue)));
-
-            return String.format(" (%s @> %s::jsonb)",
-                    PGKeyUtil.getFormattedKey4Json(joinKey), paramName);
-        }
 
         // for complicated pattern with filterKey
 
-        // Condition.filter("items ARRAY_CONTAINS_ANY id", List.of("A","B"))
-        // INPUT: "items", "id", "@items_id_010", ["id001", "id002", "id005"], params
-        // OUTPUT: "  (data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_id_010__0)
-        // AND data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_id_010__1)
-        // AND data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_id_010__2)
+        /**
+         * SELECT * FROM schema1.table1
+         * WHERE data @? '
+         *   $.floors[*] ? (
+         *     @."rooms"[*] ? (@."name" == "r1")
+         *     &&
+         *     @."rooms"[*] ? (@."name" == "r2")
+         *   )
+         * '
+         */
 
-        var index = 0;
-        var subQueries = new ArrayList<String>();
+        // subQueryText is simple. e.g. "data @? @param000_floors_rooms_name::jsonpath"
+        var queryText = " (data @?? %s::jsonpath)".formatted(paramName);
 
+        // the value is complicated e.g. $."floors"[*] ? (@.rooms[*] ? (@.name == "r1") && @.rooms[*] ? (@.name == "r2"))
 
-        for(var value : paramValue){
-            // break down the list values to multiple single value
-            var subParamName = String.format("%s__%d", paramName, index);
-            params.add(Condition.createSqlParameter(subParamName, value));
-            subQueries.add(String.format("%s @> %s", PGKeyUtil.getFormattedKey4Json(joinKey), buildNestedJsonbExpression(filterKey, subParamName)));
-            index++;
-        }
+        // step1, basePart in value. e.g. $."floors"[*]
+        var basePart = Arrays.asList(baseKey.split("\\.")).stream().map( k -> "\"%s\"[*]".formatted(k))
+                .collect(Collectors.joining(".", "$.", ""));
 
-        return String.format(" (%s)", String.join(" AND ", subQueries));
+        // step2, we build the join part: @.rooms[*]
 
-	}
+        // floors.rooms -> rooms
+        var joinSubKey = StringUtils.removeStart(joinKey, baseKey + ".");
+        var joinKeys = Lists.newArrayList("@");
+        joinKeys.addAll(Arrays.asList((joinSubKey).split("\\.")));
+        var joinPart = joinKeys.stream()
+                .map( k -> "@".equals(k)? "@" :"\"%s\"".formatted(k))
+                .collect(Collectors.joining(".", "", "[*]"));
+
+        // step3, we build the filter part: (exists(@.rooms[*] ? (@.name == "r1")) && exists(@.rooms[*] ? (@.name == "r2"))
+
+        var filterKeys = Lists.newArrayList("@");
+        filterKeys.addAll(Arrays.asList(filterKey.split("\\.")));
+
+        // filterKey -> formattedFilterKey. e.g. "name" -> "\"name\""
+        var formattedFilterKey = filterKeys.stream()
+                .filter(StringUtils::isNotEmpty)
+                .map(k -> "@".equals(k)? "@" : "\"%s\"".formatted(k))
+                .collect(Collectors.joining("."));
+
+        var filterPart = paramValue.stream()
+                .map(v -> (v instanceof String strValue) ? "\"%s\"".formatted(strValue) : v)
+                .map(v -> "exists(%s ? (%s == %s))".formatted(joinPart, formattedFilterKey, v))
+                .collect(Collectors.joining(" && ", "(", ")"));
+
+        var filterValue = "%s ? %s".formatted(basePart, filterPart);
+        params.add(new CosmosSqlParameter(paramName, filterValue));
+
+        return queryText;
+
+    }
 
 
 }
