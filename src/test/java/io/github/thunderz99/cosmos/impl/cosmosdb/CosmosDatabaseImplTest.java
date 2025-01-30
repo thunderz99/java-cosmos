@@ -115,6 +115,18 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void readSuppressing404_should_work_for_invalid_id() throws Exception {
+
+        // "/" cannot be used in id
+        // https://learn.microsoft.com/en-us/answers/questions/600893/cannot-delete-cosmos-db-item-with-illegal-id
+
+        var invalidId = "https://example.com";
+        var read = db.readSuppressing404(coll, invalidId, "Users");
+        assertThat(read).isNull();
+
+    }
+
+    @Test
     void getId_should_work() {
         String testId = "getId_should_work_id";
         var user = new User(testId, "firstName", "lastName");

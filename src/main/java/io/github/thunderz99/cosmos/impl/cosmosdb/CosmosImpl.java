@@ -257,7 +257,7 @@ public class CosmosImpl implements Cosmos {
             var ce = (CosmosException) e;
             return ce.getStatusCode() == 404;
         }
-        return StringUtils.contains(e.getMessage(), "Resource Not Found") ? true : false;
+        return StringUtils.containsAny(e.getMessage(), "Resource Not Found", "does not exist") ? true : false;
     }
 
     public String getAccount() throws CosmosException {
