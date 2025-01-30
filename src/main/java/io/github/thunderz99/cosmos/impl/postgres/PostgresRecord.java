@@ -1,5 +1,7 @@
 package io.github.thunderz99.cosmos.impl.postgres;
 
+import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
+
 import java.util.Map;
 
 /**
@@ -24,5 +26,6 @@ public class PostgresRecord {
     public PostgresRecord(String id, Map<String, Object> data) {
         this.id = id;
         this.data = data;
+        this.data.put(TableUtil.ID, id);
     }
 }

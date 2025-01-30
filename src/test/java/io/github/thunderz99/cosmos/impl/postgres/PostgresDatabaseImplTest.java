@@ -1733,9 +1733,9 @@ class PostgresDatabaseImplTest {
 
                 var result = db.find(host, cond, "Families").toMap();
                 assertThat(result).hasSize(1);
-//                var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
-//                assertThat(rooms).hasSize(1);
-//                assertThat(rooms.get(0)).containsEntry("no", "001");
+                var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
+                assertThat(rooms).hasSize(1);
+                assertThat(rooms.get(0)).containsEntry("no", "001");
             }
 
             {
@@ -1786,11 +1786,11 @@ class PostgresDatabaseImplTest {
                 var result = db.find(host, cond, "Families").toMap();
                 assertThat(result).hasSize(1);
                 assertThat(result.get(0)).containsEntry("_partition", "Families");
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Mary Kay"))).isTrue();
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("gender").toString().equals("female"))).isTrue();
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("room*no-01"))).stream().anyMatch(item -> item.get("area").toString().equals("10"))).isTrue();
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Mary Kay"))).isTrue();
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("gender").toString().equals("female"))).isTrue();
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("room*no-01"))).stream().anyMatch(item -> item.get("area").toString().equals("10"))).isTrue();
             }
         }
 
@@ -1805,10 +1805,10 @@ class PostgresDatabaseImplTest {
 
             var result = db.find(host, cond, "Families").toMap();
             assertThat(result).hasSize(2);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
-//            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
-//            assertThat(result.get(1).get("creationDate")).hasToString("1431620462");
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
+            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
+            assertThat(result.get(1).get("creationDate")).hasToString("1431620462");
         }
 
         //AND query with join
@@ -1822,9 +1822,9 @@ class PostgresDatabaseImplTest {
 
             var result = db.find(host, cond, "Families").toMap();
             assertThat(result).hasSize(1);
-//            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("familyName", "Wakefield");
+            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("familyName", "Wakefield");
         }
 
         // NOT query with join
@@ -1838,9 +1838,9 @@ class PostgresDatabaseImplTest {
             var items = db.find(host, cond, "Families").toMap();
 
             assertThat(items).hasSize(1);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("parents")))).hasSize(1);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("parents"))).get(0)).containsEntry("familyName", "Miller");
-//            assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("parents")))).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(items.get(0).get("parents"))).get(0)).containsEntry("familyName", "Miller");
+            assertThat(items.get(0).get("id")).hasToString("WakefieldFamily");
         }
 
     }
@@ -1938,7 +1938,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     public void find_should_work_with_join_using_array_contains() throws Exception {
 
         // ARRAY_CONTAINS query with join

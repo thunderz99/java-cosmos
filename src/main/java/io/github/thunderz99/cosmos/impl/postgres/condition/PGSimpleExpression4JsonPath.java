@@ -1,9 +1,6 @@
 package io.github.thunderz99.cosmos.impl.postgres.condition;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
@@ -13,12 +10,11 @@ import io.github.thunderz99.cosmos.condition.Expression;
 import io.github.thunderz99.cosmos.condition.FieldKey;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
-import io.github.thunderz99.cosmos.impl.postgres.dto.PGFilterOptions;
+import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGKeyUtil;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.ParamUtil;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 
@@ -42,7 +38,9 @@ public class PGSimpleExpression4JsonPath implements Expression {
 	public String key;
 	public Object value;
 	public OperatorType type = OperatorType.BINARY_OPERATOR;
-    public PGFilterOptions filterOptions = PGFilterOptions.create();
+
+    public Set<String> join = new LinkedHashSet<>();
+    public QueryContext queryContext = QueryContext.create();
 
 	/**
 	 * Default is empty, which means the default operator based on filter's key and value
@@ -59,28 +57,32 @@ public class PGSimpleExpression4JsonPath implements Expression {
     public PGSimpleExpression4JsonPath() {
     }
 
-    public PGSimpleExpression4JsonPath(String key, Object value, PGFilterOptions filterOptions) {
+    public PGSimpleExpression4JsonPath(String key, Object value, Set<String> join, QueryContext queryContext) {
         this.key = key;
         this.value = value;
 
-        // for jsonPath expression, the filterOptions.join must not be empty
-        Checker.checkNotNull(filterOptions, "filterOptions");
-        Checker.checkNotEmpty(filterOptions.join, "filterOptions");
-        this.filterOptions = filterOptions;
+        // for jsonPath expression, the join must not be empty
+        Checker.checkNotEmpty(join, "join");
+        this.join = join;
+
+        Checker.checkNotNull(queryContext, "queryContext");
+        this.queryContext = queryContext;
 
     }
 
-    public PGSimpleExpression4JsonPath(String key, Object value, String operator, PGFilterOptions filterOptions) {
+    public PGSimpleExpression4JsonPath(String key, Object value, String operator, Set<String> join, QueryContext queryContext) {
         this.key = key;
         this.value = value;
         this.operator = operator;
         this.type = binaryOperatorPattern.asPredicate().test(operator) ? OperatorType.BINARY_OPERATOR
                 : OperatorType.BINARY_FUNCTION;
 
-        // for jsonPath expression, the filterOptions.join must not be empty
-        Checker.checkNotNull(filterOptions, "filterOptions");
-        Checker.checkNotEmpty(filterOptions.join, "filterOptions");
-        this.filterOptions = filterOptions;
+        // for jsonPath expression, the join must not be empty
+        Checker.checkNotEmpty(join, "join");
+        this.join = join;
+
+        Checker.checkNotNull(queryContext, "queryContext");
+        this.queryContext = queryContext;
 
     }
 
@@ -88,7 +90,7 @@ public class PGSimpleExpression4JsonPath implements Expression {
     public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex, String selectAlias) {
 
         var joinKey = "";
-        for(var subKey : this.filterOptions.join) {
+        for(var subKey : this.join) {
             Checker.checkNotBlank(subKey, "key");
             if(StringUtils.contains(this.key, subKey)){
                 joinKey = subKey;
@@ -201,6 +203,9 @@ public class PGSimpleExpression4JsonPath implements Expression {
 
 		ret.setParameters(params);
 
+        // save for SELECT part when returnAllSubArray=false
+        saveSubQueryToContext(joinKey, paramName, params.get(0).value.toString());
+
 		return ret;
 
 	}
@@ -306,6 +311,25 @@ public class PGSimpleExpression4JsonPath implements Expression {
         var ret = String.format(" (%s = ANY(%s))", PGKeyUtil.getFormattedKey(key), paramName);
         params.add(Condition.createSqlParameter(paramName, paramValue));
         return ret;
+    }
+
+    /**
+     * save for SELECT part when returnAllSubArray=false
+     *
+     * @param joinKey
+     * @param _paramName
+     * @param filterValue
+     */
+    void saveSubQueryToContext(String joinKey, String _paramName, String filterValue) {
+
+        var paramName = _paramName + "__select";
+
+        var subQueryList = queryContext.subQueries.get(joinKey);
+        if (subQueryList == null) {
+            subQueryList = new ArrayList<>();
+        }
+        subQueryList.add(Map.of(joinKey, new CosmosSqlParameter(paramName, filterValue)));
+        queryContext.subQueries.put(joinKey, subQueryList);
     }
 
 }

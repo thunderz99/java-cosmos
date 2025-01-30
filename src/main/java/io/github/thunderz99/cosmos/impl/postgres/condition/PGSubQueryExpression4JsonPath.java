@@ -1,24 +1,20 @@
 package io.github.thunderz99.cosmos.impl.postgres.condition;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import com.google.common.collect.Lists;
-import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.Expression;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
-import io.github.thunderz99.cosmos.impl.postgres.dto.PGFilterOptions;
-import io.github.thunderz99.cosmos.impl.postgres.util.PGKeyUtil;
+import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.ParamUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 
 /**
  * a class representing expression using subqueries and array operations(ARRAY_CONTAINS_ANY, ARRAY_CONTAINS_ALL), used in json path query
@@ -47,29 +43,31 @@ public class PGSubQueryExpression4JsonPath implements Expression {
 	public String filterKey = "";
 	public Object value;
 	public String operator = "=";
-    public PGFilterOptions filterOptions;
+
+    public Set<String> join = new LinkedHashSet<>();
+    public QueryContext queryContext;
 
     public PGSubQueryExpression4JsonPath() {
     }
 
-    public PGSubQueryExpression4JsonPath(String joinKey, String filterKey, Object value, String operator, PGFilterOptions filterOptions) {
+    public PGSubQueryExpression4JsonPath(String joinKey, String filterKey, Object value, String operator, Set<String> join, QueryContext queryContext) {
         this.joinKey = joinKey;
         this.filterKey = filterKey;
         this.value = value;
         this.operator = operator;
 
-        // for jsonPath expression, the filterOptions.join must not be empty
-        Checker.checkNotNull(filterOptions, "filterOptions");
-        Checker.checkNotEmpty(filterOptions.join, "filterOptions");
+        // for jsonPath expression, the join must not be empty
+        this.join = join;
 
-        this.filterOptions = filterOptions;
+        Checker.checkNotNull(queryContext, "queryContext");
+        this.queryContext = queryContext;
     }
 
     @Override
     public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex, String selectAlias) {
 
         var baseKey = ""; // e.g. "floors"
-        for(var subKey : this.filterOptions.join) {
+        for(var subKey : this.join) {
             Checker.checkNotBlank(subKey, "key");
             // "floors.rooms" contains "floors"
             if(StringUtils.contains(this.joinKey, subKey)){
@@ -136,7 +134,7 @@ public class PGSubQueryExpression4JsonPath implements Expression {
      * @param params all params in order to build the querySpec
      * @return subQuery text for ARRAY_CONTAINS_ANY
      */
-    static String buildArrayContainsAny(String baseKey, String joinKey, String filterKey, String paramName, Object _paramValue, List<CosmosSqlParameter> params) {
+    String buildArrayContainsAny(String baseKey, String joinKey, String filterKey, String paramName, Object _paramValue, List<CosmosSqlParameter> params) {
 
         Checker.checkNotBlank(baseKey, "baseKey");
         Checker.checkNotBlank(joinKey, "joinKey");
@@ -193,8 +191,32 @@ public class PGSubQueryExpression4JsonPath implements Expression {
         var filterValue = "%s %s".formatted(pathMatching, filterPart);
         params.add(new CosmosSqlParameter(paramName, filterValue));
 
+        // save for SELECT part when returnAllSubArray=false
+        saveSubQueryToContext(joinKey, filterKey, paramName, filterValue);
+
         return queryText;
 
+    }
+
+    /**
+     * save for SELECT part when returnAllSubArray=false
+     *
+     * @param joinKey
+     * @param filterKey
+     * @param _paramName
+     * @param filterValue
+     */
+    void saveSubQueryToContext(String joinKey, String filterKey, String _paramName, String filterValue) {
+
+        var paramName = _paramName + "__select";
+        var fullKey = StringUtils.isEmpty(filterKey) ? joinKey : "%s.%s".formatted(joinKey, filterKey);
+
+        var subQueryList = queryContext.subQueries.get(joinKey);
+        if (subQueryList == null) {
+            subQueryList = new ArrayList<>();
+        }
+        subQueryList.add(Map.of(fullKey, new CosmosSqlParameter(paramName, filterValue)));
+        queryContext.subQueries.put(joinKey, subQueryList);
     }
 
     /**
@@ -221,7 +243,7 @@ public class PGSubQueryExpression4JsonPath implements Expression {
      * @param params all params in order to build the querySpec
      * @return subQuery text for ARRAY_CONTAINS_ANY
      */
-    static String buildArrayContainsAll(String baseKey, String joinKey, String filterKey, String paramName, Object _paramValue, List<CosmosSqlParameter> params) {
+    String buildArrayContainsAll(String baseKey, String joinKey, String filterKey, String paramName, Object _paramValue, List<CosmosSqlParameter> params) {
 
         Checker.checkNotBlank(baseKey, "baseKey");
         Checker.checkNotBlank(joinKey, "joinKey");
@@ -293,6 +315,9 @@ public class PGSubQueryExpression4JsonPath implements Expression {
 
         var filterValue = "%s ? %s".formatted(basePart, filterPart);
         params.add(new CosmosSqlParameter(paramName, filterValue));
+
+        // save for SELECT part when returnAllSubArray=false
+        saveSubQueryToContext(baseKey, filterKey, paramName, filterValue);
 
         return queryText;
 
