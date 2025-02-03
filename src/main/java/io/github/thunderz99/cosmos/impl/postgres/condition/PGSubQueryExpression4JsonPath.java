@@ -17,6 +17,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 
 /**
+ * @Deprecated use PGSubQueryExpression4Join instead. which is better at returnAllSubArray=false
  * a class representing expression using subqueries and array operations(ARRAY_CONTAINS_ANY, ARRAY_CONTAINS_ALL), used in json path query
  *
  * {@code
@@ -115,13 +116,26 @@ public class PGSubQueryExpression4JsonPath implements Expression {
      *
      * <pre>
      * INPUT: "rooms.no", "", "@rooms_no_009", ["001", "002"], params, join:"rooms"
+     *
      * OUTPUT:
-     *  data @? '$.rooms[*].no[*] ? (@ == "001" || @ == "002")'::jsonpath;
+     *  data @? '
+     *   $."rooms"[*] ? (
+     *     exists(@."no"[*] ? (@ == "001"))
+     *     ||
+     *     exists(@."no"[*] ? (@ == "002"))
+     *   )
+     * '::jsonpath
      *
      *
      * INPUT: "floors.rooms", "name", "@floors_rooms_name_010", ["001", "002"], params
      * OUTPUT:
-     *  data @? '$.floors[*].rooms[*] ? (@.name == "r1" || @.name == "r2")'::jsonpath;
+     * data @? '
+     *   $."floors"[*] ? (
+     *     exists(@."rooms"[*] ? (@."name" == "r3"))
+     *     ||
+     *     exists(@."rooms"[*] ? (@."name" == "r4"))
+     *   )
+     * '::jsonpath
      *
      *  and add paramsValue into params
      * </pre>
@@ -160,39 +174,55 @@ public class PGSubQueryExpression4JsonPath implements Expression {
 
         /**
          * SELECT * FROM schema1.table1
-         * WHERE
-         * data @? '$."floors"[*]."rooms"[*] ? (@."name" == "r1" || @."name" == "r2")'::jsonpath
+         * WHERE data @? '
+         *   $."floors"[*] ? (
+         *     exists(@."rooms"[*] ? (@."name" == "r3"))
+         *     &&
+         *     exists(@."rooms"[*] ? (@."name" == "r4"))
+         *   )
+         * '::jsonpath
          */
 
         // subQueryText is simple. e.g. "data @? @param000_floors_rooms_name::jsonpath"
         var queryText = " (data @?? %s::jsonpath)".formatted(paramName);
 
-        // the value is complicated e.g. $."floors"[*]."rooms"[*] ? (@."name" == "r1" || @."name" == "r2")
+        // the value is complicated e.g. $."floors"[*] ? (@.rooms[*] ? (@.name == "r1") && @.rooms[*] ? (@.name == "r2"))
 
-        // pathMatching in value. e.g. $."floors"[*]."rooms"[*]
-        var pathMatching = Arrays.asList(joinKey.split("\\.")).stream().map( k -> "\"%s\"[*]".formatted(k))
-                .collect(Collectors.joining(".", "$.", " ?"));
+        // step1, basePart in value. e.g. $."floors"[*]
+        var basePart = Arrays.asList(baseKey.split("\\.")).stream().map( k -> "\"%s\"[*]".formatted(k))
+                .collect(Collectors.joining(".", "$.", ""));
 
-        // next, we build the filter part: (@."name" == "r1" || @."name" == "r2")
+        // step2, we build the join part: @.rooms[*]
+
+        // floors.rooms -> rooms
+        var joinSubKey = StringUtils.removeStart(joinKey, baseKey + ".");
+        var joinKeys = Lists.newArrayList("@");
+        joinKeys.addAll(Arrays.asList((joinSubKey).split("\\.")));
+        var joinPart = joinKeys.stream()
+                .map( k -> "@".equals(k)? "@" :"\"%s\"".formatted(k))
+                .collect(Collectors.joining(".", "", "[*]"));
+
+        // step3, we build the filter part: (exists(@.rooms[*] ? (@.name == "r1")) && exists(@.rooms[*] ? (@.name == "r2"))
 
         var filterKeys = Lists.newArrayList("@");
         filterKeys.addAll(Arrays.asList(filterKey.split("\\.")));
-        // filterKey -> formattedFilterKey. e.g. "name" -> "@.\"name\""
+
+        // filterKey -> formattedFilterKey. e.g. "name" -> "\"name\""
         var formattedFilterKey = filterKeys.stream()
                 .filter(StringUtils::isNotEmpty)
-                .map(k -> k.equals("@") ? "@" : "\"%s\"".formatted(k))
+                .map(k -> "@".equals(k)? "@" : "\"%s\"".formatted(k))
                 .collect(Collectors.joining("."));
 
         var filterPart = paramValue.stream()
                 .map(v -> (v instanceof String strValue) ? "\"%s\"".formatted(strValue) : v)
-                .map(v -> "%s == %s".formatted(formattedFilterKey, v))
+                .map(v -> "exists(%s ? (%s == %s))".formatted(joinPart, formattedFilterKey, v))
                 .collect(Collectors.joining(" || ", "(", ")"));
 
-        var filterValue = "%s %s".formatted(pathMatching, filterPart);
+        var filterValue = "%s ? %s".formatted(basePart, filterPart);
         params.add(new CosmosSqlParameter(paramName, filterValue));
 
         // save for SELECT part when returnAllSubArray=false
-        saveSubQueryToContext(joinKey, filterKey, paramName, filterValue);
+        saveSubQueryToContext(baseKey, filterKey, paramName, filterValue);
 
         return queryText;
 
@@ -201,22 +231,23 @@ public class PGSubQueryExpression4JsonPath implements Expression {
     /**
      * save for SELECT part when returnAllSubArray=false
      *
-     * @param joinKey
+     * @param baseKey
      * @param filterKey
      * @param _paramName
      * @param filterValue
      */
-    void saveSubQueryToContext(String joinKey, String filterKey, String _paramName, String filterValue) {
+    void saveSubQueryToContext(String baseKey, String filterKey, String _paramName, String filterValue) {
 
-        var paramName = _paramName + "__select";
-        var fullKey = StringUtils.isEmpty(filterKey) ? joinKey : "%s.%s".formatted(joinKey, filterKey);
+        var paramName = _paramName + "__for_select";
 
-        var subQueryList = queryContext.subQueries.get(joinKey);
+        //var fullKey = StringUtils.isEmpty(filterKey) ? baseKey : "%s.%s".formatted(baseKey, filterKey);
+
+        var subQueryList = queryContext.subQueries.get(baseKey);
         if (subQueryList == null) {
             subQueryList = new ArrayList<>();
         }
-        subQueryList.add(Map.of(fullKey, new CosmosSqlParameter(paramName, filterValue)));
-        queryContext.subQueries.put(joinKey, subQueryList);
+        subQueryList.add(Map.of(baseKey, new CosmosSqlParameter(paramName, filterValue)));
+        queryContext.subQueries.put(baseKey, subQueryList);
     }
 
     /**
@@ -270,12 +301,12 @@ public class PGSubQueryExpression4JsonPath implements Expression {
         /**
          * SELECT * FROM schema1.table1
          * WHERE data @? '
-         *   $.floors[*] ? (
-         *     @."rooms"[*] ? (@."name" == "r1")
+         *   $."floors"[*] ? (
+         *     exists(@."rooms"[*] ? (@."name" == "r3"))
          *     &&
-         *     @."rooms"[*] ? (@."name" == "r2")
+         *     exists(@."rooms"[*] ? (@."name" == "r4"))
          *   )
-         * '
+         * '::jsonpath
          */
 
         // subQueryText is simple. e.g. "data @? @param000_floors_rooms_name::jsonpath"

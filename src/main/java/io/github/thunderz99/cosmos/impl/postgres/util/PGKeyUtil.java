@@ -30,26 +30,11 @@ public class PGKeyUtil {
      * Instead of data.key, return data->'key' or data->'address'->'city' for query(for json, with "->" instead of "->>")
      *
      * @param key filter's key
+     * @param selectAlias typically "data" (or "j1" "s1" for cond.join query)
      * @return formatted filter's key data->'key1'->'key2'
      */
-    public static String getFormattedKey4Json(String key) {
-        return getFormattedKeyWithAlias(key, "data", List.of());
-    }
-
-    /**
-     * Instead of data.key, return data->'age'::int or data->'address'->'city' for query
-     *
-     * <p>
-     *     If value is an Integer, "::int" will be added to the end of the formatted key, in order to correctly extract the data in JSONB
-     * </p>
-     *
-     * @param key filter's key
-     * @param value filter's value
-     * @return formatted filter's key data->'key1'->'key2'
-     */
-    public static String getFormattedKey(String key, Object value) {
-
-        return getFormattedKeyWithAlias(key, "data", value);
+    public static String getFormattedKey4JsonWithAlias(String key, String selectAlias) {
+        return getFormattedKeyWithAlias(key, selectAlias, List.of());
     }
 
     /**
@@ -59,18 +44,18 @@ public class PGKeyUtil {
      *  - data->'some'->'nested'->>'field'
      *
      * @param key e.g. "address.city" or "age"
-     * @param collectionAlias typically "data" (or "tableAlias.data")
+     * @param selectAlias typically "data" (or "tableAlias.data")
      * @param value used to determine the cast type
      * @return an expression like "(data->'address'->>'city')::text"
      */
-    public static String getFormattedKeyWithAlias(String key, String collectionAlias, Object value) {
+    public static String getFormattedKeyWithAlias(String key, String selectAlias, Object value) {
 
         // Validate alias (you can skip if your environment guarantees non-blank)
-        Checker.checkNotBlank(collectionAlias, "collectionAlias");
+        Checker.checkNotBlank(selectAlias, "selectAlias");
 
         // If the user didn't provide a key, just return the alias
         if (StringUtils.isBlank(key)) {
-            return collectionAlias;
+            return selectAlias;
         }
 
         // Split on "." to handle nested fields
@@ -79,7 +64,7 @@ public class PGKeyUtil {
         // Build all but the last level using "->"
         // Example: for "address.city.country",
         // the intermediate path is data->'address'->'city'
-        var sb = new StringBuilder(collectionAlias);
+        var sb = new StringBuilder(selectAlias);
         for (int i = 0; i < parts.length - 1; i++) {
             sb.append("->'").append(parts[i]).append("'");
         }

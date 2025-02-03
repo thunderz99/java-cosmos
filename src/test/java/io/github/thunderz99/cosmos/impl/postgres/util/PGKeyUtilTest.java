@@ -12,30 +12,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PGKeyUtilTest {
 
-    @Test
-    void getFormattedKey_should_work() {
-        {
-            // normal cases
-            assertThat(PGKeyUtil.getFormattedKey("age", "abc")).isEqualTo("data->>'age'");
-            assertThat(PGKeyUtil.getFormattedKey("age", 12)).isEqualTo("(data->>'age')::int");
-        }
-
-        {
-            // irregular cases for value
-            Collection<?> coll = List.of("a", "b", "c");
-            assertThat(PGKeyUtil.getFormattedKey("age", coll)).isEqualTo("data->'age'");
-
-            assertThat(PGKeyUtil.getFormattedKey("age", null)).isEqualTo("data->>'age'");
-            assertThat(PGKeyUtil.getFormattedKey("age", "")).isEqualTo("data->>'age'");
-            assertThat(PGKeyUtil.getFormattedKey("age", " ")).isEqualTo("data->>'age'");
-        }
-        {
-            // irregular cases for value
-            assertThat(PGKeyUtil.getFormattedKey("age", null)).isEqualTo("data->>'age'");
-            assertThat(PGKeyUtil.getFormattedKey("age", "")).isEqualTo("data->>'age'");
-            assertThat(PGKeyUtil.getFormattedKey("age", " ")).isEqualTo("data->>'age'");
-        }
-    }
 
     @Test
     void getFormattedKeyWithAlias_should_work() {

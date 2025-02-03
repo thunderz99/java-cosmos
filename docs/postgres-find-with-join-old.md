@@ -74,49 +74,26 @@ Note: When `returnAllSubArray = true`, things are simple and we can do this by a
 
 ```
 
-## sample SQL(for returnAllSubArray=false)
+## sample SQL
 
 
 
 ```SQL
 SELECT 
-    id,
+  id,
+  jsonb_set(
     jsonb_set(
-      jsonb_set(
-        data,
-        '{area,city,street,rooms}',
-        COALESCE(
-        (
-          SELECT jsonb_agg(s0)
-          FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') s0
-          WHERE (s0->>'no' = @param000_no__for_select)
-        ),
-        data->'area'->'city'->'street'->'rooms'
-        )
-      ),
-      '{room*no-01}',
-      COALESCE(
-      (
-        SELECT jsonb_agg(s1)
-        FROM jsonb_array_elements(data->'room*no-01') s1
-        WHERE ((s1->>'area')::int > @param001_area__for_select)
-      ),
-      data->'room*no-01'
-    ) AS data
+      data,
+      '{area,city,street,rooms}',
+      jsonb_path_query_array(data, $1::jsonpath)  -- same filter as WHERE
+    ),
+    '{room*no-01}',
+    jsonb_path_query_array(data, $2::jsonpath)    -- same filter as WHERE
+  ) AS "data"
 FROM schema1.families
-WHERE EXISTS (
-  SELECT 1
-  FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS j0
-  WHERE (j0->>'no' = @param000_no)
-)
-AND EXISTS (
-  SELECT 1
-  FROM jsonb_array_elements(data->'room*no-01') AS j1
-  WHERE ((j1->>'area')::int > @param001_area)
-);
+WHERE data @? $1::jsonpath
+  AND data @? $2::jsonpath;
 ```
-
-
 
 ## implementation
 

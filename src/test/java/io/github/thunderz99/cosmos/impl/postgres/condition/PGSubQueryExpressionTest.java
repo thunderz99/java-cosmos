@@ -28,7 +28,7 @@ class PGSubQueryExpressionTest {
              *
              */
             var params = new ArrayList<CosmosSqlParameter>();
-            var ret = PGSubQueryExpression.buildArrayContainsAny("items", "", "@items_009", List.of("id001", "id002", "id005"), params);
+            var ret = PGSubQueryExpression.buildArrayContainsAny("items", "", "@items_009", List.of("id001", "id002", "id005"), params, "data");
             assertThat(ret).isEqualTo(" (data->'items' ??| @items_009)");
             assertThat(params).hasSize(1);
             var param = params.stream().collect(Collectors.toList()).get(0);
@@ -45,7 +45,7 @@ class PGSubQueryExpressionTest {
              *
              */
             var params = new ArrayList<CosmosSqlParameter>();
-            var ret = PGSubQueryExpression.buildArrayContainsAny("items", "", "@items_009", "id001", params);
+            var ret = PGSubQueryExpression.buildArrayContainsAny("items", "", "@items_009", "id001", params, "data");
             assertThat(ret).isEqualTo(" (data->'items' ?? @items_009)");
             assertThat(params).hasSize(1);
             var param = params.stream().collect(Collectors.toList()).get(0);
@@ -62,7 +62,7 @@ class PGSubQueryExpressionTest {
 
             var params = new ArrayList<CosmosSqlParameter>();
             var ids = List.of("id001", "id002", "id005");
-            var ret = PGSubQueryExpression.buildArrayContainsAny("items", "id", "@items_id_010", ids, params);
+            var ret = PGSubQueryExpression.buildArrayContainsAny("items", "id", "@items_id_010", ids, params, "data");
 
             assertThat(ret).isEqualTo(" (data->'items' @> jsonb_build_array(jsonb_build_object('id', @items_id_010__0)) OR data->'items' @> jsonb_build_array(jsonb_build_object('id', @items_id_010__1)) OR data->'items' @> jsonb_build_array(jsonb_build_object('id', @items_id_010__2)))");
             assertThat(params).hasSize(3);
@@ -81,7 +81,7 @@ class PGSubQueryExpressionTest {
              */
 
             var params = new ArrayList<CosmosSqlParameter>();
-            var ret = PGSubQueryExpression.buildArrayContainsAny("items", "name", "@items_name_010", "react", params);
+            var ret = PGSubQueryExpression.buildArrayContainsAny("items", "name", "@items_name_010", "react", params, "data");
 
             assertThat(ret).isEqualTo(" (data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_name_010__0)))");
             assertThat(params).hasSize(1);
@@ -104,7 +104,7 @@ class PGSubQueryExpressionTest {
              */
 
             var params = new ArrayList<CosmosSqlParameter>();
-            var ret = PGSubQueryExpression.buildArrayContainsAll("items", "", "@items_009", List.of("id001", "id002"), params);
+            var ret = PGSubQueryExpression.buildArrayContainsAll("items", "", "@items_009", List.of("id001", "id002"), params, "data");
             assertThat(ret).isEqualTo(" (data->'items' @> @items_009::jsonb)");
             assertThat(params).hasSize(1);
             var param = params.stream().collect(Collectors.toList()).get(0);
@@ -119,7 +119,7 @@ class PGSubQueryExpressionTest {
              */
 
             var params = new ArrayList<CosmosSqlParameter>();
-            var ret = PGSubQueryExpression.buildArrayContainsAll("items", "", "@items_009", List.of("id001"), params);
+            var ret = PGSubQueryExpression.buildArrayContainsAll("items", "", "@items_009", List.of("id001"), params, "data");
             assertThat(ret).isEqualTo(" (data->'items' ?? @items_009)");
             assertThat(params).hasSize(1);
             var param = params.stream().collect(Collectors.toList()).get(0);
@@ -136,7 +136,7 @@ class PGSubQueryExpressionTest {
              */
 
             var params = new ArrayList<CosmosSqlParameter>();
-            var ret = PGSubQueryExpression.buildArrayContainsAll("tags", "name", "@tags_name_010", List.of("react", "java"), params);
+            var ret = PGSubQueryExpression.buildArrayContainsAll("tags", "name", "@tags_name_010", List.of("react", "java"), params, "data");
 
             assertThat(ret).isEqualTo(" (data->'tags' @> jsonb_build_array(jsonb_build_object('name', @tags_name_010__0)) AND data->'tags' @> jsonb_build_array(jsonb_build_object('name', @tags_name_010__1)))");
             assertThat(params).hasSize(2);
@@ -152,7 +152,7 @@ class PGSubQueryExpressionTest {
              */
 
             var params = new ArrayList<CosmosSqlParameter>();
-            var ret = PGSubQueryExpression.buildArrayContainsAll("items", "name", "@items_name_010", "react", params);
+            var ret = PGSubQueryExpression.buildArrayContainsAll("items", "name", "@items_name_010", "react", params, "data");
 
             assertThat(ret).isEqualTo(" (data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_name_010__0)))");
             assertThat(params).hasSize(1);

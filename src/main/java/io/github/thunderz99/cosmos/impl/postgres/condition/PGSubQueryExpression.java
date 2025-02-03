@@ -71,9 +71,9 @@ public class PGSubQueryExpression implements Expression {
 
         var queryText = "";
         if (ARRAY_CONTAINS_ALL.equals(this.operator)) {
-            queryText = buildArrayContainsAll(this.joinKey, this.filterKey, paramName, paramValue, params);
+            queryText = buildArrayContainsAll(this.joinKey, this.filterKey, paramName, paramValue, params, selectAlias);
         } else {
-            queryText = buildArrayContainsAny(this.joinKey, this.filterKey, paramName, paramValue, params);
+            queryText = buildArrayContainsAny(this.joinKey, this.filterKey, paramName, paramValue, params, selectAlias);
         }
 
         ret.setQueryText(queryText);
@@ -111,9 +111,10 @@ public class PGSubQueryExpression implements Expression {
      * @param paramName e.g. @items_009
      * @param _paramValue e.g. ["id001", "id002", "id005"]
      * @param params all params in order to build the querySpec
+     * @param selectAlias e.g. "j0" "s0" for cond.join
      * @return subQuery text for ARRAY_CONTAINS_ANY
      */
-    static String buildArrayContainsAny(String joinKey, String filterKey, String paramName, Object _paramValue, List<CosmosSqlParameter> params) {
+    static String buildArrayContainsAny(String joinKey, String filterKey, String paramName, Object _paramValue, List<CosmosSqlParameter> params, String selectAlias) {
 
         Checker.checkNotBlank(joinKey, "joinKey");
         Checker.checkNotNull(filterKey, "filterKey");
@@ -133,6 +134,7 @@ public class PGSubQueryExpression implements Expression {
             return "(1=0)";
         }
 
+        /** not work for integers, comment out
         if(StringUtils.isEmpty(filterKey)){
 
             // paramValue contains only 1 element, do a ARRAY_CONTAINS 1 element query
@@ -141,27 +143,28 @@ public class PGSubQueryExpression implements Expression {
                 // INPUT: "items", "", "@items_009", ["id001"], params
                 // OUTPUT: " data->'items' ?? @items_009"
                 var singleValue = paramValue.iterator().next();
-                params.add(Condition.createSqlParameter(paramName, singleValue));
-                return String.format(" (%s ?? %s)",
-                        PGKeyUtil.getFormattedKey4Json(joinKey), paramName);
+                params.add(Condition.createSqlParameter(paramName, String.valueOf(singleValue)));
+                var format = (singleValue instanceof String) ? " (%s @> \"%s\"::jsonb)" : " (%s @> %s::jsonb)";
+                return String.format(format,
+                        PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), paramName);
             }
 
             // paramValue is a collection with multiple elements
 
             // Condition.filter("items ARRAY_CONTAINS_ANY", List.of("A","B"))
             // INPUT: "items", "", "@items_009", ["id001", "id002", "id005"], params
-            // OUTPUT: " data->'items' ??| @items_009"
-            params.add(Condition.createSqlParameter(paramName, paramValue));
-            return String.format(" (%s ??| %s)",
-                    PGKeyUtil.getFormattedKey(joinKey, paramValue), paramName);
+            // OUTPUT: " data->'items' @> @items_009::jsonb"
+            // ??| only works for string arrays
+            params.add(Condition.createSqlParameter(paramName, JsonUtil.toJson(paramValue)));
+            return String.format(" (%s @> %s::jsonb)",
+                    PGKeyUtil.getFormattedKeyWithAlias(joinKey, selectAlias, paramValue), paramName);
         }
-
-        // for complicated pattern with filterKey
+         */
 
         // Condition.filter("items ARRAY_CONTAINS_ANY id", List.of("A","B"))
         // INPUT: "items", "id", "@items_id_010", ["id001", "id002", "id005"], params
-        // OUTPUT: "  (data->'items' @> '[{"id": @items_id_010_0}]
-        // OR data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_id_010__0)
+        // OUTPUT:
+        // data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_id_010__0)
         // OR data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_id_010__1)
 
         var index = 0;
@@ -171,8 +174,24 @@ public class PGSubQueryExpression implements Expression {
         for(var value : paramValue){
             // break down the list values to multiple single value
             var subParamName = String.format("%s__%d", paramName, index);
-            params.add(Condition.createSqlParameter(subParamName, value));
-            subQueries.add(String.format("%s @> %s", PGKeyUtil.getFormattedKey4Json(joinKey), buildNestedJsonbExpression(filterKey, subParamName)));
+
+            if(StringUtils.isEmpty(filterKey)) {
+                //simple key
+                if(value instanceof Integer) {
+                    //for integer value
+                    params.add(Condition.createSqlParameter(subParamName, String.valueOf(value)));
+                } else {
+                    //for str value
+                    params.add(Condition.createSqlParameter(subParamName, "\"%s\"".formatted(value)));
+                }
+                subQueries.add(String.format("%s @> %s::jsonb", PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), subParamName));
+            } else {
+                //nested key
+                params.add(Condition.createSqlParameter(subParamName, value));
+                subQueries.add(String.format("%s @> %s", PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), buildNestedJsonbExpression(filterKey, subParamName)));
+            }
+
+
             index++;
         }
 
@@ -239,9 +258,10 @@ public class PGSubQueryExpression implements Expression {
      * @param paramName e.g. @items_009
      * @param _paramValue e.g. ["id001", "id002"]
      * @param params all params in order to build the querySpec
+     * @param selectAlias e.g. "j0" "s0" for cond.join
      * @return subQuery text for ARRAY_CONTAINS_ALL
      */
-    static String buildArrayContainsAll(String joinKey, String filterKey, String paramName, Object _paramValue, List<CosmosSqlParameter> params) {
+    static String buildArrayContainsAll(String joinKey, String filterKey, String paramName, Object _paramValue, List<CosmosSqlParameter> params, String selectAlias) {
 
         Checker.checkNotBlank(joinKey, "joinKey");
         Checker.checkNotNull(filterKey, "filterKey");
@@ -261,6 +281,7 @@ public class PGSubQueryExpression implements Expression {
             return "(1=0)";
         }
 
+        /** not work for integers, comment out
         if(StringUtils.isEmpty(filterKey)){
 
             // paramValue contains only 1 element, do a ARRAY_CONTAINS 1 element query
@@ -271,7 +292,7 @@ public class PGSubQueryExpression implements Expression {
                 var singleValue = paramValue.iterator().next();
                 params.add(Condition.createSqlParameter(paramName, singleValue));
                 return String.format(" (%s ?? %s)",
-                        PGKeyUtil.getFormattedKey4Json(joinKey), paramName);
+                        PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), paramName);
             }
 
             // Condition.filter("items ARRAY_CONTAINS_ALL", List.of("A","B"))
@@ -280,12 +301,14 @@ public class PGSubQueryExpression implements Expression {
             params.add(Condition.createSqlParameter(paramName, JsonUtil.toJson(paramValue)));
 
             return String.format(" (%s @> %s::jsonb)",
-                    PGKeyUtil.getFormattedKey4Json(joinKey), paramName);
+                    PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), paramName);
         }
+         */
+
 
         // for complicated pattern with filterKey
 
-        // Condition.filter("items ARRAY_CONTAINS_ANY id", List.of("A","B"))
+        // Condition.filter("items ARRAY_CONTAINS_ALL id", List.of("A","B"))
         // INPUT: "items", "id", "@items_id_010", ["id001", "id002", "id005"], params
         // OUTPUT: "  (data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_id_010__0)
         // AND data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_id_010__1)
@@ -298,8 +321,23 @@ public class PGSubQueryExpression implements Expression {
         for(var value : paramValue){
             // break down the list values to multiple single value
             var subParamName = String.format("%s__%d", paramName, index);
-            params.add(Condition.createSqlParameter(subParamName, value));
-            subQueries.add(String.format("%s @> %s", PGKeyUtil.getFormattedKey4Json(joinKey), buildNestedJsonbExpression(filterKey, subParamName)));
+
+            if(StringUtils.isEmpty(filterKey)) {
+                //simple key
+                if(value instanceof Integer) {
+                    //for integer value
+                    params.add(Condition.createSqlParameter(subParamName, String.valueOf(value)));
+                } else {
+                    //for str value
+                    params.add(Condition.createSqlParameter(subParamName, "\"%s\"".formatted(value)));
+                }
+                subQueries.add(String.format("%s @> %s::jsonb", PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), subParamName));
+            } else {
+                //nested key
+                params.add(Condition.createSqlParameter(subParamName, value));
+                subQueries.add(String.format("%s @> %s", PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), buildNestedJsonbExpression(filterKey, subParamName)));
+            }
+
             index++;
         }
 

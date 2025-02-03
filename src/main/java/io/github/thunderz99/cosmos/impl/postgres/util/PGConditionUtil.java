@@ -42,7 +42,7 @@ public class PGConditionUtil {
         var table = TableUtil.checkAndNormalizeValidEntityName(partition);
 
 
-        var initialText = String.format("FROM %s.%s", schema, table);
+        var initialText = String.format(" FROM %s.%s\n", schema, table);
         var initialParams = new ArrayList<CosmosSqlParameter>();
         var initialConditionIndex = new AtomicInteger(0);
         var initialParamIndex = new AtomicInteger(0);
@@ -55,12 +55,12 @@ public class PGConditionUtil {
 
         // select
         var select = generateSelect(cond, queryContext, params);
-        queryText.insert(0, "SELECT %s ".formatted(select));
+        queryText.insert(0, "SELECT %s\n".formatted(select));
 
         // sort
         if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
             var sorts = buildSorts(cond.sort);
-            queryText.append(sorts);
+            queryText.append("\n" + sorts);
         }
 
         // offset and limit
@@ -103,8 +103,9 @@ public class PGConditionUtil {
             sortMap.put("_ts", firstOrder);
         }
 
+        // TODO: sort by integer
         var ret = sortMap.entrySet().stream()
-                .map(entry -> String.format(" %s %s", PGKeyUtil.getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
+                .map(entry -> String.format(" %s %s", PGKeyUtil.getFormattedKeyWithAlias(entry.getKey(), TableUtil.DATA, ""), entry.getValue().toUpperCase()))
                 .collect(Collectors.joining(",", " ORDER BY", ""));
         return ret;
     }
@@ -379,7 +380,7 @@ public class PGConditionUtil {
             if (CollectionUtils.isEmpty(join)) {
                 return new PGSubQueryExpression(joinKey, filterKey, value, operator);
             } else {
-                return new PGSubQueryExpression4JsonPath(joinKey, filterKey, value, operator, join, queryContext);
+                return new PGSubQueryExpression4Join(joinKey, filterKey, value, operator, join, queryContext);
             }
         }
 
@@ -406,7 +407,7 @@ public class PGConditionUtil {
             if (CollectionUtils.isEmpty(join)) {
                 return new PGSimpleExpression(parsedKey, value, operator);
             } else {
-                return new PGSimpleExpression4JsonPath(parsedKey, value, operator, join, queryContext);
+                return new PGSimpleExpression4Join(parsedKey, value, operator, join, queryContext);
             }
         }
     }
@@ -444,7 +445,7 @@ public class PGConditionUtil {
         // see docs/postgres-find-with-join.md for details
         var shouldFilterSelectParts = cond.returnAllSubArray == false
                 && CollectionUtils.isNotEmpty(cond.join)
-                && MapUtils.isNotEmpty(queryContext.subQueries);
+                && MapUtils.isNotEmpty(queryContext.subQueries4Join);
 
         if (!shouldFilterSelectParts) {
             // normal select
@@ -455,16 +456,40 @@ public class PGConditionUtil {
         } else {
 
             // for join and returnAllSubArray == false
+
+            // see docs/postgres-find-with-join.md for details
+
+
+            /** FROM clause in WHERE
+             * WHERE
+             * EXISTS (
+             *   SELECT 1
+             *   FROM jsonb_array_elements(data->'data->'area'->'city'->'street'->'rooms'') AS j0
+             *   WHERE (j0->>'no' = @param000_no)
+             * )
+             */
+
+            /** TO clause in SELECT
+             * (
+             *   SELECT jsonb_agg(s0)
+             *   FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') s0
+             *   WHERE (s0->>'no' = @param000_no__for_select)
+             * )
+             *
+             */
             if (CollectionUtils.isEmpty(cond.fields)) {
 
                 // add params in select part
-                for(var basePart : queryContext.subQueries.values()) {
-                    for(var subQueryParams: basePart){
-                        params.addAll(subQueryParams.values());
+                for(var subQueryList : queryContext.subQueries4Join.values()) {
+                    for(var subQueryMap: subQueryList){
+                        for(var entry : subQueryMap.entrySet()){
+                            var querySpec = entry.getValue();
+                            params.addAll(querySpec.getParameters());
+                        }
                     }
                 }
 
-                return generateSelectToFilteringSubArray(queryContext.subQueries);
+                return generateSelectToFilteringSubArray(queryContext.subQueries4Join);
             } else {
                 // TODO with fields
                 return "*";
@@ -480,40 +505,52 @@ public class PGConditionUtil {
      * @code{
      *
      * // return
-     *   id,
-     *   jsonb_set(
+     *     id,
      *     jsonb_set(
-     *       data,
-     *       '{area,city,street,rooms}',
-     *       jsonb_path_query_array(data, $1::jsonpath)  -- same filter as WHERE
-     *     ),
-     *     '{room*no-01}',
-     *     jsonb_path_query_array(data, $2::jsonpath)    -- same filter as WHERE
-     *   ) AS "data"
+     *       jsonb_set(
+     *         data,
+     *         '{area,city,street,rooms}',
+     *         (
+     *           SELECT jsonb_agg(s0)
+     *           FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') s0
+     *           WHERE (s0->>'no' = @param000_no__for_select)
+     *         )
+     *       ),
+     *       '{room*no-01}',
+     *       (
+     *         SELECT jsonb_agg(s1)
+     *         FROM jsonb_array_elements(data->'room*no-01') s1
+     *         WHERE ((s1->>'area')::int > @param001_area__for_select)
+     *       )
+     *     ) AS data
      *
      *
      * @param subQueries
      * @return
      */
-    static String generateSelectToFilteringSubArray(Map<String, List<Map<String, CosmosSqlParameter>>> subQueries) {
+    static String generateSelectToFilteringSubArray(Map<String, List<Map<String, CosmosSqlQuerySpec>>> subQueries) {
 
         var selectPart = TableUtil.DATA;
-        for(var basePart : subQueries.values()) {
-            for (var subQueryParams : basePart) {
+        for(var baseEntry : subQueries.entrySet()) {
+            var baseKey = baseEntry.getKey();
+            for (var subQueryParams : baseEntry.getValue()) {
                 for (var entry : subQueryParams.entrySet()) {
 
                     // '{area,city,street,rooms}'
-                    var pathLiteral = toPathLiteral(entry.getKey());
+                    var pathLiteral = toPathLiteral(baseEntry.getKey());
 
                     var jsonbClause = """
                             jsonb_set(
-                            %s,
-                            '%s',
-                            jsonb_path_query_array(data, %s::jsonpath)
+                              %s,
+                              '%s',
+                              COALESCE(
+                                %s,
+                                %s
+                              )
                             )
                             """;
 
-                    selectPart = String.format(jsonbClause, selectPart, pathLiteral, entry.getValue().name);
+                    selectPart = String.format(jsonbClause, selectPart, pathLiteral, entry.getValue().queryText, PGKeyUtil.getFormattedKey4JsonWithAlias(baseKey, TableUtil.DATA));
                 }
             }
         }
@@ -531,6 +568,7 @@ public class PGConditionUtil {
         }
         return  Arrays.stream(key.split("\\."))
                 .filter(StringUtils::isNotEmpty)
+                .map(k -> StringUtils.startsWith(k,"\"") ? k : "\"" + k + "\"")
                 .collect(Collectors.joining(",", "{", "}"));
 
     }

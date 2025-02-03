@@ -1,9 +1,5 @@
 package io.github.thunderz99.cosmos.impl.postgres.condition;
 
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Pattern;
-
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
 import io.github.thunderz99.cosmos.condition.Expression;
@@ -18,22 +14,36 @@ import io.github.thunderz99.cosmos.util.ParamUtil;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
+
 /**
- * @Deprecated we use PGSimpleExpression4Join instead. because PGSimpleExpression4Join is more good at returnAllSubArray=false
- *
- * A class representing simple json path expression, which is used in Condition.join query
+ * A class representing simple expression in WHERE EXIST style, which is used in Condition.join query
  * <p>
  * {@code
- *  // simple expression for json path expression
+ *  // simple expression for join, using WHERE EXIST style
  *  // ==
- *  //(data @? '$.area.city.street.rooms[*] ? (@.no == "001")'::jsonpath)
+ *  // EXISTS (
+ *       SELECT 1
+ *       FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS room
+ *       WHERE room->>'no' = '001'
+ *     )
  *  // >
- *  //(data @? '$.area.city.street.rooms[*] ? (@.no > "001")'::jsonpath)
+ *  // EXISTS (
+ *       SELECT 1
+ *       FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS room
+ *       WHERE room->>'no' > '001'
+ *     )
  *  // LIKE
- *  //(data @? '$.area.city.street.rooms[*] ? (@.no like_regex "^001.*")'::jsonpath)
+ *  // EXISTS (
+ *       SELECT 1
+ *       FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS room
+ *       WHERE room->>'no' LIKE '00%'
+ *     )
  * }
  */
-public class PGSimpleExpression4JsonPath implements Expression {
+public class PGSimpleExpression4Join implements Expression {
 
 	public static final Pattern binaryOperatorPattern = Pattern.compile("^\\s*(IN|=|!=|<|<=|>|>=)\\s*$");
 
@@ -56,10 +66,10 @@ public class PGSimpleExpression4JsonPath implements Expression {
 	 */
     public String operator = "";
 
-    public PGSimpleExpression4JsonPath() {
+    public PGSimpleExpression4Join() {
     }
 
-    public PGSimpleExpression4JsonPath(String key, Object value, Set<String> join, QueryContext queryContext) {
+    public PGSimpleExpression4Join(String key, Object value, Set<String> join, QueryContext queryContext) {
         this.key = key;
         this.value = value;
 
@@ -72,7 +82,7 @@ public class PGSimpleExpression4JsonPath implements Expression {
 
     }
 
-    public PGSimpleExpression4JsonPath(String key, Object value, String operator, Set<String> join, QueryContext queryContext) {
+    public PGSimpleExpression4Join(String key, Object value, String operator, Set<String> join, QueryContext queryContext) {
         this.key = key;
         this.value = value;
         this.operator = operator;
@@ -105,108 +115,90 @@ public class PGSimpleExpression4JsonPath implements Expression {
             return exp.toQuerySpec(paramIndex, selectAlias);
         }
 
-        // key format used in jsonb_path. e.g. ("$.area.city.street.rooms[*]", "@.no")
-        var keyPair = PGKeyUtil.getJsonbPathKey(joinKey, key);
 
-        // "$.area.city.street.rooms[*]"
-        var jsonbPath = keyPair.getLeft();
+        /** pattern 1, "no" is a field directly under base joinKey "rooms"
+         *  // EXISTS (
+         *       SELECT 1
+         *       FROM jsonb_array_elements(data->'rooms') AS j1
+         *       WHERE j1->>'no' = '001'
+         *     )
+         */
 
-        // "@.no"
-        var jsonbKey = keyPair.getRight();
+        /** pattern 2,  "rooms.name" is a nested field under base joinKey "floors"
+         *  // EXISTS (
+         *       SELECT 1
+         *       FROM jsonb_array_elements(data->'floors') AS j2
+         *       WHERE j2->'rooms'->>'name' = 'r1'
+         *     )
+         */
 
+        // we will support both of the above patterns
+
+        var remainedKey = StringUtils.removeStart(this.key, joinKey + ".");
+
+        var formattedJoinKey = PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias);
         var ret = new CosmosSqlQuerySpec();
-        var params = new ArrayList<CosmosSqlParameter>();
 
-        // fullName.last -> @param001_fullName__last
-        // or
-        // "829cc727-2d49-4d60-8f91-b30f50560af7.name" -> @param001_wg31gsa.name
-        var paramName = ParamUtil.getParamNameFromKey(this.key, paramIndex.getAndIncrement());
+        {
+            var existsAlias = "j" + paramIndex;
+            var subExp = new PGSimpleExpression(remainedKey, this.value, this.operator);
+            var subQuery = subExp.toQuerySpec(paramIndex, existsAlias);
 
-        var paramValue = this.value;
+            var existsClause = """
+                     EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(%s) AS %s
+                       WHERE %s
+                     )
+                    """;
 
-        // Robust process for operator IN and paramValue is not Collection
+            existsClause = StringUtils.removeEnd(existsClause, "\n");
+            var queryText = existsClause.formatted(formattedJoinKey, existsAlias, subQuery.getQueryText().trim());
 
-        if ("IN".equals(this.operator) && !(paramValue instanceof Collection<?>)) {
-            paramValue = List.of(paramValue);
+            ret.setQueryText(queryText);
+            ret.setParameters(subQuery.getParameters());
         }
 
-        if (paramValue instanceof Collection<?>) {
-            // collection param value
-            // e.g ( parentId IN (@parentId__0, @parentId__1, @parentId__2) )
-            var coll = (Collection<?>) paramValue;
-
-            // array equals or not
-            if (Set.of("=", "!=").contains(this.operator)) {
-                var queryText = " %s @?? %s::jsonpath".formatted(selectAlias, paramName);
-
-                // replace "=" to "==" for json path expression
-                var op = StringUtils.equals("=", this.operator) ? "==" : this.operator;
-
-                // $.area.city.street.rooms[*] ? (@.no == "001")
-                // in the json path expression, do not need to use ??, just use ? is ok
-                var value = " (%s ? (%s %s %s))".formatted(jsonbPath, jsonbKey, op, JsonUtil.toJson(paramValue));
-                var param = Condition.createSqlParameter(paramName, value);
-
-                ret.setQueryText(queryText);
-                params.add(param);
-            } else {
-                //the default operator for collection "IN"
-                // c.foo IN ['A','B','C']
-                if (coll.isEmpty()) {
-                    //if paramValue is empty, return a FALSE queryText.
-                    ret.setQueryText(" (1=0)");
-				} else {
-					// use IN array
-                    // TODO join buildInArray
-                    var queryText = buildInArray(this.key, paramName, coll, params, selectAlias);
-					ret.setQueryText(queryText);
-				}
-			}
-
-		} else {
-            // single param value
-
-            if (StringUtils.isEmpty(this.operator) || StringUtils.equals("=", this.operator)) {
-                // set the default operator for scalar value
-                this.operator = "==";
-            }
-
-            // paramName or fieldName
-            if (paramValue instanceof FieldKey) {
-                throw new NotImplementedException("FieldKey is not supported in join query");
-                // valuePart should be "mail2" for "data.mail != data.mail2"
-                //valueString = PGKeyUtil.getFormattedKeyWithAlias(((FieldKey) paramValue).keyName, selectAlias, paramValue);
-            }
-
-            if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >
-                //use op for cosmosdb reserved words
-                var op = this.operator;
-
-                var queryText = " %s @?? %s::jsonpath".formatted(selectAlias, paramName);
-
-                // $.area.city.street.rooms[*] ? (@.no == "001")
-                var valuePart = (paramValue instanceof String strValue) ? "\"%s\"".formatted(strValue) : paramValue;
-
-                // in the json path expression, do not need to use ??, just use ? is ok
-                var value = " (%s ? (%s %s %s))".formatted(jsonbPath, jsonbKey, op, valuePart);
-                var param = Condition.createSqlParameter(paramName, value);
-
-                ret.setQueryText(queryText);
-                params.add(param);
-
-            } else if (Condition.typeCheckFunctionPattern.asMatchPredicate().test(this.operator)) { // type check funcs: IS_DEFINED|IS_NUMBER|IS_PRIMITIVE, etc
-                throw new NotImplementedException("typeCheckFunctions are not supported in join query");
-                //ret.setQueryText(String.format(" (%s(%s) = %s)", this.operator, formattedKey, paramName));
-            } else { // other binary functions. e.g. STARTSWITH, CONTAINS, ARRAY_CONTAINS
-                buildBinaryFunctionDetails(ret, jsonbPath, jsonbKey, paramName, paramValue, params, selectAlias);
-            }
-
-		}
-
-		ret.setParameters(params);
-
         // save for SELECT part when returnAllSubArray=false
-        saveSubQueryToContext(joinKey, paramName, params.get(0).value.toString());
+        // see docs/postgres-find-with-join.md for details
+
+        {
+            var alias4Select = "s" + paramIndex;
+            var subExp = new PGSimpleExpression(remainedKey, this.value, this.operator);
+            var subQuery = subExp.toQuerySpec(paramIndex, alias4Select);
+
+            var clause4Select = """
+                     (
+                       SELECT jsonb_agg(%s)
+                       FROM jsonb_array_elements(%s) AS %s
+                       WHERE %s
+                     )
+                    """;
+
+            clause4Select = StringUtils.removeEnd(clause4Select, "\n");
+            var queryText = clause4Select.formatted(alias4Select, formattedJoinKey, alias4Select, subQuery.getQueryText().trim());
+
+            // change the param names for select, in order to avoid param name conflict
+
+            var params4Select = new ArrayList<CosmosSqlParameter>();
+            for(var param : subQuery.getParameters()) {
+
+                var paramName = param.getName();
+                String newParamName = paramName + "__for_select";
+
+                var newParam = new CosmosSqlParameter(newParamName, param.getValue());
+                params4Select.add(newParam);
+                queryText = StringUtils.replace(queryText, paramName, newParamName);
+
+            }
+
+
+            var querySpec4Select = new CosmosSqlQuerySpec();
+            querySpec4Select.setQueryText(queryText);
+            querySpec4Select.setParameters(params4Select);
+
+            saveSubQuery4JsonToContext(joinKey, remainedKey, querySpec4Select);
+        }
 
 		return ret;
 
@@ -302,26 +294,15 @@ public class PGSimpleExpression4JsonPath implements Expression {
 
 
     /**
-     * A helper function to generate c.foo IN @param000_array1 queryText
-     * <p>
-     * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
-     * (data->>'parentId' = ANY(@parentId))
-     * paramsValue into params
-     * </p>
-     */
-    static String buildInArray(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params, String selectAlias) {
-        var ret = String.format(" (%s = ANY(%s))", PGKeyUtil.getFormattedKeyWithAlias(key, selectAlias, ""), paramName);
-        params.add(Condition.createSqlParameter(paramName, paramValue));
-        return ret;
-    }
-
-    /**
      * save for SELECT part when returnAllSubArray=false
+     *
+     * Deprecated. use saveSubQuery4JsonToContext instead.
      *
      * @param joinKey
      * @param _paramName
      * @param filterValue
      */
+    @Deprecated
     void saveSubQueryToContext(String joinKey, String _paramName, String filterValue) {
 
         var paramName = _paramName + "__for_select";
@@ -332,6 +313,23 @@ public class PGSimpleExpression4JsonPath implements Expression {
         }
         subQueryList.add(Map.of(joinKey, new CosmosSqlParameter(paramName, filterValue)));
         queryContext.subQueries.put(joinKey, subQueryList);
+    }
+
+    /**
+     * save for SELECT part when returnAllSubArray=false
+     *
+     * @param joinKey
+     * @param remainedKey
+     * @param querySpec
+     */
+    void saveSubQuery4JsonToContext(String joinKey, String remainedKey, CosmosSqlQuerySpec querySpec) {
+
+        var subQueryList = queryContext.subQueries4Join.get(joinKey);
+        if (subQueryList == null) {
+            subQueryList = new ArrayList<>();
+        }
+        subQueryList.add(Map.of(remainedKey, querySpec));
+        queryContext.subQueries4Join.put(joinKey, subQueryList);
     }
 
 }

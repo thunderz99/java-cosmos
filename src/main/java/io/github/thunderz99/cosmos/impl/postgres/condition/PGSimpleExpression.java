@@ -100,7 +100,7 @@ public class PGSimpleExpression implements Expression {
                     ret.setQueryText(" (1=0)");
 				} else {
 					// use IN array
-					ret.setQueryText(buildInArray(this.key, paramName, coll, params));
+					ret.setQueryText(buildInArray(this.key, paramName, coll, params, selectAlias));
 				}
 			}
 
@@ -174,7 +174,22 @@ public class PGSimpleExpression implements Expression {
                 // https://stackoverflow.com/questions/26516204/how-do-i-escape-a-literal-question-mark-in-a-jdbc-prepared-statement
                 // modify the formattedKey from ->> to -> , because skills should be a json array to do ARRAY_CONTAINS
                 var jsonKey = formattedKey.replace("->>", "->");
-                querySpec.setQueryText(String.format(" (%s ?? %s)", jsonKey, valuePart));
+                if(paramValue instanceof Integer) {
+                    // you can not use ?? for integer. instead, use @>
+
+                    // modify the paramValue to String type paramValue
+                    var currentIndex = params.size() - 1;
+                    var param = params.get(currentIndex);
+                    param.value = String.valueOf(param.getValue());
+
+                    // modify the key to data->'no' (without ::int to do a jsonb contains)
+                    jsonKey = StringUtils.removeStart(jsonKey,"(");
+                    jsonKey = StringUtils.removeEnd(jsonKey,")::int");
+
+                    querySpec.setQueryText(String.format(" (%s @> %s::jsonb)", jsonKey, valuePart));
+                } else {
+                    querySpec.setQueryText(String.format(" (%s ?? %s)", jsonKey, valuePart));
+                }
             }
             default -> {
                 querySpec.setQueryText(String.format(" (%s(%s, %s))", this.operator, formattedKey, valuePart));
@@ -198,8 +213,8 @@ public class PGSimpleExpression implements Expression {
      * paramsValue into params
      * </p>
      */
-    static String buildInArray(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params) {
-        var ret = String.format(" (%s = ANY(%s))", PGKeyUtil.getFormattedKey(key), paramName);
+    static String buildInArray(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params, String selectAlias) {
+        var ret = String.format(" (%s = ANY(%s))", PGKeyUtil.getFormattedKeyWithAlias(key, selectAlias, ""), paramName);
         params.add(Condition.createSqlParameter(paramName, paramValue));
         return ret;
     }
