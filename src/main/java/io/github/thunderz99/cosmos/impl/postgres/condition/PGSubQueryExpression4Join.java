@@ -8,6 +8,7 @@ import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGKeyUtil;
+import io.github.thunderz99.cosmos.impl.postgres.util.PGSelectUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
@@ -114,14 +115,21 @@ public class PGSubQueryExpression4Join implements Expression {
 
         // we will support both of the above patterns
 
-        var remainedKey = StringUtils.removeStart(this.joinKey, baseKey + ".");
+        // e.g. "rooms"
+        var remainedJoinKey = StringUtils.removeStart(this.joinKey, baseKey + ".");
 
+        // e.g. data->"floors"
         var formattedBaseKey = PGKeyUtil.getFormattedKey4JsonWithAlias(baseKey, TableUtil.DATA);
         var ret = new CosmosSqlQuerySpec();
 
         {
             var existsAlias = "j" + paramIndex;
-            var subExp = new PGSubQueryExpression(remainedKey, this.filterKey, this.value, this.operator);
+
+            // remainedJoinKey = "rooms"
+            // filterKey = "name"
+            // value = ["r1", "r2"]
+            // operator = "ARRAY_CONTAINS_ANY"
+            var subExp = new PGSubQueryExpression(remainedJoinKey, this.filterKey, this.value, this.operator);
             var subQuerySpec = subExp.toQuerySpec(paramIndex, existsAlias);
 
             var existsClause = """
@@ -142,43 +150,12 @@ public class PGSubQueryExpression4Join implements Expression {
         // save for SELECT part when returnAllSubArray=false
         // see docs/postgres-find-with-join.md for details
 
-        {
-            var alias4Select = "s" + paramIndex;
-            var subExp = new PGSubQueryExpression(remainedKey, this.filterKey, this.value, this.operator);
-            var subQuery = subExp.toQuerySpec(paramIndex, alias4Select);
-
-            var clause4Select = """
-                     (
-                       SELECT jsonb_agg(%s)
-                       FROM jsonb_array_elements(%s) AS %s
-                       WHERE %s
-                     )
-                    """;
-
-            clause4Select = StringUtils.removeEnd(clause4Select, "\n");
-            var queryText = clause4Select.formatted(alias4Select, formattedBaseKey, alias4Select, subQuery.getQueryText().trim());
-
-            // change the param names for select, in order to avoid param name conflict
-
-            var params4Select = new ArrayList<CosmosSqlParameter>();
-            for(var param : subQuery.getParameters()) {
-
-                var paramName = param.getName();
-                String newParamName = paramName + "__for_select";
-
-                var newParam = new CosmosSqlParameter(newParamName, param.getValue());
-                params4Select.add(newParam);
-                queryText = StringUtils.replace(queryText, paramName, newParamName);
-
-            }
-
-
-            var querySpec4Select = new CosmosSqlQuerySpec();
-            querySpec4Select.setQueryText(queryText);
-            querySpec4Select.setParameters(params4Select);
-
-            saveSubQuery4JsonToContext(baseKey, remainedKey, querySpec4Select);
-        }
+        // var baseKey = baseKey;
+        // var remainedJoinKey = remainedJoinKey;
+        // var filterKey = filterKey;
+        // var paramIndex = paramIndex
+        var subExp4Select = new PGSubQueryExpression(remainedJoinKey, this.filterKey, this.value, this.operator);
+        PGSelectUtil.saveQueryInfo4Join(queryContext, baseKey, remainedJoinKey, filterKey, paramIndex, subExp4Select);
 
         return ret;
 
@@ -188,23 +165,6 @@ public class PGSubQueryExpression4Join implements Expression {
     @Override
     public String toString() {
         return JsonUtil.toJson(this);
-    }
-
-    /**
-     * save for SELECT part when returnAllSubArray=false
-     *
-     * @param baseKey
-     * @param remainedKey
-     * @param querySpec
-     */
-    void saveSubQuery4JsonToContext(String baseKey, String remainedKey, CosmosSqlQuerySpec querySpec) {
-
-        var subQueryList = queryContext.subQueries4Join.get(baseKey);
-        if (subQueryList == null) {
-            subQueryList = new ArrayList<>();
-        }
-        subQueryList.add(Map.of(remainedKey, querySpec));
-        queryContext.subQueries4Join.put(baseKey, subQueryList);
     }
 
 

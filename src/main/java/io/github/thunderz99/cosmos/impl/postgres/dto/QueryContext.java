@@ -1,14 +1,11 @@
 package io.github.thunderz99.cosmos.impl.postgres.dto;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
-import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.RecordData;
-import org.apache.commons.lang3.tuple.Pair;
 
 /**
  * context info for query, especially when join and (returnAllSubArray=false) is used.
@@ -39,27 +36,26 @@ public class QueryContext extends RecordData {
 
 
     /**
-     * Save the query key and params so that we can reuse these in the SELECT clause when join is used and returnAllSubArray = false.
-     * <p>
-     *   {@code
-     *     {
-     *       "floors.rooms":[
-     *         "floor.rooms.name": {
-     *            "queryText": "EXISTS (SELECT 1 FROM jsonb_array_elements(data->'floors') AS j0 WHERE j0->'rooms'->>'name' = @param000_floors_rooms_name)",
-     *            "params": [{"name": "@param000_floors_rooms_name", "value": "r1"}}]
-     *          }
-     *         "floors.rooms.no": {
-     *            "queryText": "EXISTS ( SELECT 1 FROM jsonb_array_elements(data->'floors') AS j1 WHERE j1->'rooms'->>'no' > @param001_floors_rooms_no )",
-     *            "params": [{"name": "@param001_floors_rooms_no", "value": "001"}}]
-     *          }
-     *        ]
-     *     }
-     *   }
-     *
-     * </p>
+     * {
+     *   "floors":[
+     *      {
+     *        "baseKey": "floors",
+     *        "remainedJoinKey": "rooms",
+     *        "filterKey": "name",
+     *        "paramIndex": paramIndex,
+     *        "subExp": PGSimpleExpression | PGSubQueryExpression
+     *      },
+     *      {
+     *        "baseKey": "floors",
+     *        "remainedJoinKey": "rooms",
+     *        "filterKey": "name",
+     *        "paramIndex": paramIndex,
+     *        "subExp": PGSimpleExpression | PGSubQueryExpression
+     *      }
+     *    ]
+     * }
      */
-    public Map<String, List<Map<String, CosmosSqlQuerySpec>>> subQueries4Join = new LinkedHashMap<>(); // <<<>>>
-
+    public Map<String, List<FilterQueryInfo4Join>> filterQueryInfos4Join = new LinkedHashMap<>();
 
     /**
      * Factory method

@@ -2081,45 +2081,45 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void find_should_work_with_join_using_limit_and_fields() throws Exception {
 
         // find with join, small limit
-        {
-            var cond = Condition.filter(SubConditionType.OR, List.of( //
-                            Condition.filter("parents.firstName", "Thomas"), //
-                            Condition.filter("id", "WakefieldFamily"))) //
-                    .sort("id", "ASC")//
-                    .join(Set.of("parents", "children"))
-                    .returnAllSubArray(false)
-                    .offset(0)
-                    .limit(1);
-
-            var result = db.find(host, cond, "Families").toMap();
-            assertThat(result).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
-            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
-
-        }
+//        {
+//            var cond = Condition.filter(SubConditionType.OR, List.of( //
+//                            Condition.filter("parents.firstName", "Thomas"), //
+//                            Condition.filter("id", "WakefieldFamily"))) //
+//                    .sort("id", "ASC")//
+//                    .join(Set.of("parents", "children"))
+//                    .returnAllSubArray(false)
+//                    .offset(0)
+//                    .limit(1);
+//
+//            var result = db.find(host, cond, "Families").toMap();
+//            assertThat(result).hasSize(1);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
+//            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
+//
+//        }
 
         // find with join, set offset
-        {
-            var cond = Condition.filter(SubConditionType.OR, List.of( //
-                            Condition.filter("parents.firstName", "Thomas"), //
-                            Condition.filter("id", "WakefieldFamily"))) //
-                    .sort("id", "ASC")//
-                    .join(Set.of("parents", "children"))
-                    .returnAllSubArray(false)
-                    .offset(1)
-                    .limit(10);
-
-            var result = db.find(host, cond, "Families").toMap();
-            assertThat(result).hasSize(1);
-            // TODO, result is different from cosmosdb
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(0);
-            //assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("givenName", "Robin");
-            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
-        }
+//        {
+//            var cond = Condition.filter(SubConditionType.OR, List.of( //
+//                            Condition.filter("parents.firstName", "Thomas"), //
+//                            Condition.filter("id", "WakefieldFamily"))) //
+//                    .sort("id", "ASC")//
+//                    .join(Set.of("parents", "children"))
+//                    .returnAllSubArray(false)
+//                    .offset(1)
+//                    .limit(10);
+//
+//            var result = db.find(host, cond, "Families").toMap();
+//            assertThat(result).hasSize(1);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(2);
+//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("givenName", "Robin");
+//            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
+//
+//        }
 
         // find with join, fields
         {
@@ -2135,8 +2135,8 @@ class PostgresDatabaseImplTest {
 
             var result = db.find(host, cond, "Families").toMap();
             assertThat(result).hasSize(1);
-            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(0);
-            //assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("givenName", "Robin");
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(2);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("givenName", "Robin");
             assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
             assertThat(result.get(0).get("address")).isNotNull();
 
@@ -2212,7 +2212,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void findToIterator_should_work_with_join_using_array_contains() throws Exception {
 
         // ARRAY_CONTAINS query with join

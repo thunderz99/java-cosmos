@@ -1,5 +1,6 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
+import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
@@ -99,7 +100,7 @@ class TableUtilTest {
 
                 //insert record
                 var id = RandomStringUtils.randomAlphanumeric(6);
-                Map<String, Object> data = Map.of("id", id, "name", "John Doe");
+                Map<String, Object> data = Maps.newHashMap(Map.of("id", id, "name", "John Doe"));
                 var inserted = TableUtil.insertRecord(conn, schemaName, tableName, new PostgresRecord(id, data));
                 assertThat(inserted).isNotNull();
                 assertThat(inserted.id).isEqualTo(id);
@@ -115,7 +116,7 @@ class TableUtilTest {
                 assertThat(read.data.get("name")).isEqualTo("John Doe");
 
                 //update record
-                Map<String, Object> updatedData = Map.of("name", "Jane Doe");
+                Map<String, Object> updatedData = Maps.newHashMap(Map.of("name", "Jane Doe"));
                 var updated = TableUtil.updateRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData));
                 assertThat(updated).isNotNull();
                 assertThat(updated.id).isEqualTo(id);
@@ -162,7 +163,7 @@ class TableUtilTest {
                 TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
                 var id = RandomStringUtils.randomAlphanumeric(6);
-                Map<String, Object> data = Map.of("id", id, "name", "John Doe");
+                Map<String, Object> data = Maps.newHashMap(Map.of("id", id, "name", "John Doe"));
 
                 {
                     // insert record using upsertRecord
@@ -180,7 +181,7 @@ class TableUtilTest {
                     assertThat(read.data.get("name")).isEqualTo("John Doe");
 
                     // update record using upsertRecord
-                    Map<String, Object> updatedData = Map.of("name", "Jane Doe");
+                    Map<String, Object> updatedData = Maps.newHashMap(Map.of("name", "Jane Doe"));
                     var updated = TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData));
 
                     // read record
@@ -203,13 +204,13 @@ class TableUtilTest {
                     // missing data
                     assertThatThrownBy(() -> TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, null)))
                             .isInstanceOf(IllegalArgumentException.class)
-                            .hasMessageContaining("record.map should not be null")
+                            .hasMessageContaining("data should not be null")
                     ;
                 }
 
                 {
                     // when data is empty
-                    var upserted = TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, Map.of()));
+                    var upserted = TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, Maps.newHashMap()));
                     assertThat(upserted.id).isEqualTo(id);
 
                     // even if data is empty, at lease the "id" field will be added to the data map
@@ -236,13 +237,13 @@ class TableUtilTest {
                 TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
                 var id = RandomStringUtils.randomAlphanumeric(6);
-                Map<String, Object> data = Map.of("id", id, "name", "Tom Partial", "address", "NY", TableUtil.ETAG, RandomStringUtils.randomAlphanumeric(6));
+                Map<String, Object> data = Maps.newHashMap(Map.of("id", id, "name", "Tom Partial", "address", "NY", TableUtil.ETAG, RandomStringUtils.randomAlphanumeric(6)));
                 TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, data));
 
                 // normal update partial
                 {
                     // normal case
-                    Map<String, Object> updatedData = Map.of("age", 25, "address", "CA");
+                    Map<String, Object> updatedData = Maps.newHashMap(Map.of("age", 25, "address", "CA"));
                     var updated = TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData));
                     assertThat(updated).isNotNull();
                     assertThat(updated.id).isEqualTo(id);
@@ -254,7 +255,7 @@ class TableUtilTest {
 
                 {
                     // not exist id
-                    Map<String, Object> updatedData = Map.of("age", 30, "address", "TX");
+                    Map<String, Object> updatedData = Maps.newHashMap(Map.of("age", 30, "address", "TX"));
                     assertThatThrownBy(() -> TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord("not_exist_id", updatedData)))
                             .isInstanceOfSatisfying(CosmosException.class, e -> {
                                 assertThat(e.getStatusCode()).isEqualTo(404);
@@ -265,7 +266,7 @@ class TableUtilTest {
                 // irregular input values
                 {
                     // missing id
-                    Map<String, Object> updatedData = Map.of("age", 25, "address", "CA");
+                    Map<String, Object> updatedData = Maps.newHashMap(Map.of("age", 25, "address", "CA"));
                     assertThatThrownBy(
                             () -> TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(null, updatedData)))
                             .isInstanceOf(IllegalArgumentException.class)
@@ -275,7 +276,7 @@ class TableUtilTest {
                     assertThatThrownBy(
                             () -> TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(id, null)))
                             .isInstanceOf(IllegalArgumentException.class)
-                            .hasMessage("record.map should not be null");
+                            .hasMessage("data should not be null");
                 }
 
 
@@ -284,7 +285,7 @@ class TableUtilTest {
                     var record = TableUtil.readRecord(conn, schemaName, tableName, id);
                     var etag = record.data.getOrDefault(TableUtil.ETAG, "").toString();
                     assertThat(etag).isNotEmpty();
-                    Map<String, Object> updatedData = Map.of("age", 26, "address", "FL");
+                    Map<String, Object> updatedData = Maps.newHashMap(Map.of("age", 26, "address", "FL"));
                     var option = PartialUpdateOption.checkETag(true);
                     var updated = TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData), option, etag);
                     assertThat(updated).isNotNull();
@@ -297,7 +298,7 @@ class TableUtilTest {
 
                 {
                     // with option.checkEtag = true, and with etag = ""
-                    Map<String, Object> updatedData = Map.of("age", 26, "address", "WS");
+                    Map<String, Object> updatedData = Maps.newHashMap(Map.of("age", 26, "address", "WS"));
                     var option = PartialUpdateOption.checkETag(true);
                     var updated = TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData), option, "");
                     assertThat(updated).isNotNull();
@@ -307,7 +308,7 @@ class TableUtilTest {
 
                 {
                     // with option.checkEtag = false, and with etag = "not correct tag"
-                    Map<String, Object> updatedData = Map.of("age", 26, "address", "AB");
+                    Map<String, Object> updatedData = Maps.newHashMap(Map.of("age", 26, "address", "AB"));
                     var option = PartialUpdateOption.checkETag(false);
                     var updated = TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData), option, "not correct tag");
                     assertThat(updated).isNotNull();
@@ -317,7 +318,7 @@ class TableUtilTest {
 
                 {
                     // with option.checkEtag = true, and with etag = "not correct tag"
-                    Map<String, Object> updatedData = Map.of("age", 26, "address", "LA");
+                    Map<String, Object> updatedData = Maps.newHashMap(Map.of("age", 26, "address", "LA"));
                     var option = PartialUpdateOption.checkETag(true);
 
                     assertThatThrownBy( () -> TableUtil.updatePartialRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData), option, "not correct tag"))
@@ -350,7 +351,7 @@ class TableUtilTest {
                 TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
                 var id = RandomStringUtils.randomAlphanumeric(6);
-                Map<String, Object> data = Map.of("id", id, "name", "John Doe", "age", 23);
+                Map<String, Object> data = Maps.newHashMap(Map.of("id", id, "name", "John Doe", "age", 23));
                 TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, data));
 
                 // normal case
@@ -390,7 +391,8 @@ class TableUtilTest {
                     var operations = PatchOperations.create();
                     var record = TableUtil.patchRecord(conn, schemaName, tableName, id, operations);
                     assertThat(record.id).isEqualTo(id);
-                    assertThat(record.data).isEmpty();
+                    // only contains a map of id
+                    assertThat(record.data).hasSize(1).containsKey("id");
                 }
             }
         } finally {
@@ -408,7 +410,7 @@ class TableUtilTest {
 
             // normal case
             {
-                var records = IntStream.range(0, 202).mapToObj(i -> new PostgresRecord(UUID.randomUUID().toString(), Map.of("id", i, "name", "John Doe " + i))).toList();
+                var records = IntStream.range(0, 202).mapToObj(i -> new PostgresRecord(UUID.randomUUID().toString(), Maps.newHashMap(Map.of("id", i, "name", "John Doe " + i)))).toList();
                 var ret = TableUtil.batchInsertRecords(conn, schemaName, tableName, records);
                 assertThat(ret.size()).isEqualTo(202);
                 assertThat(ret.stream().map(doc -> doc.toMap().getOrDefault("id", "")).toList())
@@ -444,7 +446,7 @@ class TableUtilTest {
 
             // normal case
             {
-                var records = IntStream.range(0, 200).mapToObj(i -> new PostgresRecord(UUID.randomUUID().toString(), Map.of("id", i))).toList();
+                var records = IntStream.range(0, 200).mapToObj(i -> new PostgresRecord(UUID.randomUUID().toString(), Maps.newHashMap(Map.of("id", i)))).toList();
                 var inserted = TableUtil.batchInsertRecords(conn, schemaName, tableName, records);
                 assertThat(inserted).hasSize(200);
 
@@ -491,7 +493,7 @@ class TableUtilTest {
 
             // normal case for insert
             {
-                var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord("upsert" + i, Map.of("id", i, "name", "John Doe " + i))).toList();
+                var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord("upsert" + i, Maps.newHashMap(Map.of("id", i, "name", "John Doe " + i)))).toList();
                 var ret = TableUtil.batchUpsertRecords(conn, schemaName, tableName, records);
                 assertThat(ret.size()).isEqualTo(10);
                 assertThat(ret.stream().map(doc -> doc.toMap().getOrDefault("id", "")).toList())
@@ -500,12 +502,12 @@ class TableUtilTest {
 
             // normal case for half insert, half update
             {
-                var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord("half_upsert" + i, Map.of("id", i, "name", "John Insert " + i))).toList();
+                var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord("half_upsert" + i, Maps.newHashMap(Map.of("id", i, "name", "John Insert " + i)))).toList();
                 // insert half records
                 TableUtil.batchInsertRecords(conn, schemaName, tableName, records.subList(0, 5));
 
                 // replace name from Insert to Upsert, to get ready for upsert.
-                var records2 = records.stream().map(record -> new PostgresRecord(record.id, Map.of("name", record.data.get("name").toString().replace("Insert", "Upsert")))).toList();
+                var records2 = records.stream().map(record -> new PostgresRecord(record.id, Maps.newHashMap(Map.of("name", record.data.get("name").toString().replace("Insert", "Upsert"))))).toList();
                 var start = 2;
                 var end = 8;
                 var ret = TableUtil.batchUpsertRecords(conn, schemaName, tableName, records2.subList(start, end));
@@ -557,13 +559,13 @@ class TableUtilTest {
         try (var conn = cosmos.getDataSource().getConnection()) {
             TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
-            var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord(String.valueOf(i), Map.of(
+            var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord(String.valueOf(i), Maps.newHashMap(Map.of(
                     "id", String.valueOf(i),
                     "name", "John Doe " + i,
                     "age", i,
                     "address", Map.of("city", "NY" + i)
             )
-            )).toList();
+            ))).toList();
             TableUtil.batchUpsertRecords(conn, schemaName, tableName, records);
 
             {
@@ -626,7 +628,7 @@ class TableUtilTest {
     @Test
     void countRecords_should_work() throws Exception {
         var tableName = "countrecords_" + RandomStringUtils.randomAlphanumeric(4).toLowerCase();
-        var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord(String.valueOf(i), Map.of("name", "John Doe " + i, "age", i))).toList();
+        var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord(String.valueOf(i), Maps.newHashMap(Map.of("name", "John Doe " + i, "age", i)))).toList();
         try (var conn = cosmos.getDataSource().getConnection()) {
             TableUtil.createTableIfNotExists(conn, schemaName, tableName);
             var ret = TableUtil.batchInsertRecords(conn, schemaName, tableName, records);

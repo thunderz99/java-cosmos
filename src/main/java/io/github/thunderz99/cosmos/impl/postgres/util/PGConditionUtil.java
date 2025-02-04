@@ -4,7 +4,6 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-import com.google.common.collect.Sets;
 import io.github.thunderz99.cosmos.condition.*;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
@@ -12,10 +11,11 @@ import io.github.thunderz99.cosmos.impl.postgres.condition.*;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static io.github.thunderz99.cosmos.impl.postgres.util.PGSelectUtil.generateSelect;
 
 /**
  * A util class to convert condition's filter/sort/limit/offset to bson filter/sort/limit/offset for mongo
@@ -55,7 +55,25 @@ public class PGConditionUtil {
 
         // select
         var select = generateSelect(cond, queryContext, params);
-        queryText.insert(0, "SELECT %s\n".formatted(select));
+        queryText.insert(0, "SELECT %s\n".formatted(select.selectPart));
+
+        // with clause for join and fields not empty
+        if(StringUtils.isNotEmpty(select.withClause)){
+
+            /**
+             * withClause:
+             *
+             * WITH filtered_data AS (
+             * %s
+             * )
+             * SELECT
+             *   projectionPart
+             * FROM filtered_data
+             */
+
+            var withClause = select.withClause.formatted(queryText);
+            queryText = new StringBuilder(withClause);
+        }
 
         // sort
         if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
@@ -411,298 +429,6 @@ public class PGConditionUtil {
             }
         }
     }
-
-    /**
-     * select parts generate.
-     *
-     * {@code
-     * e.g.
-     * "id", "age", "fullName.first" -> VALUE {"id":c.id, "age":c.age, "fullName": {"first": c.fullName.first}}
-     * }
-     *
-     * @return select sql
-     */
-    static String generateSelect(Condition cond) {
-        return generateSelect(cond, QueryContext.create(), List.of());
-    }
-
-    /**
-     * Generate select considering join and returnAllSubArray=false
-     *
-     * {@code
-     *  e.g.
-     *  "id", "age", "fullName.first" -> VALUE {"id":c.id, "age":c.age, "fullName": {"first": c.fullName.first}}
-     *  }
-     *
-     * @param cond
-     * @param queryContext
-     * @param params
-     * @return
-     */
-    static String generateSelect(Condition cond, QueryContext queryContext, List<CosmosSqlParameter> params) {
-
-        // whether we should filter select parts' subArrays
-        // see docs/postgres-find-with-join.md for details
-        var shouldFilterSelectParts = cond.returnAllSubArray == false
-                && CollectionUtils.isNotEmpty(cond.join)
-                && MapUtils.isNotEmpty(queryContext.subQueries4Join);
-
-        if (!shouldFilterSelectParts) {
-            // normal select
-            if (CollectionUtils.isEmpty(cond.fields)) {
-                return "*";
-            }
-            return generateSelectByFields(cond.fields);
-        } else {
-
-            // for join and returnAllSubArray == false
-
-            // see docs/postgres-find-with-join.md for details
-
-
-            /** FROM clause in WHERE
-             * WHERE
-             * EXISTS (
-             *   SELECT 1
-             *   FROM jsonb_array_elements(data->'data->'area'->'city'->'street'->'rooms'') AS j0
-             *   WHERE (j0->>'no' = @param000_no)
-             * )
-             */
-
-            /** TO clause in SELECT
-             * (
-             *   SELECT jsonb_agg(s0)
-             *   FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') s0
-             *   WHERE (s0->>'no' = @param000_no__for_select)
-             * )
-             *
-             */
-            if (CollectionUtils.isEmpty(cond.fields)) {
-
-                // add params in select part
-                for(var subQueryList : queryContext.subQueries4Join.values()) {
-                    for(var subQueryMap: subQueryList){
-                        for(var entry : subQueryMap.entrySet()){
-                            var querySpec = entry.getValue();
-                            params.addAll(querySpec.getParameters());
-                        }
-                    }
-                }
-
-                return generateSelectToFilteringSubArray(queryContext.subQueries4Join);
-            } else {
-                // TODO with fields
-                return "*";
-            }
-        }
-    }
-
-    /**
-     *
-     * generate select part for filtering subArray
-     *
-     * e.g. the select part of the following query
-     * @code{
-     *
-     * // return
-     *     id,
-     *     jsonb_set(
-     *       jsonb_set(
-     *         data,
-     *         '{area,city,street,rooms}',
-     *         (
-     *           SELECT jsonb_agg(s0)
-     *           FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') s0
-     *           WHERE (s0->>'no' = @param000_no__for_select)
-     *         )
-     *       ),
-     *       '{room*no-01}',
-     *       (
-     *         SELECT jsonb_agg(s1)
-     *         FROM jsonb_array_elements(data->'room*no-01') s1
-     *         WHERE ((s1->>'area')::int > @param001_area__for_select)
-     *       )
-     *     ) AS data
-     *
-     *
-     * @param subQueries
-     * @return
-     */
-    static String generateSelectToFilteringSubArray(Map<String, List<Map<String, CosmosSqlQuerySpec>>> subQueries) {
-
-        var selectPart = TableUtil.DATA;
-        for(var baseEntry : subQueries.entrySet()) {
-            var baseKey = baseEntry.getKey();
-            for (var subQueryParams : baseEntry.getValue()) {
-                for (var entry : subQueryParams.entrySet()) {
-
-                    // '{area,city,street,rooms}'
-                    var pathLiteral = toPathLiteral(baseEntry.getKey());
-
-                    var jsonbClause = """
-                            jsonb_set(
-                              %s,
-                              '%s',
-                              COALESCE(
-                                %s,
-                                %s
-                              )
-                            )
-                            """;
-
-                    selectPart = String.format(jsonbClause, selectPart, pathLiteral, entry.getValue().queryText, PGKeyUtil.getFormattedKey4JsonWithAlias(baseKey, TableUtil.DATA));
-                }
-            }
-        }
-
-        return "id, %s AS %s".formatted(selectPart, TableUtil.DATA);
-    }
-
-    /**
-     * build a postgres text-array literal like '{"area","city","street","rooms"}', from "area.city.street.rooms"
-     */
-    static String toPathLiteral(String key) {
-
-        if(StringUtils.isEmpty(key)){
-            return key;
-        }
-        return  Arrays.stream(key.split("\\."))
-                .filter(StringUtils::isNotEmpty)
-                .map(k -> StringUtils.startsWith(k,"\"") ? k : "\"" + k + "\"")
-                .collect(Collectors.joining(",", "{", "}"));
-
-    }
-
-    /**
-     * Generate a select sql for input fields. Supports nested fields
-     *
-     * <p>
-     * {@code
-     * //e.g.
-     * //input: ["id", "address.city"]
-     * //output: id,
-     *      jsonb_build_object(
-     *       'address',
-     *       jsonb_build_object(
-     *         'city', data->'address'->'city'
-     *       )
-     *     ) AS "Data"
-     * }
-     *
-     * </p>
-     *
-     * @param fieldsSet
-     * @return
-     */
-    static String generateSelectByFields(Set<String> fieldsSet) {
-
-        // converts field to data.field, excludes empty fields
-        // ["id", "name", ""] -> ["data.id", "data.name"]
-
-        var fields = fieldsSet.stream().filter(f -> StringUtils.isNotBlank(f)).map(f -> {
-            if (StringUtils.containsAny(f, "{", "}", ",", "\"", "'")) {
-                throw new IllegalArgumentException("field cannot contain '{', '}', ',', '\"', \"'\", field: " + f);
-            }
-            return TableUtil.DATA + "." + f;
-        }).collect(Collectors.toCollection(LinkedHashSet::new));
-
-        // add "id" and "data.id" fields as a must
-        fields.add(TableUtil.ID);
-        fields.add(TableUtil.DATA + "." + TableUtil.ID);
-
-        // Separate top-level fields (no dot) from nested fields
-        var topLevel = new LinkedHashSet<String>(); // should contain "id" only
-
-        // should be like ["id", "name", "address.city"]
-        // note that the "data." part is removed for the simplicity of the following process
-        // "id" is always added to the nested fields (because we have a redundant "data.id" field, whose value is the same as "id")
-        var nested  = new ArrayList<String>();
-        for (var f : fields) {
-            if (f.contains(".")) {
-                nested.add(StringUtils.removeStart(f, TableUtil.DATA + "."));
-            } else {
-                topLevel.add(f);
-            }
-        }
-
-        // Build a tree structure for nested fields
-        var root = new Node(); // this node represents the "data" root
-        for (var f : nested) {
-            var parts = Arrays.asList(f.split("\\."));
-            insertPath(root, parts);
-        }
-
-        // Build the list of select columns
-       var selectColumns = new ArrayList<String>();
-
-        // 1) Add the top-level fields as normal columns
-        selectColumns.addAll(topLevel);
-
-        // 2) If there are any nested fields, build the JSON expression
-        if (!nested.isEmpty()) {
-            var jsonExpression = buildJsonBuildObject(TableUtil.DATA, root);
-            // Alias it as "Data"
-            jsonExpression += " AS \"" + TableUtil.DATA + "\"";
-            selectColumns.add(jsonExpression);
-        }
-
-        // Join them with commas, and add a newline for the end
-        return String.join(",\n", selectColumns) + "\n";
-    }
-
-    /**
-     * Recursively build a jsonb_build_object(...) expression from the Node tree.
-     * The 'pathSoFar' indicates how we refer to this level in 'data', e.g. "data->'address'"
-     */
-    static String buildJsonBuildObject(String pathSoFar, Node node) {
-        // If node has no children, it means this path is a leaf
-        // so just return the pathSoFar (e.g. "data->'address'->'city'")
-        if (node.children.isEmpty()) {
-            return pathSoFar;
-        }
-
-        // Otherwise, build jsonb_build_object with each child
-        // e.g. jsonb_build_object(
-        //         'address', jsonb_build_object(
-        //             'city', data->'address'->'city'
-        //         )
-        //      )
-        List<String> pairs = new ArrayList<>();
-        for (Map.Entry<String, Node> entry : node.children.entrySet()) {
-            var key   = entry.getKey();
-            var child   = entry.getValue();
-            var childPath = pathSoFar + "->'" + key + "'";
-            // Recursively build the expression for the child's subtree
-            var childExpr = buildJsonBuildObject(childPath, child);
-            // `'key', childExpr`
-            var pair = "'" + key + "', " + childExpr;
-            pairs.add(pair);
-        }
-
-        // join pairs into "jsonb_build_object('key1', expr1, 'key2', expr2, ...)"
-        var joined = String.join(", ", pairs);
-        return "jsonb_build_object(" + joined + ")";
-    }
-
-    /**
-     * Insert a path like ["address","city"] into our tree structure.
-     * 'root' node is effectively for "data".
-     */
-    static void insertPath(Node root, List<String> parts) {
-        var current = root;
-        for (String p : parts) {
-            current.children.putIfAbsent(p, new Node());
-            current = current.children.get(p);
-        }
-    }
-
-    /**
-     * Simple tree node that maps child name -> subtree
-     */
-    static class Node {
-        Map<String, Node> children = new LinkedHashMap<>();
-    }
-
 
 }
 

@@ -25,45 +25,6 @@ class PGConditionUtilTest {
     static final String coll = "schema1";
     static final String partition = "table1";
 
-
-    @Test
-    void generateSelect_should_work() {
-        {
-            // select with no field
-            var cond = Condition.filter()
-                    .fields();
-            assertThat(PGConditionUtil.generateSelect(cond)).isEqualTo("*");
-        }
-
-        {
-            // select with null fields
-            var cond = Condition.filter()
-                    .fields(null);
-            assertThat(PGConditionUtil.generateSelect(cond)).isEqualTo("*");
-        }
-
-        {
-            // select with 2 fields
-            var cond = Condition.filter()
-                    .fields("id", "name");
-            var expected = """
-                    id,
-                    jsonb_build_object('id', data->'id', 'name', data->'name') AS "data"
-                    """;
-            assertThat(PGConditionUtil.generateSelect(cond)).isEqualTo(expected);
-        }
-        {
-            // select with fields that overlaps(sheet-1 overlaps, and sheet-2 standalone)
-            var cond = Condition.filter()
-                    .fields("id", "contents.sheet-1.name", "contents.sheet-1.age", "contents.sheet-2.address");
-            var expected = """
-                    id,
-                    jsonb_build_object('id', data->'id', 'contents', jsonb_build_object('sheet-1', jsonb_build_object('name', data->'contents'->'sheet-1'->'name', 'age', data->'contents'->'sheet-1'->'age'), 'sheet-2', jsonb_build_object('address', data->'contents'->'sheet-2'->'address'))) AS "data"
-                    """;
-            assertThat(PGConditionUtil.generateSelect(cond)).isEqualTo(expected);
-        }
-    }
-
     @Test
     void toQuerySpec_should_work() {
 
@@ -470,124 +431,6 @@ class PGConditionUtilTest {
 
     }
 
-    @Test
-    void generateSelectByFields_should_work(){
-        {
-            // normal case 1
-            var fields = Sets.newLinkedHashSet(List.of("id", "name"));
-            var expected = """
-                    id,
-                    jsonb_build_object('id', data->'id', 'name', data->'name') AS "data"
-                    """;
-            assertThat(PGConditionUtil.generateSelectByFields(fields)).isEqualTo(expected);
-        }
-
-        {
-            // normal case 2
-            var fields = Sets.newLinkedHashSet(List.of("contents.sheet-1.name", "contents.sheet-2.address"));
-            var expected = """
-                    id,
-                    jsonb_build_object('contents', jsonb_build_object('sheet-1', jsonb_build_object('name', data->'contents'->'sheet-1'->'name'), 'sheet-2', jsonb_build_object('address', data->'contents'->'sheet-2'->'address')), 'id', data->'id') AS "data"
-                    """;
-            assertThat(PGConditionUtil.generateSelectByFields(fields)).isEqualTo(expected);
-        }
-
-    }
-
-//    @Test
-//    void buildQuerySpec_should_work_for_simple_join_old() {
-//        // query with join
-//        {
-//
-//            {
-//                // returnAllSubArray false
-//                var cond = Condition.filter("area.city.street.rooms.no", "001", "room*no-01.area", 10) //
-//                        .sort("id", "ASC") //
-//                        .limit(10) //
-//                        .offset(0)
-//                        .join(Set.of("area.city.street.rooms", "room*no-01"))
-//                        .returnAllSubArray(false);
-//
-//                var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
-//
-//                var actual = q.getQueryText().replaceAll("@param[0-9a-zA-Z_]+", "@PARAM");
-//                var expected = """
-//                        SELECT id, jsonb_set(
-//                        jsonb_set(
-//                        data,
-//                        '{area,city,street,rooms}',
-//                        jsonb_path_query_array(data, @PARAM::jsonpath)
-//                        )
-//                        ,
-//                        '{room*no-01}',
-//                        jsonb_path_query_array(data, @PARAM::jsonpath)
-//                        )
-//                         AS data
-//                         FROM schema1.table1
-//                         WHERE data @?? @PARAM::jsonpath AND data @?? @PARAM::jsonpath
-//                         ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
-//                        """;
-//
-//                assertThat(actual).isEqualTo(expected.trim());
-//
-//                assertThat(q.getParameters()).hasSize(4);
-//
-//            }
-//
-//            {
-//                // returnAllSubArray true
-//                var cond = Condition.filter("area.city.street.rooms.no", "001") //
-//                        .sort("id", "ASC") //
-//                        .limit(10) //
-//                        .offset(0)
-//                        .join(Set.of("area.city.street.rooms"))
-//                        .returnAllSubArray(true);
-//
-//                var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
-//
-//                var expected = """
-//                        SELECT *
-//                         FROM schema1.table1
-//                         WHERE data @?? @param000_area__city__street__rooms__no::jsonpath
-//                         ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
-//                        """;
-//                assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
-//
-//                assertThat(q.getParameters()).hasSize(1);
-//
-//
-//            }
-//
-//            {
-//                // LIKE
-//                var cond = Condition.filter("area.city.street.rooms.no LIKE", "%01") //
-//                        .sort("id", "ASC") //
-//                        .limit(10) //
-//                        .offset(0)
-//                        .join(Set.of("area.city.street.rooms"))
-//                        .returnAllSubArray(false);
-//
-//
-//                var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
-//
-//                var expected = """
-//                        SELECT id, jsonb_set(
-//                        data,
-//                        '{area,city,street,rooms}',
-//                        jsonb_path_query_array(data, @param000_area__city__street__rooms__no__for_select::jsonpath)
-//                        )
-//                         AS data
-//                         FROM schema1.table1
-//                         WHERE data @?? @param000_area__city__street__rooms__no::jsonpath
-//                         ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
-//                        """;
-//                assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
-//
-//                assertThat(q.getParameters()).hasSize(2);
-//
-//            }
-//        }
-//    }
 
     @Test
     void buildQuerySpec_should_work_for_simple_join() {
@@ -613,9 +456,9 @@ class PGConditionUtilTest {
                           '{"area","city","street","rooms"}',
                           COALESCE(
                              (
-                           SELECT jsonb_agg(s1)
-                           FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS s1
-                           WHERE (s1->>'no' = @PARAM)
+                           SELECT jsonb_agg(s2)
+                           FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS s2
+                           WHERE ( (s2->>'no' = @PARAM))
                          ),
                             data->'area'->'city'->'street'->'rooms'
                           )
@@ -626,7 +469,7 @@ class PGConditionUtilTest {
                              (
                            SELECT jsonb_agg(s3)
                            FROM jsonb_array_elements(data->'room*no-01') AS s3
-                           WHERE ((s3->>'area')::int = @PARAM)
+                           WHERE ( ((s3->>'area')::int = @PARAM))
                          ),
                             data->'room*no-01'
                           )
@@ -639,8 +482,8 @@ class PGConditionUtilTest {
                            WHERE (j0->>'no' = @PARAM)
                          ) AND EXISTS (
                            SELECT 1
-                           FROM jsonb_array_elements(data->'room*no-01') AS j2
-                           WHERE ((j2->>'area')::int = @PARAM)
+                           FROM jsonb_array_elements(data->'room*no-01') AS j1
+                           WHERE ((j1->>'area')::int = @PARAM)
                          )
                          ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
                         """;
@@ -699,7 +542,7 @@ class PGConditionUtilTest {
                              (
                            SELECT jsonb_agg(s1)
                            FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS s1
-                           WHERE (s1->>'no' LIKE @param001_no__for_select)
+                           WHERE ( (s1->>'no' LIKE @param001_no__for_select))
                          ),
                             data->'area'->'city'->'street'->'rooms'
                           )
@@ -820,6 +663,164 @@ class PGConditionUtilTest {
     }
 
     @Test
+    void buildQuerySpec_should_work_for_array_contains_any_with_join_using_both_name_and_no() {
+
+        {
+            // with returnAllSubArray=false
+            // and filters contain both "name" and "no" on the same join key "floors.rooms"
+            // see docs/postgres-find-with-join.md sample SQL 2
+            var cond = Condition.filter(
+                    "floors.rooms ARRAY_CONTAINS_ANY name",  List.of("r1", "r2"),
+                            "floors.rooms ARRAY_CONTAINS_ANY no",  List.of("001", "002")
+                    )
+                    .join(Set.of("floors"))
+                    .returnAllSubArray(false)
+                    ;
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT id, jsonb_set(
+                      data,
+                      '{"floors"}',
+                      COALESCE(
+                         (
+                       SELECT jsonb_agg(s2)
+                       FROM jsonb_array_elements(data->'floors') AS s2
+                       WHERE ( (s2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__0__for_select)) OR s2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__1__for_select)))
+                       AND (s2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__0__for_select)) OR s2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__1__for_select))))
+                     ),
+                        data->'floors'
+                      )
+                    )
+                     AS data
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j0
+                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                     ) AND EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j1
+                       WHERE (j1->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__0)) OR j1->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__1)))
+                     ) OFFSET 0 LIMIT 100
+                    """;
+
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(8);
+
+            // for "name" contains ["r1", "r2"]
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__name__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param000_rooms__name__1");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("r2");
+
+            // for "no" contains ["001", "002"]
+            assertThat(q.getParameters().get(2).getName()).isEqualTo("@param001_rooms__no__0");
+            assertThat(q.getParameters().get(2).getValue()).isEqualTo("001");
+            assertThat(q.getParameters().get(3).getName()).isEqualTo("@param001_rooms__no__1");
+            assertThat(q.getParameters().get(3).getValue()).isEqualTo("002");
+
+            // for "name" contains ["r1", "r2"] in SELECT
+            assertThat(q.getParameters().get(4).getName()).isEqualTo("@param002_rooms__name__0__for_select");
+            assertThat(q.getParameters().get(4).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(5).getName()).isEqualTo("@param002_rooms__name__1__for_select");
+            assertThat(q.getParameters().get(5).getValue()).isEqualTo("r2");
+
+            // for "no" contains ["001", "002"] in SELECT
+            assertThat(q.getParameters().get(6).getName()).isEqualTo("@param003_rooms__no__0__for_select");
+            assertThat(q.getParameters().get(6).getValue()).isEqualTo("001");
+            assertThat(q.getParameters().get(7).getName()).isEqualTo("@param003_rooms__no__1__for_select");
+            assertThat(q.getParameters().get(7).getValue()).isEqualTo("002");
+
+        }
+
+    }
+
+    @Test
+    void buildQuerySpec_should_work_for_array_contains_all_with_join_using_both_name_and_no() {
+
+        {
+            // with returnAllSubArray=false
+            // and filters contain both "name" and "no" on the same join key "floors.rooms"
+            // see docs/postgres-find-with-join.md sample SQL 2
+            var cond = Condition.filter(
+                            "floors.rooms ARRAY_CONTAINS_ALL name",  List.of("r1", "r2"),
+                            "floors.rooms ARRAY_CONTAINS_ALL no",  List.of("001", "002")
+                    )
+                    .join(Set.of("floors"))
+                    .returnAllSubArray(false)
+                    .fields("id", "floors", "_ts")
+                    .sort("id", "ASC")
+                    ;
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    WITH filtered_data AS (
+                    SELECT id, jsonb_set(
+                      data,
+                      '{"floors"}',
+                      COALESCE(
+                         (
+                       SELECT jsonb_agg(s2)
+                       FROM jsonb_array_elements(data->'floors') AS s2
+                       WHERE ( (s2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__0__for_select)) AND s2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__1__for_select)))
+                       AND (s2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__0__for_select)) AND s2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__1__for_select))))
+                     ),
+                        data->'floors'
+                      )
+                    )
+                     AS data
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j0
+                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) AND j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                     ) AND EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j1
+                       WHERE (j1->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__0)) AND j1->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__1)))
+                     )
+                    )
+                    SELECT
+                    id,
+                    jsonb_build_object('id', data->'id', 'floors', data->'floors', '_ts', data->'_ts') AS "data"
+                    
+                    FROM filtered_data
+                     ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 100
+                    """;
+
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(8);
+
+            // for "name" contains ["r1", "r2"]
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__name__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param000_rooms__name__1");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("r2");
+
+            // for "no" contains ["001", "002"]
+            assertThat(q.getParameters().get(2).getName()).isEqualTo("@param001_rooms__no__0");
+            assertThat(q.getParameters().get(2).getValue()).isEqualTo("001");
+            assertThat(q.getParameters().get(3).getName()).isEqualTo("@param001_rooms__no__1");
+            assertThat(q.getParameters().get(3).getValue()).isEqualTo("002");
+
+            // for "name" contains ["r1", "r2"] in SELECT
+            assertThat(q.getParameters().get(4).getName()).isEqualTo("@param002_rooms__name__0__for_select");
+            assertThat(q.getParameters().get(4).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(5).getName()).isEqualTo("@param002_rooms__name__1__for_select");
+            assertThat(q.getParameters().get(5).getValue()).isEqualTo("r2");
+
+            // for "no" contains ["001", "002"] in SELECT
+            assertThat(q.getParameters().get(6).getName()).isEqualTo("@param003_rooms__no__0__for_select");
+            assertThat(q.getParameters().get(6).getValue()).isEqualTo("001");
+            assertThat(q.getParameters().get(7).getName()).isEqualTo("@param003_rooms__no__1__for_select");
+            assertThat(q.getParameters().get(7).getValue()).isEqualTo("002");
+
+        }
+
+    }
+
+    @Test
     void buildQuerySpec_should_work_for_array_contains_any_with_join() {
 
         // with cond.join
@@ -870,6 +871,7 @@ class PGConditionUtilTest {
             var cond = Condition.filter("floors.rooms ARRAY_CONTAINS_ANY name",  List.of("r1", "r2"))
                     .join(Set.of("floors"))
                     .returnAllSubArray(false)
+                    .offset(0).limit(10)
                     ;
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
@@ -881,7 +883,7 @@ class PGConditionUtilTest {
                          (
                        SELECT jsonb_agg(s1)
                        FROM jsonb_array_elements(data->'floors') AS s1
-                       WHERE (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)) OR s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__1__for_select)))
+                       WHERE ( (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)) OR s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__1__for_select))))
                      ),
                         data->'floors'
                       )
@@ -892,7 +894,7 @@ class PGConditionUtilTest {
                        SELECT 1
                        FROM jsonb_array_elements(data->'floors') AS j0
                        WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
-                     ) OFFSET 0 LIMIT 100
+                     ) OFFSET 0 LIMIT 10
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(4);
@@ -906,8 +908,59 @@ class PGConditionUtilTest {
             assertThat(q.getParameters().get(3).getName()).isEqualTo("@param001_rooms__name__1__for_select");
             assertThat(q.getParameters().get(3).getValue()).isEqualTo("r2");
 
+        }
 
+        {
+            // with returnAllSubArray=false and fields, sort
+            var cond = Condition.filter("floors.rooms ARRAY_CONTAINS_ANY name",  List.of("r1", "r2"))
+                    .join(Set.of("floors"))
+                    .returnAllSubArray(false)
+                    .fields("id", "address.street", "area*no-1")
+                    .sort("_ts", "DESC", "address.street", "ASC")
+                    .offset(0).limit(10)
+                    ;
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
+            var expected = """
+                    WITH filtered_data AS (
+                    SELECT id, jsonb_set(
+                      data,
+                      '{"floors"}',
+                      COALESCE(
+                         (
+                       SELECT jsonb_agg(s1)
+                       FROM jsonb_array_elements(data->'floors') AS s1
+                       WHERE ( (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)) OR s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__1__for_select))))
+                     ),
+                        data->'floors'
+                      )
+                    )
+                     AS data
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j0
+                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                     )
+                    )
+                    SELECT
+                    id,
+                    jsonb_build_object('id', data->'id', 'address', jsonb_build_object('street', data->'address'->'street'), 'area*no-1', data->'area*no-1') AS "data"
+                    
+                    FROM filtered_data
+                     ORDER BY data->>'_ts' DESC, data->'address'->>'street' ASC OFFSET 0 LIMIT 10
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(4);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__name__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param000_rooms__name__1");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("r2");
+
+            assertThat(q.getParameters().get(2).getName()).isEqualTo("@param001_rooms__name__0__for_select");
+            assertThat(q.getParameters().get(2).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(3).getName()).isEqualTo("@param001_rooms__name__1__for_select");
+            assertThat(q.getParameters().get(3).getValue()).isEqualTo("r2");
 
         }
 
@@ -976,7 +1029,7 @@ class PGConditionUtilTest {
                          (
                        SELECT jsonb_agg(s1)
                        FROM jsonb_array_elements(data->'floors') AS s1
-                       WHERE (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)))
+                       WHERE ( (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select))))
                      ),
                         data->'floors'
                       )

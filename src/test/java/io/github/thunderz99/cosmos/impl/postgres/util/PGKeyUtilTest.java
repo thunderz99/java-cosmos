@@ -37,13 +37,13 @@ class PGKeyUtilTest {
             assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", " ")).isEqualTo("data->>'age'");
         }
         {
-            // irregular cases for collectionAlias
+            // irregular cases for selectAlias
             assertThatThrownBy(() -> PGKeyUtil.getFormattedKeyWithAlias("age", null, "abc"))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("collectionAlias should be non-blank");
+                    .hasMessageContaining("selectAlias should be non-blank");
             assertThatThrownBy(() -> PGKeyUtil.getFormattedKeyWithAlias("age", "", "abc"))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("collectionAlias should be non-blank");
+                    .hasMessageContaining("selectAlias should be non-blank");
         }
         {
             // irregular cases for value when "value instanceof Collection<?>"

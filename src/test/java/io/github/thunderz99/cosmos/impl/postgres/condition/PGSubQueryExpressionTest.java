@@ -29,10 +29,10 @@ class PGSubQueryExpressionTest {
              */
             var params = new ArrayList<CosmosSqlParameter>();
             var ret = PGSubQueryExpression.buildArrayContainsAny("items", "", "@items_009", List.of("id001", "id002", "id005"), params, "data");
-            assertThat(ret).isEqualTo(" (data->'items' ??| @items_009)");
-            assertThat(params).hasSize(1);
-            var param = params.stream().collect(Collectors.toList()).get(0);
-            assertThat(param.toJson()).isEqualTo(new CosmosSqlParameter("@items_009", List.of("id001", "id002", "id005")).toJson());
+            assertThat(ret).isEqualTo(" (data->'items' @> @items_009__0::jsonb OR data->'items' @> @items_009__1::jsonb OR data->'items' @> @items_009__2::jsonb)");
+            assertThat(params).hasSize(3);
+            var param = params.stream().collect(Collectors.toList()).get(2);
+            assertThat(param.toJson()).isEqualTo(new CosmosSqlParameter("@items_009__2", "\"id005\"").toJson());
         }
 
         {
@@ -46,10 +46,10 @@ class PGSubQueryExpressionTest {
              */
             var params = new ArrayList<CosmosSqlParameter>();
             var ret = PGSubQueryExpression.buildArrayContainsAny("items", "", "@items_009", "id001", params, "data");
-            assertThat(ret).isEqualTo(" (data->'items' ?? @items_009)");
+            assertThat(ret).isEqualTo(" (data->'items' @> @items_009__0::jsonb)");
             assertThat(params).hasSize(1);
             var param = params.stream().collect(Collectors.toList()).get(0);
-            assertThat(param.toJson()).isEqualTo(new CosmosSqlParameter("@items_009", "id001").toJson());
+            assertThat(param.toJson()).isEqualTo(new CosmosSqlParameter("@items_009__0", "\"id001\"").toJson());
         }
 
 
@@ -105,10 +105,10 @@ class PGSubQueryExpressionTest {
 
             var params = new ArrayList<CosmosSqlParameter>();
             var ret = PGSubQueryExpression.buildArrayContainsAll("items", "", "@items_009", List.of("id001", "id002"), params, "data");
-            assertThat(ret).isEqualTo(" (data->'items' @> @items_009::jsonb)");
-            assertThat(params).hasSize(1);
+            assertThat(ret).isEqualTo(" (data->'items' @> @items_009__0::jsonb AND data->'items' @> @items_009__1::jsonb)");
+            assertThat(params).hasSize(2);
             var param = params.stream().collect(Collectors.toList()).get(0);
-            assertThat(param.toJson()).isEqualTo(new CosmosSqlParameter("@items_009", JsonUtil.toJson(List.of("id001", "id002"))).toJson());
+            assertThat(param.toJson()).isEqualTo(new CosmosSqlParameter("@items_009__0", "\"id001\"").toJson());
         }
 
         {
@@ -120,10 +120,10 @@ class PGSubQueryExpressionTest {
 
             var params = new ArrayList<CosmosSqlParameter>();
             var ret = PGSubQueryExpression.buildArrayContainsAll("items", "", "@items_009", List.of("id001"), params, "data");
-            assertThat(ret).isEqualTo(" (data->'items' ?? @items_009)");
+            assertThat(ret).isEqualTo(" (data->'items' @> @items_009__0::jsonb)");
             assertThat(params).hasSize(1);
             var param = params.stream().collect(Collectors.toList()).get(0);
-            assertThat(param.toJson()).isEqualTo(new CosmosSqlParameter("@items_009", "id001").toJson());
+            assertThat(param.toJson()).isEqualTo(new CosmosSqlParameter("@items_009__0", "\"id001\"").toJson());
         }
 
 
