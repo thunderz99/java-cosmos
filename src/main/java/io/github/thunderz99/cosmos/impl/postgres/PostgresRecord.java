@@ -1,5 +1,8 @@
 package io.github.thunderz99.cosmos.impl.postgres;
 
+import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
+import io.github.thunderz99.cosmos.util.Checker;
+
 import java.util.Map;
 
 /**
@@ -23,6 +26,8 @@ public class PostgresRecord {
 
     public PostgresRecord(String id, Map<String, Object> data) {
         this.id = id;
+        Checker.checkNotNull(data, "data");
         this.data = data;
+        this.data.put(TableUtil.ID, id);
     }
 }

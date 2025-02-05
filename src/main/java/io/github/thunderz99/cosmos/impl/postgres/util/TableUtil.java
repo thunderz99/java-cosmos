@@ -485,7 +485,7 @@ public class TableUtil {
 
         if (CollectionUtils.isEmpty(operations.getPatchOperations())) {
             log.warn("operations is empty. do nothing in table '{}.{}'. id:{}.", schemaName, tableName, id);
-            return new PostgresRecord(id, Map.of());
+            return new PostgresRecord(id, new HashMap<>());
         }
 
         var querySpec = JsonPatchUtil.toPostgresPatchData(operations);

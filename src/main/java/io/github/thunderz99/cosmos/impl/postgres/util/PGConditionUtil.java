@@ -4,19 +4,18 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.condition.*;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
-import io.github.thunderz99.cosmos.impl.postgres.condition.PGOrExpressions;
-import io.github.thunderz99.cosmos.impl.postgres.condition.PGSimpleExpression;
-import io.github.thunderz99.cosmos.impl.postgres.condition.PGSubQueryExpression;
+import io.github.thunderz99.cosmos.impl.postgres.condition.*;
+import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static io.github.thunderz99.cosmos.impl.postgres.util.PGSelectUtil.generateSelect;
 
 /**
  * A util class to convert condition's filter/sort/limit/offset to bson filter/sort/limit/offset for mongo
@@ -42,22 +41,44 @@ public class PGConditionUtil {
         var schema = TableUtil.checkAndNormalizeValidEntityName(coll);
         var table = TableUtil.checkAndNormalizeValidEntityName(partition);
 
-        var select = generateSelect(cond);
 
-        var initialText = String.format("SELECT %s FROM %s.%s", select, schema, table);
+        var initialText = String.format(" FROM %s.%s\n", schema, table);
         var initialParams = new ArrayList<CosmosSqlParameter>();
         var initialConditionIndex = new AtomicInteger(0);
         var initialParamIndex = new AtomicInteger(0);
 
-        var filterQuery = generateFilterQuery(cond, initialText, initialParams, initialConditionIndex, initialParamIndex, TableUtil.DATA);
+        var queryContext = QueryContext.create();
+        var filterQuery = generateFilterQuery(cond, initialText, initialParams, initialConditionIndex, initialParamIndex, queryContext);
 
         var queryText = filterQuery.queryText;
         var params = filterQuery.params;
 
+        // select
+        var select = generateSelect(cond, queryContext, params);
+        queryText.insert(0, "SELECT %s\n".formatted(select.selectPart));
+
+        // with clause for join and fields not empty
+        if(StringUtils.isNotEmpty(select.withClause)){
+
+            /**
+             * withClause:
+             *
+             * WITH filtered_data AS (
+             * %s
+             * )
+             * SELECT
+             *   projectionPart
+             * FROM filtered_data
+             */
+
+            var withClause = select.withClause.formatted(queryText);
+            queryText = new StringBuilder(withClause);
+        }
+
         // sort
         if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
             var sorts = buildSorts(cond.sort);
-            queryText.append(sorts);
+            queryText.append("\n" + sorts);
         }
 
         // offset and limit
@@ -100,8 +121,9 @@ public class PGConditionUtil {
             sortMap.put("_ts", firstOrder);
         }
 
+        // TODO: sort by integer
         var ret = sortMap.entrySet().stream()
-                .map(entry -> String.format(" %s %s", PGKeyUtil.getFormattedKey(entry.getKey()), entry.getValue().toUpperCase()))
+                .map(entry -> String.format(" %s %s", PGKeyUtil.getFormattedKeyWithAlias(entry.getKey(), TableUtil.DATA, ""), entry.getValue().toUpperCase()))
                 .collect(Collectors.joining(",", " ORDER BY", ""));
         return ret;
     }
@@ -130,7 +152,8 @@ public class PGConditionUtil {
         var initialConditionIndex = new AtomicInteger(0);
         var initialParamIndex = new AtomicInteger(0);
 
-        var filterQuery = generateFilterQuery(cond, initialText, initialParams, initialConditionIndex, initialParamIndex, TableUtil.DATA);
+        var queryContext = QueryContext.create();
+        var filterQuery = generateFilterQuery(cond, initialText, initialParams, initialConditionIndex, initialParamIndex, queryContext);
 
         var queryText = filterQuery.queryText;
         var params = filterQuery.params;
@@ -152,10 +175,10 @@ public class PGConditionUtil {
      * @param cond        condition
      * @param selectPart  queryText
      * @param params      params
-     * @param selectAlias field name for "data->>'name'"
+     * @param queryContext context info for query, especially using join
      */
     static FilterQuery generateFilterQuery(Condition cond, String selectPart, List<CosmosSqlParameter> params,
-                                    AtomicInteger conditionIndex, AtomicInteger paramIndex, String selectAlias) {
+                                    AtomicInteger conditionIndex, AtomicInteger paramIndex, QueryContext queryContext) {
 
         // process raw sql
         if (cond.rawQuerySpec != null) {
@@ -173,6 +196,10 @@ public class PGConditionUtil {
         // filter parts
         var connectPart = getConnectPart(conditionIndex);
 
+        var join = new LinkedHashSet(cond.join);
+
+        var selectAlias = TableUtil.DATA;
+
         for (var entry : cond.filter.entrySet()) {
 
             if (StringUtils.isEmpty(entry.getKey())) {
@@ -184,25 +211,21 @@ public class PGConditionUtil {
 
             if (entry.getKey().startsWith(SubConditionType.AND)) {
                 // sub query AND
-                var subQueries = extractSubQueries(entry.getValue());
-                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", params, conditionIndex, paramIndex);
-
+                var subQueries = extractSubQueries(cond, entry.getValue());
+                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "AND", params, conditionIndex, paramIndex, queryContext);
             } else if (entry.getKey().startsWith(SubConditionType.OR)) {
                 // sub query OR
-                var subQueries = extractSubQueries(entry.getValue());
-                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", params, conditionIndex, paramIndex);
+                var subQueries = extractSubQueries(cond, entry.getValue());
+                subFilterQueryToAdd = generateFilterQuery4List(subQueries, "OR", params, conditionIndex, paramIndex, queryContext);
 
             } else if (entry.getKey().startsWith(SubConditionType.NOT)) {
                 // sub query NOT
-                var subQueries = extractSubQueries(entry.getValue());
+                var subQueries = extractSubQueries(cond, entry.getValue());
                 if (CollectionUtils.isNotEmpty(subQueries)) {
-                    var subQueryWithNot = Condition.filter(SubConditionType.AND, subQueries).not();
+                    var subQueryWithNot = Condition.filter(SubConditionType.AND, subQueries).join(cond.join).not();
                     // recursively generate the filterQuery with negative flag true
-                    var filterQueryWithNot = generateFilterQuery(subQueryWithNot, "", params, conditionIndex, paramIndex, selectAlias);
+                    var filterQueryWithNot = generateFilterQuery(subQueryWithNot, "", params, conditionIndex, paramIndex, queryContext);
                     subFilterQueryToAdd = " " + removeConnectPart(filterQueryWithNot.queryText.toString());
-                    // TODO join
-//                    saveOriginJoinCondition(subFilterQueryToAdd);
-//                    subFilterQueryToAdd = toJoinQueryText(subFilterQueryToAdd, subFilterQueryToAdd, paramIndex);
                 }
             } else if (entry.getKey().startsWith(SubConditionType.EXPRESSION)) {
                 // support expression using combination of function and the basic operators
@@ -218,14 +241,11 @@ public class PGConditionUtil {
 
             } else {
                 // normal "key = value" expression
-                var exp = parse(entry.getKey(), entry.getValue());
+                var exp = parse(entry.getKey(), entry.getValue(), join, queryContext);
                 var expQuerySpec = exp.toQuerySpec(paramIndex, selectAlias);
                 subFilterQueryToAdd = expQuerySpec.getQueryText();
-
-                // TODO join
-                //saveOriginJoinCondition(subFilterQueryToAdd);
-                //subFilterQueryToAdd = toJoinQueryText(entry.getKey(), subFilterQueryToAdd, paramIndex);
                 params.addAll(expQuerySpec.getParameters());
+
             }
 
             if (StringUtils.isNotEmpty(subFilterQueryToAdd)) {
@@ -265,20 +285,21 @@ public class PGConditionUtil {
     /**
      * extract subQueries for SUB_COND_AND / SUB_COND_OR 's filter value
      *
+     * @param parentCond
      * @param value
      */
-    static List<Condition> extractSubQueries(Object value) {
+    static List<Condition> extractSubQueries(Condition parentCond, Object value) {
         if (value == null) {
             return List.of();
         }
 
         if (value instanceof Condition || value instanceof Map<?, ?>) {
             // single condition
-            return List.of(extractSubQuery(value));
+            return List.of(extractSubQuery(parentCond, value));
         } else if (value instanceof List<?>) {
             // multi condition
             var listValue = (List<Object>) value;
-            return listValue.stream().map(v -> extractSubQuery(v)).filter(Objects::nonNull).collect(Collectors.toList());
+            return listValue.stream().map(v -> extractSubQuery(parentCond, v)).filter(Objects::nonNull).collect(Collectors.toList());
         }
 
         return List.of();
@@ -287,19 +308,20 @@ public class PGConditionUtil {
     /**
      * extract subQuery for SUB_COND_AND / SUB_COND_OR 's filter value, single condition only.
      *
+     * @param parentCond
      * @param value
      */
-    static Condition extractSubQuery(Object value) {
+    static Condition extractSubQuery(Condition parentCond, Object value) {
         if (value == null) {
             return null;
         }
 
         if (value instanceof Condition) {
             // single condition
-            return (Condition) value;
+            return ((Condition) value).join(parentCond.join);
         } else if (value instanceof Map<?, ?>) {
             // single condition in the form of map
-            return new Condition(JsonUtil.toMap(value));
+            return new Condition(JsonUtil.toMap(value)).join(parentCond.join);
         } else if (value instanceof Collection<?>) {
             throw new IllegalArgumentException("Cannot convert input to a single condition. Ensure the input is a single value(not a collection)." + value);
         }
@@ -308,39 +330,33 @@ public class PGConditionUtil {
 
     /**
      * @param conds          conditions
-     * @param joiner         "AND", "OR"
+     * @param operator4SubConds         "AND", "OR"
      * @param params         sql params
      * @param conditionIndex increment index for conditions (for uniqueness of param names)
      * @param paramIndex     increment index for params (for uniqueness of param names)
+     * @param queryContext   context info for query. especially using join
      * @return query text
      */
-    static String generateFilterQuery4List(List<Condition> conds, String joiner, List<CosmosSqlParameter> params, AtomicInteger conditionIndex, AtomicInteger paramIndex) {
+    static String generateFilterQuery4List(List<Condition> conds, String operator4SubConds, List<CosmosSqlParameter> params, AtomicInteger conditionIndex, AtomicInteger paramIndex, QueryContext queryContext) {
         List<String> subTexts = new ArrayList<>();
         //List<String> originSubTexts = new ArrayList<>();
 
         for (var subCond : conds) {
+
             var subFilterQuery = generateFilterQuery(subCond,"", params, conditionIndex,
-                    paramIndex, TableUtil.DATA);
+                    paramIndex, queryContext);
 
             var subText = removeConnectPart(subFilterQuery.queryText.toString());
             subTexts.add(subText);
 
-            // TODO join
-            //subTexts.add(toJoinQueryText(originSubText, originSubText, paramIndex));
-            //originSubTexts.add(originSubText);
             params = subFilterQuery.params;
             conditionIndex = subFilterQuery.conditionIndex;
             paramIndex = subFilterQuery.paramIndex;
+
         }
 
         var subFilterQuery = subTexts.stream().filter(t -> StringUtils.isNotBlank(t))
-                .collect(Collectors.joining(" " + joiner + " ", " (", ")"));
-
-        //TODO join
-
-        //var originSubFilterQuery = originSubTexts.stream().filter(t -> StringUtils.isNotBlank(t))
-        //        .collect(Collectors.joining(" " + joiner + " ", " (", ")"));
-        //saveOriginJoinCondition(StringUtils.removeStart(originSubFilterQuery, " ()"));
+                .collect(Collectors.joining(" " + operator4SubConds + " ", " (", ")"));
 
         // remove empty sub queries
         return StringUtils.removeStart(subFilterQuery, " ()");
@@ -358,182 +374,61 @@ public class PGConditionUtil {
      * parse key and value to generate a valid expression
      * @param key filter's key
      * @param value filter's value
+     * @param queryContext context of the Expression(e.g. under join which uses a json path expression)
      * @return expression for WHERE clause
      */
-    public static Expression parse(String key, Object value) {
+    public static Expression parse(String key, Object value, Set<String> join, QueryContext queryContext) {
 
         //simple expression
         var simpleMatcher = Condition.simpleExpressionPattern.matcher(key);
         if (simpleMatcher.find()) {
-            if (key.contains(" OR ")) {
-                return new PGOrExpressions(simpleMatcher.group(1), value, simpleMatcher.group(2));
-            } else {
-                return new PGSimpleExpression(simpleMatcher.group(1), value, simpleMatcher.group(2));
-            }
+            var parsedKey = simpleMatcher.group(1);
+            var operator = simpleMatcher.group(2);
+            return parseExpression4SimpleMatcher(key, parsedKey, value, operator, join, queryContext);
         }
 
         //subquery expression
         var subqueryMatcher = Condition.subQueryExpressionPattern.matcher(key);
 
         if (subqueryMatcher.find()) {
-            return new PGSubQueryExpression(subqueryMatcher.group(1), subqueryMatcher.group(3), value, subqueryMatcher.group(2));
+            var joinKey = subqueryMatcher.group(1);
+            var filterKey = subqueryMatcher.group(3);
+            var operator = subqueryMatcher.group(2);
+
+            if (CollectionUtils.isEmpty(join)) {
+                return new PGSubQueryExpression(joinKey, filterKey, value, operator);
+            } else {
+                return new PGSubQueryExpression4Join(joinKey, filterKey, value, operator, join, queryContext);
+            }
         }
 
         //default key / value expression
-        if (key.contains(" OR ")) {
-            return new PGOrExpressions(key, value);
-        } else {
-            return new PGSimpleExpression(key, value);
-        }
+        // TODO PGOrExpressions for join
+
+        return parseExpression4SimpleMatcher(key, key, value, "", join, queryContext);
     }
 
     /**
-     * select parts generate.
+     * parse a key / value / operator to a valid simple expression
      *
-     * {@code
-     * e.g.
-     * "id", "age", "fullName.first" -> VALUE {"id":c.id, "age":c.age, "fullName": {"first": c.fullName.first}}
-     * }
-     *
-     * @return select sql
-     */
-    static String generateSelect(Condition cond) {
-        if (CollectionUtils.isEmpty(cond.fields)) {
-            return "*";
-        }
-        return generateSelectByFields(cond.fields);
-    }
-
-    /**
-     * Generate a select sql for input fields. Supports nested fields
-     *
-     * <p>
-     * {@code
-     * //e.g.
-     * //input: ["id", "address.city"]
-     * //output: id,
-     *      jsonb_build_object(
-     *       'address',
-     *       jsonb_build_object(
-     *         'city', data->'address'->'city'
-     *       )
-     *     ) AS "Data"
-     * }
-     *
-     * </p>
-     *
-     * @param fieldsSet
+     * @param key original key in the filter
+     * @param parsedKey parsed key in the filter
+     * @param value value in the filter
+     * @param operator operator for the expression
+     * @param queryContext context of the Expression(e.g. under join which uses a json path expression)
      * @return
      */
-    static String generateSelectByFields(Set<String> fieldsSet) {
-
-        // converts field to data.field, exludes empty fields
-        // ["id", "name", ""] -> ["data.id", "data.name"]
-
-        var fields = fieldsSet.stream().filter(f -> StringUtils.isNotBlank(f)).map(f -> {
-            if (StringUtils.containsAny(f, "{", "}", ",", "\"", "'")) {
-                throw new IllegalArgumentException("field cannot contain '{', '}', ',', '\"', \"'\", field: " + f);
-            }
-            return TableUtil.DATA + "." + f;
-        }).collect(Collectors.toCollection(LinkedHashSet::new));
-
-        // add "id" and "data.id" fields as a must
-        fields.add(TableUtil.ID);
-        fields.add(TableUtil.DATA + "." + TableUtil.ID);
-
-        // Separate top-level fields (no dot) from nested fields
-        var topLevel = new LinkedHashSet<String>(); // should contain "id" only
-
-        // should be like ["id", "name", "address.city"]
-        // note that the "data." part is removed for the simplicity of the following process
-        // "id" is always added to the nested fields (because we have a redundant "data.id" field, whose value is the same as "id")
-        var nested  = new ArrayList<String>();
-        for (var f : fields) {
-            if (f.contains(".")) {
-                nested.add(StringUtils.removeStart(f, TableUtil.DATA + "."));
+    static Expression parseExpression4SimpleMatcher(String key, String parsedKey, Object value, String operator, Set<String> join, QueryContext queryContext) {
+        if (key.contains(" OR ")) {
+            return new PGOrExpressions(parsedKey, value);
+        } else {
+            if (CollectionUtils.isEmpty(join)) {
+                return new PGSimpleExpression(parsedKey, value, operator);
             } else {
-                topLevel.add(f);
+                return new PGSimpleExpression4Join(parsedKey, value, operator, join, queryContext);
             }
         }
-
-        // Build a tree structure for nested fields
-        var root = new Node(); // this node represents the "data" root
-        for (var f : nested) {
-            var parts = Arrays.asList(f.split("\\."));
-            insertPath(root, parts);
-        }
-
-        // Build the list of select columns
-       var selectColumns = new ArrayList<String>();
-
-        // 1) Add the top-level fields as normal columns
-        selectColumns.addAll(topLevel);
-
-        // 2) If there are any nested fields, build the JSON expression
-        if (!nested.isEmpty()) {
-            var jsonExpression = buildJsonBuildObject(TableUtil.DATA, root);
-            // Alias it as "Data"
-            jsonExpression += " AS \"" + TableUtil.DATA + "\"";
-            selectColumns.add(jsonExpression);
-        }
-
-        // Join them with commas, and add a newline for the end
-        return String.join(",\n", selectColumns) + "\n";
     }
-
-    /**
-     * Recursively build a jsonb_build_object(...) expression from the Node tree.
-     * The 'pathSoFar' indicates how we refer to this level in 'data', e.g. "data->'address'"
-     */
-    static String buildJsonBuildObject(String pathSoFar, Node node) {
-        // If node has no children, it means this path is a leaf
-        // so just return the pathSoFar (e.g. "data->'address'->'city'")
-        if (node.children.isEmpty()) {
-            return pathSoFar;
-        }
-
-        // Otherwise, build jsonb_build_object with each child
-        // e.g. jsonb_build_object(
-        //         'address', jsonb_build_object(
-        //             'city', data->'address'->'city'
-        //         )
-        //      )
-        List<String> pairs = new ArrayList<>();
-        for (Map.Entry<String, Node> entry : node.children.entrySet()) {
-            var key   = entry.getKey();
-            var child   = entry.getValue();
-            var childPath = pathSoFar + "->'" + key + "'";
-            // Recursively build the expression for the child's subtree
-            var childExpr = buildJsonBuildObject(childPath, child);
-            // `'key', childExpr`
-            var pair = "'" + key + "', " + childExpr;
-            pairs.add(pair);
-        }
-
-        // join pairs into "jsonb_build_object('key1', expr1, 'key2', expr2, ...)"
-        var joined = String.join(", ", pairs);
-        return "jsonb_build_object(" + joined + ")";
-    }
-
-    /**
-     * Insert a path like ["address","city"] into our tree structure.
-     * 'root' node is effectively for "data".
-     */
-    static void insertPath(Node root, List<String> parts) {
-        var current = root;
-        for (String p : parts) {
-            current.children.putIfAbsent(p, new Node());
-            current = current.children.get(p);
-        }
-    }
-
-    /**
-     * Simple tree node that maps child name -> subtree
-     */
-    static class Node {
-        Map<String, Node> children = new LinkedHashMap<>();
-    }
-
 
 }
 

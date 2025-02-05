@@ -1904,7 +1904,7 @@ class CosmosDatabaseImplTest {
 
     @Disabled
     /**
-     * TODO, This case is not implemented at present
+     * TODO, This case is not implemented at present for CosmosDB
      */
     @Test
     void find_should_work_with_join_using_elem_match() throws Exception {

@@ -1,61 +1,29 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
+import com.google.common.collect.Sets;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
+import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
+import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PGConditionUtilTest {
 
     static final String coll = "schema1";
     static final String partition = "table1";
-
-
-    @Test
-    void generateSelect_should_work() {
-        {
-            // select with no field
-            var cond = Condition.filter()
-                    .fields();
-            assertThat(PGConditionUtil.generateSelect(cond)).isEqualTo("*");
-        }
-
-        {
-            // select with null fields
-            var cond = Condition.filter()
-                    .fields(null);
-            assertThat(PGConditionUtil.generateSelect(cond)).isEqualTo("*");
-        }
-
-        {
-            // select with 2 fields
-            var cond = Condition.filter()
-                    .fields("id", "name");
-            var expected = """
-                    id,
-                    jsonb_build_object('id', data->'id', 'name', data->'name') AS "data"
-                    """;
-            assertThat(PGConditionUtil.generateSelect(cond)).isEqualTo(expected);
-        }
-        {
-            // select with fields that overlaps(sheet-1 overlaps, and sheet-2 standalone)
-            var cond = Condition.filter()
-                    .fields("id", "contents.sheet-1.name", "contents.sheet-1.age", "contents.sheet-2.address");
-            var expected = """
-                    id,
-                    jsonb_build_object('id', data->'id', 'contents', jsonb_build_object('sheet-1', jsonb_build_object('name', data->'contents'->'sheet-1'->'name', 'age', data->'contents'->'sheet-1'->'age'), 'sheet-2', jsonb_build_object('address', data->'contents'->'sheet-2'->'address'))) AS "data"
-                    """;
-            assertThat(PGConditionUtil.generateSelect(cond)).isEqualTo(expected);
-        }
-    }
 
     @Test
     void toQuerySpec_should_work() {
@@ -65,7 +33,7 @@ class PGConditionUtilTest {
             // test with no fields and no sort
             var condNoFields = Condition.filter();
             var actualSpecNoFields = PGConditionUtil.toQuerySpec(coll, condNoFields, partition);
-            var expectedNoFields = new CosmosSqlQuerySpec("SELECT * FROM schema1.table1 OFFSET 0 LIMIT 100", new ArrayList<>());
+            var expectedNoFields = new CosmosSqlQuerySpec("SELECT *\n FROM schema1.table1\n OFFSET 0 LIMIT 100", new ArrayList<>());
             assertThat(actualSpecNoFields).isEqualTo(expectedNoFields);
         }
 
@@ -75,7 +43,7 @@ class PGConditionUtilTest {
                 // test with specific filters
                 var condFilter = Condition.filter().filter("age", 18);
                 var actualSpecFilter = PGConditionUtil.toQuerySpec(coll, condFilter, partition);
-                var expectedFilter = new CosmosSqlQuerySpec("SELECT * FROM schema1.table1 WHERE ((data->>'age')::int = @param000_age) OFFSET 0 LIMIT 100", List.of(new CosmosSqlParameter("@param000_age", 18)));
+                var expectedFilter = new CosmosSqlQuerySpec("SELECT *\n FROM schema1.table1\n WHERE ((data->>'age')::int = @param000_age) OFFSET 0 LIMIT 100", List.of(new CosmosSqlParameter("@param000_age", 18)));
                 assertThat(actualSpecFilter).isEqualTo(expectedFilter);
             }
         }
@@ -88,7 +56,8 @@ class PGConditionUtilTest {
             var expectedSQL= """
                     SELECT id,
                     jsonb_build_object('id', data->'id', 'name', data->'name') AS \"data\"
-                     FROM coll.partition ORDER BY data->>'name' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 100
+                    \n FROM coll.partition
+                    \n ORDER BY data->>'name' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 100
                     """;
             var expectedFieldsSort = new CosmosSqlQuerySpec(expectedSQL.trim(), new ArrayList<>());
             assertThat(actualSpecFieldsSort).isEqualTo(expectedFieldsSort);
@@ -110,7 +79,7 @@ class PGConditionUtilTest {
         {
             // normal case with 2 filter
             var cond = Condition.filter("id", "001", "age >", 15);
-            var filterQuery = PGConditionUtil.generateFilterQuery(cond, "", new ArrayList<>(), new AtomicInteger(), new AtomicInteger(), "data");
+            var filterQuery = PGConditionUtil.generateFilterQuery(cond, "", new ArrayList<>(), new AtomicInteger(), new AtomicInteger(), QueryContext.create());
 
             var queryTextExpected = " WHERE (data->>'id' = @param000_id) AND ((data->>'age')::int > @param001_age)";
             assertThat(filterQuery.queryText.toString()).isEqualTo(queryTextExpected);
@@ -122,7 +91,7 @@ class PGConditionUtilTest {
         {
             // nested fields
             var cond = Condition.filter("address.city <=", "NY", "expired", true);
-            var filterQuery = PGConditionUtil.generateFilterQuery(cond, "", new ArrayList<>(), new AtomicInteger(), new AtomicInteger(), "data");
+            var filterQuery = PGConditionUtil.generateFilterQuery(cond, "", new ArrayList<>(), new AtomicInteger(), new AtomicInteger(), QueryContext.create());
 
             var queryTextExpected = " WHERE (data->'address'->>'city' <= @param000_address__city) AND ((data->>'expired')::boolean = @param001_expired)";
             assertThat(filterQuery.queryText.toString()).isEqualTo(queryTextExpected);
@@ -147,7 +116,10 @@ class PGConditionUtilTest {
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
             var expectedSQL = """
-                    SELECT * FROM schema1.table1 WHERE (data->'fullName'->>'last' = @param000_fullName__last) AND ((data->>'position' = @param001_position) OR (data->>'organization' = @param002_organization)) AND ((data->>'age')::int = @param003_age) ORDER BY data->>'_ts' DESC OFFSET 10 LIMIT 20
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE (data->'fullName'->>'last' = @param000_fullName__last) AND ((data->>'position' = @param001_position) OR (data->>'organization' = @param002_organization)) AND ((data->>'age')::int = @param003_age)
+                     ORDER BY data->>'_ts' DESC OFFSET 10 LIMIT 20
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expectedSQL.trim());
 
@@ -165,7 +137,12 @@ class PGConditionUtilTest {
                             Condition.filter("position", "leader"))
                     ;
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
-            assertThat(q.getQueryText()).isEqualTo("SELECT * FROM schema1.table1 WHERE ((data->>'position' = @param000_position)) OFFSET 0 LIMIT 100");
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE ((data->>'position' = @param000_position)) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText()).isEqualTo(expected.trim());
             var params = List.copyOf(q.getParameters());
             assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
         }
@@ -179,7 +156,12 @@ class PGConditionUtilTest {
                             Condition.filter("address", "London")
                     );
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
-            assertThat(q.getQueryText()).isEqualTo("SELECT * FROM schema1.table1 WHERE ((data->>'position' = @param000_position)) AND ((data->>'address' = @param001_address)) OFFSET 0 LIMIT 100");
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE ((data->>'position' = @param000_position)) AND ((data->>'address' = @param001_address)) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText()).isEqualTo(expected.trim());
             var params = List.copyOf(q.getParameters());
             assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
             assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_address", "London").toJson());
@@ -196,8 +178,13 @@ class PGConditionUtilTest {
                                 Condition.filter("id_B", "value_B", "id_C", "value_C")));
         var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
+        var expected = """
+                SELECT *
+                 FROM schema1.table1
+                 WHERE ((data->>'isChecked')::boolean = @param000_isChecked) AND ((data->>'id_A' = @param001_id_A) OR (data->>'id_B' = @param002_id_B) AND (data->>'id_C' = @param003_id_C)) OFFSET 0 LIMIT 100
+                """;
 
-        assertThat(q.getQueryText()).isEqualTo("SELECT * FROM schema1.table1 WHERE ((data->>'isChecked')::boolean = @param000_isChecked) AND ((data->>'id_A' = @param001_id_A) OR (data->>'id_B' = @param002_id_B) AND (data->>'id_C' = @param003_id_C)) OFFSET 0 LIMIT 100");
+        assertThat(q.getQueryText()).isEqualTo(expected.trim());
     }
 
     @Test
@@ -211,8 +198,14 @@ class PGConditionUtilTest {
                 .offset(10) //
                 .limit(20);
         var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+        var expected = """
+                SELECT *
+                 FROM schema1.table1
+                 WHERE ((data->>'position' = @param000_position) OR (data->>'organization' = @param001_organization))
+                 ORDER BY data->>'_ts' DESC OFFSET 10 LIMIT 20
+                """;
         assertThat(q.getQueryText().trim()).isEqualTo(
-                "SELECT * FROM schema1.table1 WHERE ((data->>'position' = @param000_position) OR (data->>'organization' = @param001_organization)) ORDER BY data->>'_ts' DESC OFFSET 10 LIMIT 20");
+                expected.trim());
 
         var params = List.copyOf(q.getParameters());
 
@@ -236,8 +229,14 @@ class PGConditionUtilTest {
                     ;
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE ((data->>'position' = @param000_position) AND (data->>'organization' = @param001_organization))
+                     ORDER BY data->>'_ts' DESC OFFSET 10 LIMIT 20
+                    """;
             assertThat(q.getQueryText().trim()).isEqualTo(
-                    "SELECT * FROM schema1.table1 WHERE ((data->>'position' = @param000_position) AND (data->>'organization' = @param001_organization)) ORDER BY data->>'_ts' DESC OFFSET 10 LIMIT 20");
+                    expected.trim());
 
             var params = List.copyOf(q.getParameters());
 
@@ -251,7 +250,12 @@ class PGConditionUtilTest {
                             Condition.filter("position", "leader"))
                     ;
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
-            assertThat(q.getQueryText()).isEqualTo("SELECT * FROM schema1.table1 WHERE ((data->>'position' = @param000_position)) OFFSET 0 LIMIT 100");
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE ((data->>'position' = @param000_position)) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText()).isEqualTo(expected.trim());
             var params = List.copyOf(q.getParameters());
             assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
         }
@@ -266,7 +270,12 @@ class PGConditionUtilTest {
                     )
                     ;
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
-            assertThat(q.getQueryText()).isEqualTo("SELECT * FROM schema1.table1 WHERE ((data->>'position' = @param000_position)) AND (1=1) OFFSET 0 LIMIT 100");
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE ((data->>'position' = @param000_position)) AND (1=1) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText()).isEqualTo(expected.trim());
             var params = List.copyOf(q.getParameters());
             assertThat(params).hasSize(1);
             assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
@@ -279,7 +288,12 @@ class PGConditionUtilTest {
         var cond = Condition.filter();
         var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
-        assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM schema1.table1 OFFSET 0 LIMIT 100");
+        var expected = """
+                SELECT *
+                 FROM schema1.table1
+                 OFFSET 0 LIMIT 100
+                """;
+        assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
 
         assertThat(q.getParameters()).isEmpty();
 
@@ -293,7 +307,12 @@ class PGConditionUtilTest {
                     List.of());
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
-            assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM schema1.table1 OFFSET 0 LIMIT 100");
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).isEmpty();
         }
 
@@ -302,8 +321,13 @@ class PGConditionUtilTest {
                     List.of(Condition.filter("id", 1)));
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE (((data->>'id')::int = @param000_id)) OFFSET 0 LIMIT 100
+                    """;
             assertThat(q.getQueryText().trim())
-                    .isEqualTo("SELECT * FROM schema1.table1 WHERE (((data->>'id')::int = @param000_id)) OFFSET 0 LIMIT 100");
+                    .isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(1);
         }
 
@@ -312,8 +336,13 @@ class PGConditionUtilTest {
                     List.of());
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE ((data->>'id')::int = @param000_id) OFFSET 0 LIMIT 100
+                    """;
             assertThat(q.getQueryText().trim())
-                    .isEqualTo("SELECT * FROM schema1.table1 WHERE ((data->>'id')::int = @param000_id) OFFSET 0 LIMIT 100");
+                    .isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(1);
         }
 
@@ -322,7 +351,12 @@ class PGConditionUtilTest {
                     List.of(Condition.filter(), Condition.filter()));
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
-            assertThat(q.getQueryText().trim()).isEqualTo("SELECT * FROM schema1.table1 OFFSET 0 LIMIT 100");
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(0);
         }
 
@@ -331,8 +365,13 @@ class PGConditionUtilTest {
                     List.of(Condition.filter()));
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE ((data->>'id')::int = @param000_id) OFFSET 0 LIMIT 100
+                    """;
             assertThat(q.getQueryText().trim())
-                    .isEqualTo("SELECT * FROM schema1.table1 WHERE ((data->>'id')::int = @param000_id) OFFSET 0 LIMIT 100");
+                    .isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(1);
         }
 
@@ -341,8 +380,13 @@ class PGConditionUtilTest {
                     List.of(Condition.filter(), Condition.filter("name", "Tom")));
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE ((data->>'id')::int = @param000_id) AND ((data->>'name' = @param001_name)) OFFSET 0 LIMIT 100
+                    """;
             assertThat(q.getQueryText().trim()).isEqualTo(
-                    "SELECT * FROM schema1.table1 WHERE ((data->>'id')::int = @param000_id) AND ((data->>'name' = @param001_name)) OFFSET 0 LIMIT 100");
+                    expected.trim());
             assertThat(q.getParameters()).hasSize(2);
         }
 
@@ -385,8 +429,630 @@ class PGConditionUtilTest {
             assertThat(q).isEqualTo(" ORDER BY data->>'id' DESC, data->>'_ts' ASC");
         }
 
+    }
+
+
+    @Test
+    void buildQuerySpec_should_work_for_simple_join() {
+        // query with join
+        {
+
+            {
+                // returnAllSubArray false
+                var cond = Condition.filter("area.city.street.rooms.no", "001", "room*no-01.area", 10) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("area.city.street.rooms", "room*no-01"))
+                        .returnAllSubArray(false);
+
+                var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+                var actual = q.getQueryText().replaceAll("@param[0-9a-zA-Z_]+", "@PARAM");
+                var expected = """
+                        SELECT id, jsonb_set(
+                          jsonb_set(
+                          data,
+                          '{"area","city","street","rooms"}',
+                          COALESCE(
+                             (
+                           SELECT jsonb_agg(s2)
+                           FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS s2
+                           WHERE ( (s2->>'no' = @PARAM))
+                         ),
+                            data->'area'->'city'->'street'->'rooms'
+                          )
+                        )
+                        ,
+                          '{"room*no-01"}',
+                          COALESCE(
+                             (
+                           SELECT jsonb_agg(s3)
+                           FROM jsonb_array_elements(data->'room*no-01') AS s3
+                           WHERE ( ((s3->>'area')::int = @PARAM))
+                         ),
+                            data->'room*no-01'
+                          )
+                        )
+                         AS data
+                         FROM schema1.table1
+                         WHERE EXISTS (
+                           SELECT 1
+                           FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS j0
+                           WHERE (j0->>'no' = @PARAM)
+                         ) AND EXISTS (
+                           SELECT 1
+                           FROM jsonb_array_elements(data->'room*no-01') AS j1
+                           WHERE ((j1->>'area')::int = @PARAM)
+                         )
+                         ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
+                        """;
+
+                assertThat(actual).isEqualTo(expected.trim());
+
+                assertThat(q.getParameters()).hasSize(4);
+
+            }
+
+            {
+                // returnAllSubArray true
+                var cond = Condition.filter("area.city.street.rooms.no", "001") //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("area.city.street.rooms"))
+                        .returnAllSubArray(true);
+
+                var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+                var expected = """
+                        SELECT *
+                         FROM schema1.table1
+                         WHERE EXISTS (
+                           SELECT 1
+                           FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS j0
+                           WHERE (j0->>'no' = @param000_no)
+                         )
+                         ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
+                        """;
+                assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+
+                assertThat(q.getParameters()).hasSize(1);
+
+
+            }
+
+            {
+                // LIKE
+                var cond = Condition.filter("area.city.street.rooms.no LIKE", "%01") //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("area.city.street.rooms"))
+                        .returnAllSubArray(false);
+
+
+                var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+                var expected = """
+                        SELECT id, jsonb_set(
+                          data,
+                          '{"area","city","street","rooms"}',
+                          COALESCE(
+                             (
+                           SELECT jsonb_agg(s1)
+                           FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS s1
+                           WHERE ( (s1->>'no' LIKE @param001_no__for_select))
+                         ),
+                            data->'area'->'city'->'street'->'rooms'
+                          )
+                        )
+                         AS data
+                         FROM schema1.table1
+                         WHERE EXISTS (
+                           SELECT 1
+                           FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS j0
+                           WHERE (j0->>'no' LIKE @param000_no)
+                         )
+                         ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
+                        """;
+                assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+
+                assertThat(q.getParameters()).hasSize(2);
+
+            }
+        }
+    }
+
+    @Test
+    void buildQuerySpec_should_work_for_array_contains_any() {
+
+        // without cond.join
+        {
+            // normal case
+            var cond = Condition.filter("rooms ARRAY_CONTAINS_ANY", List.of("003", "009"));
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE (data->'rooms' @> @param000_rooms__0::jsonb OR data->'rooms' @> @param000_rooms__1::jsonb) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(2);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("\"003\"");
+
+        }
+
+        {
+            // normal case for integer
+            var cond = Condition.filter("rooms ARRAY_CONTAINS_ANY", List.of(3, 9));
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE (data->'rooms' @> @param000_rooms__0::jsonb OR data->'rooms' @> @param000_rooms__1::jsonb) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(2);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("3");
+
+        }
+
+
+        {
+            // with filter key "no"
+            var cond = Condition.filter("rooms ARRAY_CONTAINS_ANY no",  List.of("003", "009"));
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE (data->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param000_rooms__no__0)) OR data->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param000_rooms__no__1))) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(2);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__no__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("003");
+
+        }
 
     }
 
+    @Test
+    void buildQuerySpec_should_work_for_array_contains_all() {
+
+        // without cond.join
+        {
+            // normal case
+            var cond = Condition.filter("rooms ARRAY_CONTAINS_ALL", List.of("003", "009"));
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE (data->'rooms' @> @param000_rooms__0::jsonb AND data->'rooms' @> @param000_rooms__1::jsonb) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(2);
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param000_rooms__1");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("\"009\"");
+
+        }
+
+        {
+            // with filter key "no"
+            var cond = Condition.filter("rooms ARRAY_CONTAINS_ALL no",  List.of("003", "009"));
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE (data->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param000_rooms__no__0)) AND data->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param000_rooms__no__1))) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(2);
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param000_rooms__no__1");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("009");
+
+        }
+
+    }
+
+    @Test
+    void buildQuerySpec_should_work_for_array_contains_any_with_join_using_both_name_and_no() {
+
+        {
+            // with returnAllSubArray=false
+            // and filters contain both "name" and "no" on the same join key "floors.rooms"
+            // see docs/postgres-find-with-join.md sample SQL 2
+            var cond = Condition.filter(
+                    "floors.rooms ARRAY_CONTAINS_ANY name",  List.of("r1", "r2"),
+                            "floors.rooms ARRAY_CONTAINS_ANY no",  List.of("001", "002")
+                    )
+                    .join(Set.of("floors"))
+                    .returnAllSubArray(false)
+                    ;
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT id, jsonb_set(
+                      data,
+                      '{"floors"}',
+                      COALESCE(
+                         (
+                       SELECT jsonb_agg(s2)
+                       FROM jsonb_array_elements(data->'floors') AS s2
+                       WHERE ( (s2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__0__for_select)) OR s2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__1__for_select)))
+                       AND (s2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__0__for_select)) OR s2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__1__for_select))))
+                     ),
+                        data->'floors'
+                      )
+                    )
+                     AS data
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j0
+                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                     ) AND EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j1
+                       WHERE (j1->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__0)) OR j1->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__1)))
+                     ) OFFSET 0 LIMIT 100
+                    """;
+
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(8);
+
+            // for "name" contains ["r1", "r2"]
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__name__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param000_rooms__name__1");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("r2");
+
+            // for "no" contains ["001", "002"]
+            assertThat(q.getParameters().get(2).getName()).isEqualTo("@param001_rooms__no__0");
+            assertThat(q.getParameters().get(2).getValue()).isEqualTo("001");
+            assertThat(q.getParameters().get(3).getName()).isEqualTo("@param001_rooms__no__1");
+            assertThat(q.getParameters().get(3).getValue()).isEqualTo("002");
+
+            // for "name" contains ["r1", "r2"] in SELECT
+            assertThat(q.getParameters().get(4).getName()).isEqualTo("@param002_rooms__name__0__for_select");
+            assertThat(q.getParameters().get(4).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(5).getName()).isEqualTo("@param002_rooms__name__1__for_select");
+            assertThat(q.getParameters().get(5).getValue()).isEqualTo("r2");
+
+            // for "no" contains ["001", "002"] in SELECT
+            assertThat(q.getParameters().get(6).getName()).isEqualTo("@param003_rooms__no__0__for_select");
+            assertThat(q.getParameters().get(6).getValue()).isEqualTo("001");
+            assertThat(q.getParameters().get(7).getName()).isEqualTo("@param003_rooms__no__1__for_select");
+            assertThat(q.getParameters().get(7).getValue()).isEqualTo("002");
+
+        }
+
+    }
+
+    @Test
+    void buildQuerySpec_should_work_for_array_contains_all_with_join_using_both_name_and_no() {
+
+        {
+            // with returnAllSubArray=false
+            // and filters contain both "name" and "no" on the same join key "floors.rooms"
+            // see docs/postgres-find-with-join.md sample SQL 2
+            var cond = Condition.filter(
+                            "floors.rooms ARRAY_CONTAINS_ALL name",  List.of("r1", "r2"),
+                            "floors.rooms ARRAY_CONTAINS_ALL no",  List.of("001", "002")
+                    )
+                    .join(Set.of("floors"))
+                    .returnAllSubArray(false)
+                    .fields("id", "floors", "_ts")
+                    .sort("id", "ASC")
+                    ;
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    WITH filtered_data AS (
+                    SELECT id, jsonb_set(
+                      data,
+                      '{"floors"}',
+                      COALESCE(
+                         (
+                       SELECT jsonb_agg(s2)
+                       FROM jsonb_array_elements(data->'floors') AS s2
+                       WHERE ( (s2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__0__for_select)) AND s2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__1__for_select)))
+                       AND (s2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__0__for_select)) AND s2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__1__for_select))))
+                     ),
+                        data->'floors'
+                      )
+                    )
+                     AS data
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j0
+                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) AND j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                     ) AND EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j1
+                       WHERE (j1->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__0)) AND j1->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__1)))
+                     )
+                    )
+                    SELECT
+                    id,
+                    jsonb_build_object('id', data->'id', 'floors', data->'floors', '_ts', data->'_ts') AS "data"
+                    
+                    FROM filtered_data
+                     ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 100
+                    """;
+
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(8);
+
+            // for "name" contains ["r1", "r2"]
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__name__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param000_rooms__name__1");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("r2");
+
+            // for "no" contains ["001", "002"]
+            assertThat(q.getParameters().get(2).getName()).isEqualTo("@param001_rooms__no__0");
+            assertThat(q.getParameters().get(2).getValue()).isEqualTo("001");
+            assertThat(q.getParameters().get(3).getName()).isEqualTo("@param001_rooms__no__1");
+            assertThat(q.getParameters().get(3).getValue()).isEqualTo("002");
+
+            // for "name" contains ["r1", "r2"] in SELECT
+            assertThat(q.getParameters().get(4).getName()).isEqualTo("@param002_rooms__name__0__for_select");
+            assertThat(q.getParameters().get(4).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(5).getName()).isEqualTo("@param002_rooms__name__1__for_select");
+            assertThat(q.getParameters().get(5).getValue()).isEqualTo("r2");
+
+            // for "no" contains ["001", "002"] in SELECT
+            assertThat(q.getParameters().get(6).getName()).isEqualTo("@param003_rooms__no__0__for_select");
+            assertThat(q.getParameters().get(6).getValue()).isEqualTo("001");
+            assertThat(q.getParameters().get(7).getName()).isEqualTo("@param003_rooms__no__1__for_select");
+            assertThat(q.getParameters().get(7).getValue()).isEqualTo("002");
+
+        }
+
+    }
+
+    @Test
+    void buildQuerySpec_should_work_for_array_contains_any_with_join() {
+
+        // with cond.join
+        {
+            // normal case
+            var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", List.of("003", "009")).join(Set.of("rooms"));
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'rooms') AS j0
+                       WHERE (j0->'no' @> @param000_no__0::jsonb OR j0->'no' @> @param000_no__1::jsonb)
+                     ) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(2);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_no__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("\"003\"");
+
+        }
+
+        {
+            // with filter key "no"
+            var cond = Condition.filter("floors.rooms ARRAY_CONTAINS_ANY name",  List.of("r1", "r2")).join(Set.of("floors"));
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j0
+                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                     ) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(2);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__name__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("r1");
+
+        }
+
+        {
+            // with returnAllSubArray=false
+            var cond = Condition.filter("floors.rooms ARRAY_CONTAINS_ANY name",  List.of("r1", "r2"))
+                    .join(Set.of("floors"))
+                    .returnAllSubArray(false)
+                    .offset(0).limit(10)
+                    ;
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT id, jsonb_set(
+                      data,
+                      '{"floors"}',
+                      COALESCE(
+                         (
+                       SELECT jsonb_agg(s1)
+                       FROM jsonb_array_elements(data->'floors') AS s1
+                       WHERE ( (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)) OR s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__1__for_select))))
+                     ),
+                        data->'floors'
+                      )
+                    )
+                     AS data
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j0
+                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                     ) OFFSET 0 LIMIT 10
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(4);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__name__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param000_rooms__name__1");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("r2");
+
+            assertThat(q.getParameters().get(2).getName()).isEqualTo("@param001_rooms__name__0__for_select");
+            assertThat(q.getParameters().get(2).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(3).getName()).isEqualTo("@param001_rooms__name__1__for_select");
+            assertThat(q.getParameters().get(3).getValue()).isEqualTo("r2");
+
+        }
+
+        {
+            // with returnAllSubArray=false and fields, sort
+            var cond = Condition.filter("floors.rooms ARRAY_CONTAINS_ANY name",  List.of("r1", "r2"))
+                    .join(Set.of("floors"))
+                    .returnAllSubArray(false)
+                    .fields("id", "address.street", "area*no-1")
+                    .sort("_ts", "DESC", "address.street", "ASC")
+                    .offset(0).limit(10)
+                    ;
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    WITH filtered_data AS (
+                    SELECT id, jsonb_set(
+                      data,
+                      '{"floors"}',
+                      COALESCE(
+                         (
+                       SELECT jsonb_agg(s1)
+                       FROM jsonb_array_elements(data->'floors') AS s1
+                       WHERE ( (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)) OR s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__1__for_select))))
+                     ),
+                        data->'floors'
+                      )
+                    )
+                     AS data
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j0
+                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                     )
+                    )
+                    SELECT
+                    id,
+                    jsonb_build_object('id', data->'id', 'address', jsonb_build_object('street', data->'address'->'street'), 'area*no-1', data->'area*no-1') AS "data"
+                    
+                    FROM filtered_data
+                     ORDER BY data->>'_ts' DESC, data->'address'->>'street' ASC OFFSET 0 LIMIT 10
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(4);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__name__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param000_rooms__name__1");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("r2");
+
+            assertThat(q.getParameters().get(2).getName()).isEqualTo("@param001_rooms__name__0__for_select");
+            assertThat(q.getParameters().get(2).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(3).getName()).isEqualTo("@param001_rooms__name__1__for_select");
+            assertThat(q.getParameters().get(3).getValue()).isEqualTo("r2");
+
+        }
+
+    }
+
+    @Test
+    void buildQuerySpec_should_work_for_array_contains_all_with_join() {
+
+        // with cond.join
+        {
+            // normal case
+            var cond = Condition.filter("rooms.no ARRAY_CONTAINS_ALL", List.of("003", "009")).join(Set.of("rooms"));
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'rooms') AS j0
+                       WHERE (j0->'no' @> @param000_no__0::jsonb AND j0->'no' @> @param000_no__1::jsonb)
+                     ) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(2);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_no__0");
+
+        }
+
+        {
+            // with filter key "no"
+            var cond = Condition.filter("floors.rooms ARRAY_CONTAINS_ALL name",  List.of("r1", "r2")).join(Set.of("floors"));
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT *
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j0
+                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) AND j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                     ) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(2);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__name__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param000_rooms__name__1");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("r2");
+
+        }
+
+        {
+            // with returnAllSubArray=false
+            var cond = Condition.filter("floors.rooms ARRAY_CONTAINS_ALL name",  List.of("r1"))
+                    .join(Set.of("floors"))
+                    .returnAllSubArray(false)
+                    ;
+            var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+            var expected = """
+                    SELECT id, jsonb_set(
+                      data,
+                      '{"floors"}',
+                      COALESCE(
+                         (
+                       SELECT jsonb_agg(s1)
+                       FROM jsonb_array_elements(data->'floors') AS s1
+                       WHERE ( (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select))))
+                     ),
+                        data->'floors'
+                      )
+                    )
+                     AS data
+                     FROM schema1.table1
+                     WHERE EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(data->'floors') AS j0
+                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)))
+                     ) OFFSET 0 LIMIT 100
+                    """;
+            assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
+            assertThat(q.getParameters()).hasSize(2);
+            assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__name__0");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo("r1");
+            assertThat(q.getParameters().get(1).getName()).isEqualTo("@param001_rooms__name__0__for_select");
+            assertThat(q.getParameters().get(1).getValue()).isEqualTo("r1");
+
+
+        }
+
+
+    }
 
 }
