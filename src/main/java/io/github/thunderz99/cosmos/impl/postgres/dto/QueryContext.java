@@ -18,7 +18,7 @@ public class QueryContext extends RecordData {
 
 
     /**
-     * @Deprecated. use subQueries4Join instead. which is better at returnAllSubArray=false
+     * use subQueries4Join instead. which is better at returnAllSubArray=false
      * Save the query key and params so that we can reuse these in the SELECT clause when join is used and returnAllSubArray = false.
      *
      * <p>
@@ -32,6 +32,7 @@ public class QueryContext extends RecordData {
      * }
      * </p>
      */
+    @Deprecated
     public Map<String, List<Map<String, CosmosSqlParameter>>> subQueries = new LinkedHashMap<>();
 
 

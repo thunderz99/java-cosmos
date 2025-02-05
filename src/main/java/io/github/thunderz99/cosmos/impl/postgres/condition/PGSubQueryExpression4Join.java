@@ -21,9 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 /**
- * @Deprecated we use PGSimpleExpression4Join instead. because PGSimpleExpression4Join is more good at returnAllSubArray=false
- *
- * A class representing simple json path expression, which is used in Condition.join query
+ * A class representing SubQuery(ARRAY_CONTAINS_ANY, ARRAY_CONTAINS_ALL) expression for join, which is used in "Condition.join" query
  * <p>
  * {@code
  *  // simple expression for json path expression

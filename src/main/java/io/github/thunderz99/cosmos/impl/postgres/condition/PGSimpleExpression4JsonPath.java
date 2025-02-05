@@ -19,7 +19,7 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 
 /**
- * @Deprecated we use PGSimpleExpression4Join instead. because PGSimpleExpression4Join is more good at returnAllSubArray=false
+ * we use PGSimpleExpression4Join instead. because PGSimpleExpression4Join is more good at returnAllSubArray=false
  *
  * A class representing simple json path expression, which is used in Condition.join query
  * <p>
@@ -33,6 +33,7 @@ import org.apache.commons.lang3.StringUtils;
  *  //(data @? '$.area.city.street.rooms[*] ? (@.no like_regex "^001.*")'::jsonpath)
  * }
  */
+@Deprecated
 public class PGSimpleExpression4JsonPath implements Expression {
 
 	public static final Pattern binaryOperatorPattern = Pattern.compile("^\\s*(IN|=|!=|<|<=|>|>=)\\s*$");

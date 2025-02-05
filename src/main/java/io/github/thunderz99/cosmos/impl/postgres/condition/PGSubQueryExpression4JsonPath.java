@@ -17,7 +17,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 
 /**
- * @Deprecated use PGSubQueryExpression4Join instead. which is better at returnAllSubArray=false
+ * use PGSubQueryExpression4Join instead. which is better at returnAllSubArray=false
  * a class representing expression using subqueries and array operations(ARRAY_CONTAINS_ANY, ARRAY_CONTAINS_ALL), used in json path query
  *
  * {@code
@@ -28,6 +28,7 @@ import org.apache.commons.lang3.tuple.Pair;
  *     see postgres json path query for details
  * </p>
  */
+@Deprecated
 public class PGSubQueryExpression4JsonPath implements Expression {
 
 	public static final String ARRAY_CONTAINS_ANY = "ARRAY_CONTAINS_ANY";
