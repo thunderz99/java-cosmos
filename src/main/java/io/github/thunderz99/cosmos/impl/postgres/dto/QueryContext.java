@@ -18,7 +18,7 @@ public class QueryContext extends RecordData {
 
 
     /**
-     * use subQueries4Join instead. which is better at returnAllSubArray=false
+     * Deprecated. use filterQueryInfos4Join instead. which is better at returnAllSubArray=false
      * Save the query key and params so that we can reuse these in the SELECT clause when join is used and returnAllSubArray = false.
      *
      * <p>
@@ -37,6 +37,7 @@ public class QueryContext extends RecordData {
 
 
     /**
+     * {@code
      * {
      *   "floors":[
      *      {
@@ -53,7 +54,18 @@ public class QueryContext extends RecordData {
      *        "paramIndex": paramIndex,
      *        "subExp": PGSimpleExpression | PGSubQueryExpression
      *      }
+     *    ],
+     *    "children":[
+     *      {
+     *        "baseKey": "children",
+     *        "remainedJoinKey": "",
+     *        "filterKey": "age",
+     *        "paramIndex": paramIndex,
+     *        "subExp": PGSimpleExpression | PGSubQueryExpression
+     *      }
      *    ]
+     *
+     * }
      * }
      */
     public Map<String, List<FilterQueryInfo4Join>> filterQueryInfos4Join = new LinkedHashMap<>();

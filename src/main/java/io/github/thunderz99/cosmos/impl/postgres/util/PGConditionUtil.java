@@ -403,7 +403,7 @@ public class PGConditionUtil {
         }
 
         //default key / value expression
-        // TODO PGOrExpressions for JsonPath
+        // TODO PGOrExpressions for join
 
         return parseExpression4SimpleMatcher(key, key, value, "", join, queryContext);
     }

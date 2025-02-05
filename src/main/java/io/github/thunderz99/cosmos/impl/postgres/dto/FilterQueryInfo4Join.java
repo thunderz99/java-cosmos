@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>
  * Because we need to filter out the subArray when join and (returnAllSubArray=false),
- * and the filter condition is the SELECT clause is almost the same as the WHERE clause.
+ * and the filter condition in the SELECT clause is almost the same as the WHERE clause.
  * We save this information in this class, in order to let the SELECT clause generation be easier.
  *
  * see docs/postgres-find-with-join.md for details
@@ -38,7 +38,7 @@ public class FilterQueryInfo4Join {
 
 
     /**
-     * remainedKey for join. e.g. "rooms"  ("floors.rooms" whose baseKey part is removed)
+     * remainedJoinKey for join. e.g. "rooms"  ("floors.rooms" whose baseKey part is removed)
      */
     public String remainedJoinKey;
 
