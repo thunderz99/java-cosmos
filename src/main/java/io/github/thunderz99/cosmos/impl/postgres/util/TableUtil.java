@@ -1113,6 +1113,66 @@ public class TableUtil {
         return new CosmosDocument(map);
     }
 
+    /**
+     * aggregate records from a table with condition in a querySpec(queryText and params)
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param querySpec       the querySpec to find(including queryText and params)
+     * @return aggregate results
+     * @throws SQLException if a database error occurs
+     */
+    public static List<PostgresRecord> aggregateRecords(Connection conn, String schemaName, String tableName, CosmosSqlQuerySpec querySpec) throws Exception {
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+
+        Checker.checkNotNull(querySpec, "querySpec");
+        Checker.checkNotBlank(querySpec.queryText, "querySpec.queryText");
+
+        querySpec = NamedParameterUtil.convert(querySpec);
+
+        var sql = querySpec.queryText;
+        var params = querySpec.params;
+
+
+        try (var pstmt = conn.prepareStatement(sql)) {
+
+            setParamsForStatement(conn, params, pstmt);
+            var ret = new ArrayList<PostgresRecord>();
+            // Execute the query and return the result
+
+            var rowNumber = 0;
+            try (var resultSet = pstmt.executeQuery()) {
+                while (resultSet.next()) {
+                    // Create a map to hold column names and their values for this row.
+                    Map<String, Object> row = new HashMap<>();
+
+                    // Retrieve the metadata from the ResultSet
+                    var metaData = resultSet.getMetaData();
+                    int columnCount = metaData.getColumnCount();
+
+                    // Loop through all columns by index (starting at 1)
+                    for (int i = 1; i <= columnCount; i++) {
+                        // You can use getColumnName or getColumnLabel
+                        String columnName = metaData.getColumnLabel(i);
+                        Object value = resultSet.getObject(i);
+                        row.put(columnName, value);
+                    }
+
+                    // Construct your PostgresRecord (adjust constructor as needed)
+                    ret.add(new PostgresRecord(String.valueOf(rowNumber), row));
+                    rowNumber++;
+                }
+                return ret;
+            }
+        } catch (SQLException e) {
+            log.warn("Error when find records in table'{}.{}'. sql:{}", schemaName, tableName, querySpec.queryText, e);
+            throw e;
+        }
+    }
+
 
     /**
      * find records from a table with condition in a querySpec(queryText and params)

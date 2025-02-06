@@ -23,7 +23,7 @@ public class AggregateUtil {
 
     public static final String REGEX_AS = "(?i)\\s+AS\\s+";
 
-    private static final Pattern FUNCTION_PATTERN = Pattern.compile("^(?i)(?:SUM|AVG|MIN|MAX|COUNT)\\(([^)]+)\\)$");
+    private static final Pattern FUNCTION_PATTERN = Pattern.compile("^(?i)(?:SUM|AVG|MIN|MAX|COUNT|ARRAY_LENGTH)\\(([^)]+)\\)$");
 
     /**
      * Project fields with renamed keys if key name contains dot "."
@@ -194,7 +194,7 @@ public class AggregateUtil {
      * @param function
      * @return
      */
-    static String extractFieldFromFunction(String function) {
+    public static String extractFieldFromFunction(String function) {
 
         if (StringUtils.isEmpty(function)) {
             return function;
@@ -313,7 +313,7 @@ public class AggregateUtil {
      * @param field
      * @return simple field name without "__"
      */
-    static String getSimpleName(String field) {
+    public static String getSimpleName(String field) {
         if (StringUtils.isEmpty(field)) {
             return field;
         }
@@ -373,7 +373,7 @@ public class AggregateUtil {
      * @param input
      * @return fieldName using dot
      */
-    static Pair<String, String> extractFunctionAndAlias(String input) {
+    public static Pair<String, String> extractFunctionAndAlias(String input) {
         if (StringUtils.isEmpty(input)) {
             return Pair.of("", "");
         }
