@@ -951,6 +951,8 @@ public class Condition {
         cond.fields = new LinkedHashSet<>(this.fields);
         cond.crossPartition = this.crossPartition;
         cond.negative = this.negative;
+        cond.join = this.join;
+        cond.returnAllSubArray = this.returnAllSubArray;
 
         if (this.rawQuerySpec != null) {
             cond.rawQuerySpec = this.rawQuerySpec.copy();

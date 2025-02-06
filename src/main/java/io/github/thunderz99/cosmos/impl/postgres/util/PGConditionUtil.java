@@ -9,6 +9,9 @@ import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.impl.postgres.condition.*;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
+import io.github.thunderz99.cosmos.util.AggregateUtil;
+import io.github.thunderz99.cosmos.util.Checker;
+import io.github.thunderz99.cosmos.util.FieldNameUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -78,7 +81,7 @@ public class PGConditionUtil {
         // sort
         if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
             var sorts = buildSorts(cond.sort);
-            queryText.append("\n" + sorts);
+            queryText.append("\n").append(sorts);
         }
 
         // offset and limit
@@ -86,6 +89,179 @@ public class PGConditionUtil {
 
         return new CosmosSqlQuerySpec(queryText.toString(), params);
 
+    }
+
+    /**
+     * Generate an aggregate query spec for postgres from a Condition obj
+     *
+     * @param coll
+     * @param cond
+     * @param aggregate
+     * @param partition
+     * @return querySpec for postgres
+     */
+    public static CosmosSqlQuerySpec toQuerySpec4Aggregate(String coll, Condition cond, Aggregate aggregate,String partition) {
+
+        // When rawSql is set, other filter / limit / offset / sort will be ignored.
+        if (cond.rawQuerySpec != null) {
+            return cond.rawQuerySpec;
+        }
+
+        // we will modify the condition, so make a copy in order to avoid side effect
+        cond = cond.copy();
+        cond.returnAllSubArray = true;
+
+        var schema = TableUtil.checkAndNormalizeValidEntityName(coll);
+        var table = TableUtil.checkAndNormalizeValidEntityName(partition);
+
+        // select
+        var select = generateAggregateSelect(aggregate);
+
+        var initialText = String.format("SELECT %s\n FROM %s.%s\n", select, schema, table);
+        var initialParams = new ArrayList<CosmosSqlParameter>();
+        var initialConditionIndex = new AtomicInteger(0);
+        var initialParamIndex = new AtomicInteger(0);
+
+        var queryContext = QueryContext.create();
+        var filterQuery = generateFilterQuery(cond, initialText, initialParams, initialConditionIndex, initialParamIndex, queryContext);
+
+        var queryText = filterQuery.queryText;
+        var params = filterQuery.params;
+
+        // group by
+        if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+            var groupBy = aggregate.groupBy.stream().map(g -> PGKeyUtil.getFormattedKey(g)).collect(Collectors.joining(", "));
+            queryText.append("\n GROUP BY ").append(groupBy);
+        }
+
+        // sort (inner sort will be ignored for aggregate)
+        // no need to deal with
+
+        // offset and limit will be set and the following condition
+        // 1. groupBy is enabled
+        // 2. outer query is null. if outer query is enabled, setting inner offset / limit will cause sql exception in cosmosdb
+        if (CollectionUtils.isNotEmpty(aggregate.groupBy) && aggregate.condAfterAggregate == null) {
+            queryText.append(String.format("\n OFFSET %d LIMIT %d", cond.offset, cond.limit));
+        }
+
+
+        // TODO: condition after aggregation
+
+        return new CosmosSqlQuerySpec(queryText.toString(), params);
+
+    }
+
+    /**
+     * generate select parts for aggregate
+     *
+     * @param aggregate
+     * @return
+     */
+    static String generateAggregateSelect(Aggregate aggregate) {
+
+        Checker.checkNotNull(aggregate, "aggregate");
+
+        var select = new ArrayList<String>();
+
+        // $1 $2 $3... used for aggregate function or group by that without alias "e.g. COUNT(1)" without " AS facetCount"
+        var columnIndex = 1;
+
+        if (StringUtils.isNotEmpty(aggregate.function)) {
+
+            var functionParts = aggregate.function.split(",");
+
+            // Add accumulators for each aggregate function
+            for (var functionPart : functionParts) {
+
+                // for functionPart = "SUM(c.room.area) AS areaSum"
+                // for functionPart = "COUNT(1) AS facetCount"
+
+                // { SUM(c.room.area), areaSum }
+                // { COUNT(1), facetCount }
+                var functionAndAlias = AggregateUtil.extractFunctionAndAlias(functionPart);
+
+                // SUM(c.room.area)
+                // COUNT(1)
+                var function = functionAndAlias.getLeft();
+
+                // areaSum
+                // facetCount
+                var alias = functionAndAlias.getRight();
+
+                // c.room.area
+                // 1
+                var field = AggregateUtil.extractFieldFromFunction(function);
+
+                // room.area
+                var dotFieldName = FieldNameUtil.convertToDotFieldName(field);
+
+                if(StringUtils.isEmpty(alias)){
+                    // area
+                    alias = PGAggregateUtil.getSimpleName(dotFieldName);
+
+                    if(StringUtils.equalsAny(alias, "1", "*")){
+                        // $1
+                        alias = "$" + columnIndex++;
+                    }
+                }
+
+
+                var formattedKey = "";
+                if(StringUtils.equals(function, field)){
+                    // c['address']['state'] as result
+                    // just a simple query without aggregate function
+                    // data->'address'->>'state'
+                    formattedKey = PGKeyUtil.getFormattedKey(dotFieldName);
+
+                } else if(StringUtils.containsIgnoreCase(function, "array_length(")) {
+                    // array_length works for a jsonb array
+                    // data->'floor'->'rooms'  as a jsonb array
+                    formattedKey = PGKeyUtil.getFormattedKey4JsonWithAlias(dotFieldName, TableUtil.DATA);
+                } else {
+                    // (data->'room'->>'area')::numeric
+                    // TODO deal with other type(e.g string)
+                    formattedKey = "(%s)::numeric".formatted(PGKeyUtil.getFormattedKey(dotFieldName));
+                }
+
+                if(StringUtils.equalsAny(field, "1", "*")){
+                    // do nothing, the COUNT(1) should not be changed
+                } else {
+                    // SUM(rooms.area) -> SUM(data->'room'->>'area')
+                    function = StringUtils.replace(function, field, formattedKey);
+                }
+
+                // for array_length
+                // array_length not work in postgres JSONB column, use jsonb_array_length instead
+                if(StringUtils.containsIgnoreCase(function, "array_length(")){
+                    function = StringUtils.replaceIgnoreCase(function, "array_length(", "jsonb_array_length(");
+                }
+
+                select.add("%s AS \"%s\"".formatted(function, alias));
+            }
+
+        }
+
+        if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+
+            for(var groupBy : aggregate.groupBy){
+                if(StringUtils.isBlank(groupBy)){
+                    continue;
+                }
+                var dotFieldName = FieldNameUtil.convertToDotFieldName(groupBy);
+
+                var simpleName = PGAggregateUtil.getSimpleName(dotFieldName);
+
+                var formattedKey = PGKeyUtil.getFormattedKey(dotFieldName);
+                select.add("%s AS \"%s\"".formatted(formattedKey, simpleName));
+            }
+
+        }
+
+        if (select.isEmpty()) {
+            throw new IllegalArgumentException("aggregate and function cannot both be empty");
+        }
+
+        return select.stream().collect(Collectors.joining(", "));
     }
 
 

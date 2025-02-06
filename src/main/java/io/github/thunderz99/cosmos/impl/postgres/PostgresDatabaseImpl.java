@@ -8,6 +8,7 @@ import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.impl.postgres.util.PGAggregateUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGConditionUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TTLUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
@@ -17,6 +18,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.bson.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -655,35 +657,6 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     }
 
     /**
-     * Process result of aggregate. convert Long value to Integer if possible.
-     * <p>
-     * Because "itemsCount: 1L" is not acceptable by some users. They prefer "itemsCount: 1" more.
-     * </p>
-     *
-     * @param maps
-     * @return
-     */
-    static List<? extends Map> convertAggregateResultsToInteger(List<? extends Map> maps) {
-
-        if (CollectionUtils.isEmpty(maps)) {
-            return maps;
-        }
-
-        for (var map : maps) {
-            map.replaceAll((key, value) -> {
-                // Check if the value is an instance of Long
-                if (value instanceof Number) {
-                    var numberValue = (Number) value;
-                    return NumberUtil.convertNumberToIntIfCompatible(numberValue);
-                }
-                return value; // Return the original value if no conversion is needed
-            });
-        }
-
-        return maps;
-    }
-
-    /**
      * do an aggregate query by Aggregate and Condition
      * <p>
      * {@code
@@ -725,73 +698,26 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      * @throws Exception Cosmos client exception
      */
     public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception {
-//        var container = this.client.getDatabase(coll).getCollection(partition);
-//
-//        // Process the condition into a BSON filter
-//        var filter = ConditionUtil.toBsonFilter(cond);
-//
-//        // Create the aggregation pipeline stages
-//        List<Bson> pipeline = new ArrayList<>();
-//
-//        // 1. Add the match stage based on the filter
-//        if (filter != null) {
-//            pipeline.add(Aggregates.match(filter));
-//        }
-//
-//        // 2. Add the project stage to rename fields with dots
-//        var projectStage = AggregateUtil.createProjectStage(aggregate);
-//        if (!projectStage.toBsonDocument().isEmpty()) {
-//            pipeline.add(projectStage);
-//        }
-//
-//        // 3. Add the group stage
-//        var groupStage = AggregateUtil.createGroupStage(aggregate);
-//        if (CollectionUtils.isNotEmpty(groupStage)) {
-//            pipeline.addAll(groupStage);
-//        }
-//
-//        // 4. Add optional offset, limit if specified in Condition
-//        // We do not need inner offset and limit in aggregate. Please set them in condAfterAggregate
-//
-//        // 5. Add a final project stage to flatten the _id and rename fields
-//        var finalProjectStage = AggregateUtil.createFinalProjectStage(aggregate);
-//        pipeline.add(finalProjectStage);
-//
-//        // 6. add filter / sort / offset / limit using condAfterAggregate
-//
-//        var condAfter = aggregate.condAfterAggregate;
-//        if (condAfter != null) {
-//            // 6.1 filter
-//            var filterAfter = ConditionUtil.processNor(ConditionUtil.toBsonFilter(condAfter));
-//            if (filterAfter != null) {
-//                pipeline.add(Aggregates.match(filterAfter));
-//            }
-//
-//            // 6.2 sort
-//            var sort = ConditionUtil.toBsonSort(condAfter.sort);
-//            if (sort != null) {
-//                pipeline.add(Aggregates.sort(sort));
-//            }
-//
-//            // 6.3 offset / limit
-//            pipeline.add(Aggregates.skip(condAfter.offset));
-//            pipeline.add(Aggregates.limit(condAfter.limit));
-//        }
-//
-//        // Execute the aggregation pipeline
-//        List<Document> results = container.aggregate(pipeline).into(new ArrayList<>());
-//
-//        // after process if an aggregate result is empty
-//        if (results.isEmpty()) {
-//            results = AggregateUtil.processEmptyAggregateResults(aggregate, results);
-//        } else {
-//            // convert aggregate result to Integer if possible
-//            convertAggregateResultsToInteger(results);
-//        }
-//
-//        // Return the results as CosmosDocumentList
-//        return new CosmosDocumentList(results);
-        throw new NotImplementedException();
+
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+
+        if (cond == null) {
+            cond = new Condition();
+        }
+
+        var querySpec = PGConditionUtil.toQuerySpec4Aggregate(coll, cond, aggregate, partition);
+
+        // TODO: RetryUtil.executeWithRetry
+
+        try(var conn = this.dataSource.getConnection()) {
+            var records = TableUtil.aggregateRecords(conn, coll, partition, querySpec);
+            List<Map<String, Object>> maps = records.stream().map(r -> r.data).toList();
+            // Process result of aggregate. convert Long value to Integer if possible.
+            // Because "itemsCount: 1L" is not acceptable by some users. They prefer "itemsCount: 1" more.
+            maps = PGAggregateUtil.convertAggregateResultsToInteger(maps);
+            return new CosmosDocumentList(maps);
+        }
     }
 
     /**
