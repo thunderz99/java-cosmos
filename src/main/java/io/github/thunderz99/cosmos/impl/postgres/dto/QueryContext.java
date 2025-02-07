@@ -71,6 +71,20 @@ public class QueryContext extends RecordData {
     public Map<String, List<FilterQueryInfo4Join>> filterQueryInfos4Join = new LinkedHashMap<>();
 
     /**
+     * Whether the query is in "after aggregation" context
+     *
+     * <p>
+     *     if in after aggregation context, the filter key should differ from the original data->xxx format
+     *     {@code
+     *         // if false: WHERE (data->>'facetCount')::int > @param000_facetCount
+     *         // if true: WHERE "facetCount" > @param000_facetCount
+     *     }
+     *
+     * </p>
+     */
+    public boolean afterAggregation = false;
+
+    /**
      * Factory method
      * @return new FilterOptions
      */
@@ -79,5 +93,14 @@ public class QueryContext extends RecordData {
     }
 
 
+    /**
+     * set the afterAggregation context
+     * @param afterAggregation
+     * @return self
+     */
+    public QueryContext afterAggregation(boolean afterAggregation){
+        this.afterAggregation = afterAggregation;
+        return this;
+    }
 
 }

@@ -28,7 +28,12 @@ public class NamedParameterUtil {
     public static CosmosSqlQuerySpec convert(CosmosSqlQuerySpec querySpec) {
 
         var sql = querySpec.queryText;
-        var paramMap = querySpec.params.stream().collect(Collectors.toMap(CosmosSqlParameter::getName, CosmosSqlParameter::getValue));
+
+        Map<String, Object> paramMap = new LinkedHashMap<>();
+        for (var param : querySpec.params) {
+            // we can save null value here
+            paramMap.put(param.getName(), param.getValue());
+        }
 
         return convert(sql, paramMap);
     }

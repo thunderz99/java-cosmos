@@ -9,6 +9,9 @@ import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.impl.postgres.condition.*;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
+import io.github.thunderz99.cosmos.util.AggregateUtil;
+import io.github.thunderz99.cosmos.util.Checker;
+import io.github.thunderz99.cosmos.util.FieldNameUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -78,7 +81,7 @@ public class PGConditionUtil {
         // sort
         if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
             var sorts = buildSorts(cond.sort);
-            queryText.append("\n" + sorts);
+            queryText.append("\n").append(sorts);
         }
 
         // offset and limit
@@ -86,6 +89,280 @@ public class PGConditionUtil {
 
         return new CosmosSqlQuerySpec(queryText.toString(), params);
 
+    }
+
+    /**
+     * Generate an aggregate query spec for postgres from a Condition obj
+     *
+     * @param coll
+     * @param cond
+     * @param aggregate
+     * @param partition
+     * @return querySpec for postgres
+     */
+    public static CosmosSqlQuerySpec toQuerySpec4Aggregate(String coll, Condition cond, Aggregate aggregate,String partition) {
+
+        // When rawSql is set, other filter / limit / offset / sort will be ignored.
+        if (cond.rawQuerySpec != null) {
+            return cond.rawQuerySpec;
+        }
+
+        // we will modify the condition, so make a copy in order to avoid side effect
+        cond = cond.copy();
+        cond.returnAllSubArray = true;
+
+        var schema = TableUtil.checkAndNormalizeValidEntityName(coll);
+        var table = TableUtil.checkAndNormalizeValidEntityName(partition);
+
+        // select
+        var select = generateAggregateSelect(aggregate);
+
+        var initialText = String.format("SELECT %s\n FROM %s.%s\n", select, schema, table);
+        var initialParams = new ArrayList<CosmosSqlParameter>();
+        var initialConditionIndex = new AtomicInteger(0);
+        var initialParamIndex = new AtomicInteger(0);
+
+        var queryContext = QueryContext.create();
+        var filterQuery = generateFilterQuery(cond, initialText, initialParams, initialConditionIndex, initialParamIndex, queryContext);
+
+        var queryText = filterQuery.queryText;
+        var params = filterQuery.params;
+
+        // group by
+        if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+            var groupBy = aggregate.groupBy.stream().map(g -> PGKeyUtil.getFormattedKey(g)).collect(Collectors.joining(", "));
+            queryText.append("\n GROUP BY ").append(groupBy);
+        }
+
+        // sort (inner sort will be ignored for aggregate)
+        // no need to deal with
+
+        // offset and limit will be set and the following condition
+        // 1. groupBy is enabled
+        // 2. outer query is null. if outer query is enabled, setting inner offset / limit will cause sql exception in cosmosdb
+        if (CollectionUtils.isNotEmpty(aggregate.groupBy) && aggregate.condAfterAggregate == null) {
+            queryText.append(String.format("\n OFFSET %d LIMIT %d", cond.offset, cond.limit));
+
+            // if sort is not empty, we have to add it to condAfterAggregate
+            // because sort only works in the outer query
+            if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
+                aggregate.condAfterAggregate = Condition.filter().sort(cond.sort.toArray(new String[0]));
+            }
+
+        }
+
+        // condition after aggregation
+        FilterQuery filterQueryAgg = null;
+        if (aggregate.condAfterAggregate != null) {
+
+            // only works when groupBy is enabled
+            if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+
+                var condAfter = aggregate.condAfterAggregate;
+                // select
+
+                //After GROUP BY, the WHERE / ORDER BY / LIMIT must be added as an outer query
+                /** e.g
+                 *  SELECT * FROM (
+                 *    SELECT COUNT(1) AS facetCount, data->>'status' AS "status", data->>'createdBy' AS "createdBy"
+                 *    FROM schema1.table1
+                 *    WHERE data->>'name' LIKE "%Tom%" GROUP BY c.status, c.createdBy
+                 *  ) agg
+                 *  WHERE "createdBy" > "2021-01-01"
+                 *  ORDER BY "status" ASC NULLS FIRST
+                 *  OFFSET 0 LIMIT 100
+                 */
+                queryText.insert(0, "SELECT * FROM (");
+                //use "agg" as outer select clause's collection alias
+                queryText.append(") agg\n");
+
+                // filter after agg
+
+                var initialConditionIndexAgg = new AtomicInteger();
+
+                // note that the afterAggregation is set to true in QueryContext. see QueryContext.afterAggregation for details
+                filterQueryAgg = PGConditionUtil.generateFilterQuery(condAfter, queryText.toString(), params, initialConditionIndexAgg, initialParamIndex,
+                        QueryContext.create().afterAggregation(true));
+
+                // special logic for aggregate with cross-partition=true and sort is empty
+                // We have to add a default sort to overcome a bug.
+                // see https://social.msdn.microsoft.com/Forums/en-US/535c7e4a-f5cb-4aa3-90f5-39a2c8024191/group-by-fails-for-crosspartition-queries?forum=azurecosmosdb
+
+                if (CollectionUtils.isEmpty(condAfter.sort)) {
+                    // use the groupBy's first field to sort
+                    condAfter.sort = new ArrayList<>();
+                    condAfter.sort.add(aggregate.groupBy.stream().collect(Collectors.toList()).get(0));
+                    condAfter.sort.add("ASC");
+                }
+
+                // sort after agg
+                // Note that only field like "status" "name" can be sort after group by.
+                // aggregation value like "count" cannot be used in sort after group by in CosmosDB, but can be used in postgres.
+
+                if (!CollectionUtils.isEmpty(condAfter.sort) && condAfter.sort.size() > 1) {
+                    var sortMap = new LinkedHashMap<String, String>();
+
+                    // sort after aggregation, should use alias after "AS" ("lastName" / "facetCount"), instead of data->>'lastName'
+
+                    /**
+                     * SELECT * FROM (
+                     * SELECT COUNT(1) AS "facetCount", data->>'lastName' AS "lastName"
+                     *  FROM unittest_postgres_5bwo.families
+                     *  GROUP BY data->>'lastName'
+                     * ) agg
+                     *  WHERE "facetCount" > 1
+                     *  ORDER BY "lastName" ASC NULLS FIRST
+                     *  OFFSET 0 LIMIT 10
+                     */
+
+
+                    for (int i = 0; i < condAfter.sort.size(); i++) {
+                        if (i % 2 == 0) {
+                            var direction = condAfter.sort.get(i + 1).toUpperCase();
+                            if(StringUtils.equals(direction, "ASC")){
+                                // this is added to be compatible with cosmosdb
+                                // because cosmosdb acts the same as "ASC NULLS FIRST" / "DESC NULLS LAST"
+                                direction = "ASC NULLS FIRST";
+                            } else {
+                                direction = "DESC NULLS LAST";
+                            }
+                            sortMap.put(condAfter.sort.get(i), direction);
+                        }
+                    }
+
+                    var sorts = sortMap.entrySet().stream()
+                            .map(entry -> String.format(" \"%s\" %s", entry.getKey(), entry.getValue().toUpperCase()))
+                            .collect(Collectors.joining(",", "\n ORDER BY", ""));
+
+                    filterQueryAgg.queryText.append(sorts);
+                }
+
+                // offset and limit after agg
+                filterQueryAgg.queryText.append(String.format("\n OFFSET %d LIMIT %d", condAfter.offset, condAfter.limit));
+            }
+
+        }
+
+        if (filterQueryAgg != null) {
+            queryText = filterQueryAgg.queryText;
+            params = filterQueryAgg.params;
+        }
+
+        return new CosmosSqlQuerySpec(queryText.toString(), params);
+
+    }
+
+    /**
+     * generate select parts for aggregate
+     *
+     * @param aggregate
+     * @return
+     */
+    static String generateAggregateSelect(Aggregate aggregate) {
+
+        Checker.checkNotNull(aggregate, "aggregate");
+
+        var select = new ArrayList<String>();
+
+        // $1 $2 $3... used for aggregate function or group by that without alias "e.g. COUNT(1)" without " AS facetCount"
+        var columnIndex = 1;
+
+        if (StringUtils.isNotEmpty(aggregate.function)) {
+
+            var functionParts = aggregate.function.split(",");
+
+            // Add accumulators for each aggregate function
+            for (var functionPart : functionParts) {
+
+                // for functionPart = "SUM(c.room.area) AS areaSum"
+                // for functionPart = "COUNT(1) AS facetCount"
+
+                // { SUM(c.room.area), areaSum }
+                // { COUNT(1), facetCount }
+                var functionAndAlias = AggregateUtil.extractFunctionAndAlias(functionPart);
+
+                // SUM(c.room.area)
+                // COUNT(1)
+                var function = functionAndAlias.getLeft();
+
+                // areaSum
+                // facetCount
+                var alias = functionAndAlias.getRight();
+
+                // c.room.area
+                // 1
+                var field = AggregateUtil.extractFieldFromFunction(function);
+
+                // room.area
+                var dotFieldName = FieldNameUtil.convertToDotFieldName(field);
+
+                if(StringUtils.isEmpty(alias)){
+                    // area
+                    alias = PGAggregateUtil.getSimpleName(dotFieldName);
+
+                    if(StringUtils.equalsAny(alias, "1", "*")){
+                        // $1
+                        alias = "$" + columnIndex++;
+                    }
+                }
+
+
+                var formattedKey = "";
+                if(StringUtils.equals(function, field)){
+                    // c['address']['state'] as result
+                    // just a simple query without aggregate function
+                    // data->'address'->>'state'
+                    formattedKey = PGKeyUtil.getFormattedKey(dotFieldName);
+
+                } else if(StringUtils.containsIgnoreCase(function, "array_length(")) {
+                    // array_length works for a jsonb array
+                    // data->'floor'->'rooms'  as a jsonb array
+                    formattedKey = PGKeyUtil.getFormattedKey4JsonWithAlias(dotFieldName, TableUtil.DATA);
+                } else {
+                    // (data->'room'->>'area')::numeric
+                    // TODO deal with other type(e.g string)
+                    formattedKey = "(%s)::numeric".formatted(PGKeyUtil.getFormattedKey(dotFieldName));
+                }
+
+                if(StringUtils.equalsAny(field, "1", "*")){
+                    // do nothing, the COUNT(1) should not be changed
+                } else {
+                    // SUM(rooms.area) -> SUM(data->'room'->>'area')
+                    function = StringUtils.replace(function, field, formattedKey);
+                }
+
+                // for array_length
+                // array_length not work in postgres JSONB column, use jsonb_array_length instead
+                if(StringUtils.containsIgnoreCase(function, "array_length(")){
+                    function = StringUtils.replaceIgnoreCase(function, "array_length(", "jsonb_array_length(");
+                }
+
+                select.add("%s AS \"%s\"".formatted(function, alias));
+            }
+
+        }
+
+        if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+
+            for(var groupBy : aggregate.groupBy){
+                if(StringUtils.isBlank(groupBy)){
+                    continue;
+                }
+                var dotFieldName = FieldNameUtil.convertToDotFieldName(groupBy);
+
+                var simpleName = PGAggregateUtil.getSimpleName(dotFieldName);
+
+                var formattedKey = PGKeyUtil.getFormattedKey(dotFieldName);
+                select.add("%s AS \"%s\"".formatted(formattedKey, simpleName));
+            }
+
+        }
+
+        if (select.isEmpty()) {
+            throw new IllegalArgumentException("aggregate and function cannot both be empty");
+        }
+
+        return select.stream().collect(Collectors.joining(", "));
     }
 
 
@@ -198,7 +475,9 @@ public class PGConditionUtil {
 
         var join = new LinkedHashSet(cond.join);
 
-        var selectAlias = TableUtil.DATA;
+        // if under after aggregation context, the select alias will be empty(data->xxx should not be used for afterAggregation)
+        // see QueryContext.afterAggregation for detail
+        var selectAlias = queryContext.afterAggregation ? "" :TableUtil.DATA;
 
         for (var entry : cond.filter.entrySet()) {
 

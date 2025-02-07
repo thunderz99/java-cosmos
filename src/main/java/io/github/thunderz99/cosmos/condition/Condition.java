@@ -338,7 +338,7 @@ public class Condition {
         var params = filterQuery.params;
 
         // group by
-        if (!CollectionUtils.isEmpty(aggregate.groupBy)) {
+        if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
             var groupBy = aggregate.groupBy.stream().map(g -> getFormattedKey(g)).collect(Collectors.joining(", "));
             queryText.append(" GROUP BY ").append(groupBy);
         }
@@ -951,6 +951,8 @@ public class Condition {
         cond.fields = new LinkedHashSet<>(this.fields);
         cond.crossPartition = this.crossPartition;
         cond.negative = this.negative;
+        cond.join = this.join;
+        cond.returnAllSubArray = this.returnAllSubArray;
 
         if (this.rawQuerySpec != null) {
             cond.rawQuerySpec = this.rawQuerySpec.copy();

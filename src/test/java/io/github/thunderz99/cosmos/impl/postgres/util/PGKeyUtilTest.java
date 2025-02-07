@@ -31,19 +31,17 @@ class PGKeyUtilTest {
         }
 
         {
+            // normal cases for alias = empty (afterAggregation pattern)
+            // see QueryContext.afterAggregation for details
+            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", null, 1)).isEqualTo("\"age\"");
+            assertThat(PGKeyUtil.getFormattedKeyWithAlias("address", "", true)).isEqualTo("\"address\"");
+        }
+
+        {
             // irregular cases for value
             assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", null)).isEqualTo("data->>'age'");
             assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", "")).isEqualTo("data->>'age'");
             assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", " ")).isEqualTo("data->>'age'");
-        }
-        {
-            // irregular cases for selectAlias
-            assertThatThrownBy(() -> PGKeyUtil.getFormattedKeyWithAlias("age", null, "abc"))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("selectAlias should be non-blank");
-            assertThatThrownBy(() -> PGKeyUtil.getFormattedKeyWithAlias("age", "", "abc"))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("selectAlias should be non-blank");
         }
         {
             // irregular cases for value when "value instanceof Collection<?>"

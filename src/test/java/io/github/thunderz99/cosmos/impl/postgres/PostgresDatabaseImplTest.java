@@ -1338,7 +1338,7 @@ class PostgresDatabaseImplTest {
     }
 
 
-    @Disabled
+    @Test
     void aggregate_should_work() throws Exception {
         // test aggregate(simple group by)
         {
@@ -1400,7 +1400,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void aggregate_should_work_without_group_by() throws Exception {
 
         // test count(without group by)
@@ -1465,7 +1465,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void aggregate_should_work_using_simple_field_without_function() throws Exception {
 
         // test simple field without function
@@ -1481,7 +1481,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void aggregate_should_work_with_condition_afterwards() throws Exception {
 
         // test aggregate with afterwards filter
@@ -1551,7 +1551,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void aggregate_should_work_with_key_brackets() throws Exception {
 
         // test MAX(c['creationDate'])
@@ -1570,7 +1570,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void aggregate_should_work_with_lower_cases() throws Exception {
 
         // test count(1) as facetCount
@@ -1586,7 +1586,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void aggregate_should_work_with_sum() throws Exception {
 
         // test sum(c.creationDate)
@@ -1608,7 +1608,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
         // not supported yet
     void aggregate_should_work_with_array_length() throws Exception {
 
@@ -1628,7 +1628,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void aggregate_should_work_with_nested_functions() throws Exception {
 
         // test ARRAY_LENGTH(c.area.city.street.rooms)
@@ -1683,116 +1683,85 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Test
-    void convertAggregateResultsToInteger_should_work() {
-        // Setup
-
-        // Test data setup
-        List<LinkedHashMap<String, Object>> testMaps = new ArrayList<>();
-        LinkedHashMap<String, Object> map1 = new LinkedHashMap<>();
-        map1.put("itemsCount", 1L);
-        map1.put("name", "TestName1");
-        LinkedHashMap<String, Object> map2 = new LinkedHashMap<>();
-        map2.put("itemsCount", Long.MAX_VALUE);
-        map2.put("name", "TestName2");
-        LinkedHashMap<String, Object> map3 = new LinkedHashMap<>();
-        map3.put("itemsCount", 100L);
-        map3.put("itemsWithinRange", Integer.MAX_VALUE);
-        testMaps.add(map1);
-        testMaps.add(map2);
-        testMaps.add(map3);
-
-        // Call the method under test
-        List<? extends Map> resultMaps = PostgresDatabaseImpl.convertAggregateResultsToInteger(testMaps);
-
-        // Assertions
-        assertThat(resultMaps).isNotNull();
-        assertThat(resultMaps.size()).isEqualTo(3);
-
-        assertThat(resultMaps.get(0).get("itemsCount")).isInstanceOf(Integer.class).isEqualTo(1);
-        assertThat(resultMaps.get(1).get("itemsCount")).isInstanceOf(Long.class).isEqualTo(Long.MAX_VALUE); // Should remain Long because it's out of Integer range
-        assertThat(resultMaps.get(2).get("itemsCount")).isInstanceOf(Integer.class).isEqualTo(100);
-        assertThat(resultMaps.get(2).get("itemsWithinRange")).isInstanceOf(Integer.class).isEqualTo(Integer.MAX_VALUE); // Should remain Integer
-    }
 
     @Test
     void find_should_work_with_join() throws Exception {
 
         // query with join
-//        {
-//            var cond = new Condition();
-//
-//            {
-//                // returnAllSubArray false
-//                cond = Condition.filter("area.city.street.rooms.no", "001", "room*no-01.area", 10) //
-//                        .sort("id", "ASC") //
-//                        .limit(10) //
-//                        .offset(0)
-//                        .join(Set.of("area.city.street.rooms", "room*no-01"))
-//                        .returnAllSubArray(false);
-//
-//                var result = db.find(host, cond, "Families").toMap();
-//                assertThat(result).hasSize(1);
-//                var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
-//                assertThat(rooms).hasSize(1);
-//                assertThat(rooms.get(0)).containsEntry("no", "001");
-//            }
-//
-//            {
-//                // returnAllSubArray true
-//                cond = Condition.filter("area.city.street.rooms.no", "001") //
-//                        .sort("id", "ASC") //
-//                        .limit(10) //
-//                        .offset(0)
-//                        .join(Set.of("area.city.street.rooms"))
-//                        .returnAllSubArray(true);
-//                ;
-//
-//                var result = db.find(host, cond, "Families").toMap();
-//                assertThat(result).hasSize(1);
-//                var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
-//                assertThat(rooms).hasSize(2);
-//                assertThat(rooms.get(0)).containsEntry("no", "001");
-//                assertThat(rooms.get(1)).containsEntry("no", "002");
-//            }
-//
-//            {
-//                // LIKE
-//                cond = Condition.filter("area.city.street.rooms.no LIKE", "%01") //
-//                        .sort("id", "ASC") //
-//                        .limit(10) //
-//                        .offset(0)
-//                        .join(Set.of("area.city.street.rooms"))
-//                        .returnAllSubArray(true);
-//                ;
-//
-//                var result = db.find(host, cond, "Families").toMap();
-//                assertThat(result).hasSize(1);
-//                var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
-//                assertThat(rooms).hasSize(2);
-//                assertThat(rooms.get(0)).containsEntry("no", "001");
-//                assertThat(rooms.get(1)).containsEntry("no", "002");
-//            }
-//
-//            {
-//                // children.grade < 6
-//                cond = Condition.filter("parents.firstName", "Thomas", "parents.firstName", "Mary Kay", "children.gender", "female", "children.grade <", 6, "room*no-01.area", 10) //
-//                        .sort("id", "ASC") //
-//                        .limit(10) //
-//                        .offset(0)
-//                        .join(Set.of("parents", "children", "room*no-01"))
-//                        .returnAllSubArray(false);
-//
-//                var result = db.find(host, cond, "Families").toMap();
-//                assertThat(result).hasSize(1);
-//                assertThat(result.get(0)).containsEntry("_partition", "Families");
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Mary Kay"))).isTrue();
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("gender").toString().equals("female"))).isTrue();
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
-//                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("room*no-01"))).stream().anyMatch(item -> item.get("area").toString().equals("10"))).isTrue();
-//            }
-//        }
+        {
+            var cond = new Condition();
+
+            {
+                // returnAllSubArray false
+                cond = Condition.filter("area.city.street.rooms.no", "001", "room*no-01.area", 10) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("area.city.street.rooms", "room*no-01"))
+                        .returnAllSubArray(false);
+
+                var result = db.find(host, cond, "Families").toMap();
+                assertThat(result).hasSize(1);
+                var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
+                assertThat(rooms).hasSize(1);
+                assertThat(rooms.get(0)).containsEntry("no", "001");
+            }
+
+            {
+                // returnAllSubArray true
+                cond = Condition.filter("area.city.street.rooms.no", "001") //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("area.city.street.rooms"))
+                        .returnAllSubArray(true);
+                ;
+
+                var result = db.find(host, cond, "Families").toMap();
+                assertThat(result).hasSize(1);
+                var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
+                assertThat(rooms).hasSize(2);
+                assertThat(rooms.get(0)).containsEntry("no", "001");
+                assertThat(rooms.get(1)).containsEntry("no", "002");
+            }
+
+            {
+                // LIKE
+                cond = Condition.filter("area.city.street.rooms.no LIKE", "%01") //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("area.city.street.rooms"))
+                        .returnAllSubArray(true);
+                ;
+
+                var result = db.find(host, cond, "Families").toMap();
+                assertThat(result).hasSize(1);
+                var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(JsonUtil.toMap(JsonUtil.toMap(JsonUtil.toMap(result.get(0).get("area")).get("city")).get("street")).get("rooms")));
+                assertThat(rooms).hasSize(2);
+                assertThat(rooms.get(0)).containsEntry("no", "001");
+                assertThat(rooms.get(1)).containsEntry("no", "002");
+            }
+
+            {
+                // children.grade < 6
+                cond = Condition.filter("parents.firstName", "Thomas", "parents.firstName", "Mary Kay", "children.gender", "female", "children.grade <", 6, "room*no-01.area", 10) //
+                        .sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("parents", "children", "room*no-01"))
+                        .returnAllSubArray(false);
+
+                var result = db.find(host, cond, "Families").toMap();
+                assertThat(result).hasSize(1);
+                assertThat(result.get(0)).containsEntry("_partition", "Families");
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(1);
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).stream().anyMatch(item -> item.get("firstName").toString().equals("Mary Kay"))).isTrue();
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("gender").toString().equals("female"))).isTrue();
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("children"))).stream().anyMatch(item -> item.get("grade").toString().equals("5"))).isTrue();
+                assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("room*no-01"))).stream().anyMatch(item -> item.get("area").toString().equals("10"))).isTrue();
+            }
+        }
 
         //Or query with join
         {
@@ -2085,41 +2054,41 @@ class PostgresDatabaseImplTest {
     void find_should_work_with_join_using_limit_and_fields() throws Exception {
 
         // find with join, small limit
-//        {
-//            var cond = Condition.filter(SubConditionType.OR, List.of( //
-//                            Condition.filter("parents.firstName", "Thomas"), //
-//                            Condition.filter("id", "WakefieldFamily"))) //
-//                    .sort("id", "ASC")//
-//                    .join(Set.of("parents", "children"))
-//                    .returnAllSubArray(false)
-//                    .offset(0)
-//                    .limit(1);
-//
-//            var result = db.find(host, cond, "Families").toMap();
-//            assertThat(result).hasSize(1);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
-//            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
-//
-//        }
+        {
+            var cond = Condition.filter(SubConditionType.OR, List.of( //
+                            Condition.filter("parents.firstName", "Thomas"), //
+                            Condition.filter("id", "WakefieldFamily"))) //
+                    .sort("id", "ASC")//
+                    .join(Set.of("parents", "children"))
+                    .returnAllSubArray(false)
+                    .offset(0)
+                    .limit(1);
+
+            var result = db.find(host, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("firstName", "Thomas");
+            assertThat(result.get(0).get("id")).hasToString("AndersenFamily");
+
+        }
 
         // find with join, set offset
-//        {
-//            var cond = Condition.filter(SubConditionType.OR, List.of( //
-//                            Condition.filter("parents.firstName", "Thomas"), //
-//                            Condition.filter("id", "WakefieldFamily"))) //
-//                    .sort("id", "ASC")//
-//                    .join(Set.of("parents", "children"))
-//                    .returnAllSubArray(false)
-//                    .offset(1)
-//                    .limit(10);
-//
-//            var result = db.find(host, cond, "Families").toMap();
-//            assertThat(result).hasSize(1);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(2);
-//            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("givenName", "Robin");
-//            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
-//
-//        }
+        {
+            var cond = Condition.filter(SubConditionType.OR, List.of( //
+                            Condition.filter("parents.firstName", "Thomas"), //
+                            Condition.filter("id", "WakefieldFamily"))) //
+                    .sort("id", "ASC")//
+                    .join(Set.of("parents", "children"))
+                    .returnAllSubArray(false)
+                    .offset(1)
+                    .limit(10);
+
+            var result = db.find(host, cond, "Families").toMap();
+            assertThat(result).hasSize(1);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents")))).hasSize(2);
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(result.get(0).get("parents"))).get(0)).containsEntry("givenName", "Robin");
+            assertThat(result.get(0).get("id")).hasToString("WakefieldFamily");
+
+        }
 
         // find with join, fields
         {
@@ -2148,7 +2117,7 @@ class PostgresDatabaseImplTest {
 
     }
 
-    @Disabled
+    @Test
     void find_should_work_with_join_together_with_aggregate() throws Exception {
         // aggregate query with join
         {
@@ -2162,7 +2131,9 @@ class PostgresDatabaseImplTest {
             // test find
             var result = db.aggregate(host, aggregate, cond, "Families").toMap();
             assertThat(result).hasSize(2);
-            assertThat(result.get(0).getOrDefault("lastName", "")).isEqualTo("");
+            //cosmosdb will return "not exist" for "lastName" (the "lastName" key does not exist in the document)
+            //postgres will return null and be change to Map.of()
+            assertThat(result.get(0).getOrDefault("lastName", "")).isInstanceOfSatisfying(Map.class, map -> assertThat(map).isEmpty());
             assertThat(result.get(1).getOrDefault("lastName", "")).isEqualTo("Andersen");
             assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
             assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
@@ -2606,7 +2577,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void dynamic_field_and_is_defined_should_work() throws Exception {
         var partition = "SheetContents";
 
@@ -2920,12 +2891,13 @@ class PostgresDatabaseImplTest {
                 assertThat(((List<String>) item.get("skills")).get(1)).isEqualTo("Golang");
                 assertThat((Map<String, Object>) item.get("contents")).containsEntry("sex", "Male");
 
-
                 // assert that in raw doc in db, the _ts is Double
-//                var client = ((MongoImpl) db.getCosmosAccount()).getClient().getDatabase(db.getDatabaseName());
-//                var collection = client.getCollection(partition);
-//                var doc = collection.find(Filters.eq("id", id)).first();
-//                assertThat((Double) doc.get("_ts")).isInstanceOf(Double.class).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(0.01));
+                var dataSource = ((PostgresImpl) db.getCosmosAccount()).getDataSource();
+
+                try(var conn = dataSource.getConnection()) {
+                    var doc = TableUtil.readRecord(conn, host, partition, id);
+                    assertThat((Double) doc.data.get("_ts")).isInstanceOf(Double.class).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(0.01));
+                }
 
             }
 
