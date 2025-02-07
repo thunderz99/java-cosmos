@@ -2131,7 +2131,9 @@ class PostgresDatabaseImplTest {
             // test find
             var result = db.aggregate(host, aggregate, cond, "Families").toMap();
             assertThat(result).hasSize(2);
-            assertThat(result.get(0).getOrDefault("lastName", "")).isEqualTo("");
+            //cosmosdb will return "not exist" for "lastName" (the "lastName" key does not exist in the document)
+            //postgres will return null and be change to Map.of()
+            assertThat(result.get(0).getOrDefault("lastName", "")).isInstanceOfSatisfying(Map.class, map -> assertThat(map).isEmpty());
             assertThat(result.get(1).getOrDefault("lastName", "")).isEqualTo("Andersen");
             assertThat(Integer.parseInt(result.get(0).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
             assertThat(Integer.parseInt(result.get(1).getOrDefault("facetCount", "-1").toString())).isEqualTo(1);
@@ -2575,7 +2577,7 @@ class PostgresDatabaseImplTest {
         }
     }
 
-    @Disabled
+    @Test
     void dynamic_field_and_is_defined_should_work() throws Exception {
         var partition = "SheetContents";
 

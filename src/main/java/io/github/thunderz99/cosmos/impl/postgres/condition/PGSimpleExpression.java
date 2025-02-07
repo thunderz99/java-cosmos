@@ -7,14 +7,12 @@ import io.github.thunderz99.cosmos.condition.FieldKey;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGKeyUtil;
+import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.ParamUtil;
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
@@ -44,6 +42,19 @@ public class PGSimpleExpression implements Expression {
 	 *     </ul>
 	 */
     public String operator = "";
+
+
+    /**
+     * maps of type check functions from cosmosdb to postgres
+     */
+    public static final Map<String, String> TYPE_CHECK_FUNCTIONS_MAP = Map.of(
+            "IS_NULL", "null",
+            "IS_NUMBER", "number",
+            "IS_STRING", "string",
+            "IS_BOOL", "boolean",
+            "IS_ARRAY", "array",
+            "IS_OBJECT", "object"
+    );
 
     public PGSimpleExpression() {
     }
@@ -121,7 +132,6 @@ public class PGSimpleExpression implements Expression {
             } else {
                 // valuePart should be "@param001_wg31gsa"
                 valueString = paramName;
-                params.add(Condition.createSqlParameter(paramName, paramValue));
             }
 
             // other types
@@ -129,9 +139,17 @@ public class PGSimpleExpression implements Expression {
             if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >, LIKE
                 //use c["key"] for cosmosdb reserved words
                 ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, valueString));
+                params.add(Condition.createSqlParameter(paramName, paramValue));
+
             } else if (Condition.typeCheckFunctionPattern.asMatchPredicate().test(this.operator)) { // type check funcs: IS_DEFINED|IS_NUMBER|IS_PRIMITIVE, etc
-                ret.setQueryText(String.format(" (%s(%s) = %s)", this.operator, formattedKey, valueString));
+
+                // params not needed to be added
+                // because true/false converts to json_path_exists or NOT json_path_exists
+                buildTypeCheckFunctionDetails(ret, selectAlias, this.key, this.operator, paramValue, params);
+
+
             } else { // other binary functions. e.g. STARTSWITH, CONTAINS, ARRAY_CONTAINS
+                params.add(Condition.createSqlParameter(paramName, paramValue));
                 buildBinaryFunctionDetails(ret, formattedKey, valueString, paramValue, params);
             }
 
@@ -143,8 +161,97 @@ public class PGSimpleExpression implements Expression {
 
 	}
 
+    /**
+     * Build query text for typeCheckFunctions. e.g. IS_DEFINED, IS_NUMBER, IS_PRIMITIVE, etc.
+     * see docs/postgres-type-check-functions.md for details
+     *
+     * @param querySpec the query specification to build
+     * @param key the key as column name, e.g. address.city.street
+     * @param selectAlias typically "data" (or "j1" "s1" for cond.join query) (or empty for afterAggregation)
+     * @param paramValue the original paramValue, e.g. true
+     * @param params the list of params to add paramValue
+     */
+    static void buildTypeCheckFunctionDetails(CosmosSqlQuerySpec querySpec, String selectAlias, String key, String op, Object paramValue, List<CosmosSqlParameter> params) {
+
+        Checker.checkNotNull(querySpec, "querySpec");
+        Checker.checkNotBlank(selectAlias,
+                "For typeCheckFunctions, selectAlias cannot be empty. Which means typeCheckFunctions in condAfterAggregation is not supported");
+        Checker.checkNotBlank(key, "key");
+        Checker.check(paramValue instanceof Boolean, "paramValue must be boolean for typeCheckFunctions");
+        Checker.checkNotNull(params, "params");
+
+        var positiveTypeCheck = (Boolean) paramValue;  // e.g. Condition.filter("x IS_NULL", true/false)
+
+        // Convert the nested key (like "address.city.street") into a JSONPath expression "$.address.city.street"
+        var jsonPathKey =  PGKeyUtil.getJsonbPathKey(key);
+
+        String pathExpression;                          // will become something like '$.address.city.street ? (@.type() == "number")'
+
+        // 1) Check if it's one of the simple type-based ops in the TYPE_CHECK_FUNCTIONS_MAP
+        String typeStr = TYPE_CHECK_FUNCTIONS_MAP.getOrDefault(op, "");
+
+        if (!typeStr.isEmpty()) {
+            // e.g. op = "IS_NUMBER" => typeStr = "number"
+            // Build a JSONPath expression that checks the type:
+            // '$.address.city.street ? (@.type() == "number")'
+            pathExpression = String.format(
+                    "%s ? (@.type() == \"%s\")",
+                    jsonPathKey,
+                    typeStr
+            );
+        } else if ("IS_DEFINED".equals(op)) {
+            // Check just that the path is present, ignoring its type:
+            // '$.address.city.street'
+            pathExpression = String.format(
+                    "%s",
+                    jsonPathKey
+            );
+        } else if ("IS_PRIMITIVE".equals(op)) {
+            // "primitive" => null, boolean, number, or string
+            //  => '$.address.city.street ? (@.type() == "null" || @.type() == "boolean" || @.type() == "number" || @.type() == "string")'
+            pathExpression = String.format(
+                    "%s ? (@.type() == \"null\" || @.type() == \"boolean\" || @.type() == \"number\" || @.type() == \"string\")",
+                    jsonPathKey
+            );
+        } else {
+            // If you somehow get here with an unknown operator, either throw or build a default expression
+            throw new IllegalArgumentException("Unknown typeCheckFunction: " + op);
+        }
+
+        // 2) Combine into a jsonb_path_exists(...) call.
+        // The final expression should compare = true or = false based on paramValue.
+        // e.g. "(jsonb_path_exists(data, '$.x ? (@.type() == "number")') = true)"
+        String queryText = String.format(
+                " jsonb_path_exists(%s, '%s')",
+                selectAlias,
+                pathExpression
+        );
+
+        if (!positiveTypeCheck) {
+            queryText = " (NOT %s)".formatted(queryText);
+        }
+        querySpec.setQueryText(queryText);
+    }
+
+    /**
+     * Build query text for binaryFunctions, e.g. STARTSWITH, CONTAINS, REGEXMATCH, ARRAY_CONTAINS, etc
+     *
+     * @param querySpec
+     * @param formattedKey the formatted key as column name, e.g. data->>'name'
+     * @param valuePart the part of paramValue, e.g. true
+     * @param paramValue the original paramValue, e.g. true
+     * @param params the list of params to add paramValue
+     */
     void buildBinaryFunctionDetails(CosmosSqlQuerySpec querySpec, String formattedKey, String valuePart, Object paramValue, List<CosmosSqlParameter> params) {
 
+        /**
+         * STARTSWITH, CONTAINS, REGEXMATCH, ARRAY_CONTAINS
+         *
+         * STARTSWITH: use LIKE
+         * CONTAINS: use LIKE
+         * REGEXMATCH: use `text_field ~ '^abc'`
+         * ARRAY_CONTAINS: use data->'skills' ?? 'Java'
+         */
         switch (this.operator.toUpperCase()) {
             case "STARTSWITH"-> {
                 // use LIKE
@@ -169,7 +276,7 @@ public class PGSimpleExpression implements Expression {
                 querySpec.setQueryText(String.format(" (%s ~ %s)", formattedKey, valuePart));
             }
             case "ARRAY_CONTAINS" -> {
-                // use data->'skills' ? 'Java'
+                // use data->'skills' ?? 'Java'
                 // because ? is also a placeholder for PreparedStatement, ?? insteadof ? in JDBC
                 // https://stackoverflow.com/questions/26516204/how-do-i-escape-a-literal-question-mark-in-a-jdbc-prepared-statement
                 // modify the formattedKey from ->> to -> , because skills should be a json array to do ARRAY_CONTAINS

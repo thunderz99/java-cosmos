@@ -338,7 +338,7 @@ public class Condition {
         var params = filterQuery.params;
 
         // group by
-        if (!CollectionUtils.isEmpty(aggregate.groupBy)) {
+        if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
             var groupBy = aggregate.groupBy.stream().map(g -> getFormattedKey(g)).collect(Collectors.joining(", "));
             queryText.append(" GROUP BY ").append(groupBy);
         }

@@ -30,7 +30,7 @@ public class PGKeyUtil {
      * Instead of data.key, return data->'key' or data->'address'->'city' for query(for json, with "->" instead of "->>")
      *
      * @param key filter's key
-     * @param selectAlias typically "data" (or "j1" "s1" for cond.join query)
+     * @param selectAlias typically "data" (or "j1" "s1" for cond.join query) (or empty for afterAggregation)
      * @return formatted filter's key data->'key1'->'key2'
      */
     public static String getFormattedKey4JsonWithAlias(String key, String selectAlias) {
@@ -44,14 +44,16 @@ public class PGKeyUtil {
      *  - data->'some'->'nested'->>'field'
      *
      * @param key e.g. "address.city" or "age"
-     * @param selectAlias typically "data" (or "tableAlias.data")
+     * @param selectAlias typically "data" (or "j1" "s1" for cond.join query) (or empty for afterAggregation)
      * @param value used to determine the cast type
      * @return an expression like "(data->'address'->>'city')::text"
      */
     public static String getFormattedKeyWithAlias(String key, String selectAlias, Object value) {
 
-        // Validate alias (you can skip if your environment guarantees non-blank)
-        Checker.checkNotBlank(selectAlias, "selectAlias");
+        if(StringUtils.isBlank(selectAlias)){
+            // for afterAggregation. see QueryContext.afterAggregation for details
+            return StringUtils.contains(key, "\"") ? key : "\"" + key + "\"";
+        }
 
         // If the user didn't provide a key, just return the alias
         if (StringUtils.isBlank(key)) {
@@ -98,6 +100,20 @@ public class PGKeyUtil {
             // Fallback: treat it as String (no cast at all, depending on your preference)
             return basePath;
         }
+    }
+
+    /**
+     * convert address.city.street to $."address"."city"."street"
+     *
+     * @param key address.city.street
+     * @return $."address"."city"."street"
+     */
+    public static String getJsonbPathKey(String key) {
+
+        Checker.checkNotBlank(key, "key");
+
+        var parts = key.split("\\.");
+        return Arrays.stream(parts).map(s -> "\""+s+"\"").collect(Collectors.joining(".", "$.", ""));
     }
 
     /**

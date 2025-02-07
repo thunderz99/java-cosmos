@@ -142,10 +142,111 @@ public class PGConditionUtil {
         // 2. outer query is null. if outer query is enabled, setting inner offset / limit will cause sql exception in cosmosdb
         if (CollectionUtils.isNotEmpty(aggregate.groupBy) && aggregate.condAfterAggregate == null) {
             queryText.append(String.format("\n OFFSET %d LIMIT %d", cond.offset, cond.limit));
+
+            // if sort is not empty, we have to add it to condAfterAggregate
+            // because sort only works in the outer query
+            if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
+                aggregate.condAfterAggregate = Condition.filter().sort(cond.sort.toArray(new String[0]));
+            }
+
         }
 
+        // condition after aggregation
+        FilterQuery filterQueryAgg = null;
+        if (aggregate.condAfterAggregate != null) {
 
-        // TODO: condition after aggregation
+            // only works when groupBy is enabled
+            if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+
+                var condAfter = aggregate.condAfterAggregate;
+                // select
+
+                //After GROUP BY, the WHERE / ORDER BY / LIMIT must be added as an outer query
+                /** e.g
+                 *  SELECT * FROM (
+                 *    SELECT COUNT(1) AS facetCount, data->>'status' AS "status", data->>'createdBy' AS "createdBy"
+                 *    FROM schema1.table1
+                 *    WHERE data->>'name' LIKE "%Tom%" GROUP BY c.status, c.createdBy
+                 *  ) agg
+                 *  WHERE "createdBy" > "2021-01-01"
+                 *  ORDER BY "status" ASC NULLS FIRST
+                 *  OFFSET 0 LIMIT 100
+                 */
+                queryText.insert(0, "SELECT * FROM (");
+                //use "agg" as outer select clause's collection alias
+                queryText.append(") agg\n");
+
+                // filter after agg
+
+                var initialConditionIndexAgg = new AtomicInteger();
+
+                // note that the afterAggregation is set to true in QueryContext. see QueryContext.afterAggregation for details
+                filterQueryAgg = PGConditionUtil.generateFilterQuery(condAfter, queryText.toString(), params, initialConditionIndexAgg, initialParamIndex,
+                        QueryContext.create().afterAggregation(true));
+
+                // special logic for aggregate with cross-partition=true and sort is empty
+                // We have to add a default sort to overcome a bug.
+                // see https://social.msdn.microsoft.com/Forums/en-US/535c7e4a-f5cb-4aa3-90f5-39a2c8024191/group-by-fails-for-crosspartition-queries?forum=azurecosmosdb
+
+                if (CollectionUtils.isEmpty(condAfter.sort)) {
+                    // use the groupBy's first field to sort
+                    condAfter.sort = new ArrayList<>();
+                    condAfter.sort.add(aggregate.groupBy.stream().collect(Collectors.toList()).get(0));
+                    condAfter.sort.add("ASC");
+                }
+
+                // sort after agg
+                // Note that only field like "status" "name" can be sort after group by.
+                // aggregation value like "count" cannot be used in sort after group by in CosmosDB, but can be used in postgres.
+
+                if (!CollectionUtils.isEmpty(condAfter.sort) && condAfter.sort.size() > 1) {
+                    var sortMap = new LinkedHashMap<String, String>();
+
+                    // sort after aggregation, should use alias after "AS" ("lastName" / "facetCount"), instead of data->>'lastName'
+
+                    /**
+                     * SELECT * FROM (
+                     * SELECT COUNT(1) AS "facetCount", data->>'lastName' AS "lastName"
+                     *  FROM unittest_postgres_5bwo.families
+                     *  GROUP BY data->>'lastName'
+                     * ) agg
+                     *  WHERE "facetCount" > 1
+                     *  ORDER BY "lastName" ASC NULLS FIRST
+                     *  OFFSET 0 LIMIT 10
+                     */
+
+
+                    for (int i = 0; i < condAfter.sort.size(); i++) {
+                        if (i % 2 == 0) {
+                            var direction = condAfter.sort.get(i + 1).toUpperCase();
+                            if(StringUtils.equals(direction, "ASC")){
+                                // this is added to be compatible with cosmosdb
+                                // because cosmosdb acts the same as "ASC NULLS FIRST" / "DESC NULLS LAST"
+                                direction = "ASC NULLS FIRST";
+                            } else {
+                                direction = "DESC NULLS LAST";
+                            }
+                            sortMap.put(condAfter.sort.get(i), direction);
+                        }
+                    }
+
+                    var sorts = sortMap.entrySet().stream()
+                            .map(entry -> String.format(" \"%s\" %s", entry.getKey(), entry.getValue().toUpperCase()))
+                            .collect(Collectors.joining(",", "\n ORDER BY", ""));
+
+                    filterQueryAgg.queryText.append(sorts);
+                }
+
+                // offset and limit after agg
+                filterQueryAgg.queryText.append(String.format("\n OFFSET %d LIMIT %d", condAfter.offset, condAfter.limit));
+            }
+
+        }
+
+        if (filterQueryAgg != null) {
+            queryText = filterQueryAgg.queryText;
+            params = filterQueryAgg.params;
+        }
 
         return new CosmosSqlQuerySpec(queryText.toString(), params);
 
@@ -374,7 +475,9 @@ public class PGConditionUtil {
 
         var join = new LinkedHashSet(cond.join);
 
-        var selectAlias = TableUtil.DATA;
+        // if under after aggregation context, the select alias will be empty(data->xxx should not be used for afterAggregation)
+        // see QueryContext.afterAggregation for detail
+        var selectAlias = queryContext.afterAggregation ? "" :TableUtil.DATA;
 
         for (var entry : cond.filter.entrySet()) {
 

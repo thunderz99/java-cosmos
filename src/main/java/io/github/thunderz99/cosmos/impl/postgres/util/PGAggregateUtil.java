@@ -43,6 +43,7 @@ public class PGAggregateUtil {
         for (var map : maps) {
             map.replaceAll((key, value) -> {
 
+                // for compatibility with cosmosdb, we need to convert null to empty map
                 if(value == null){
                     return new LinkedHashMap<>();
                 }
