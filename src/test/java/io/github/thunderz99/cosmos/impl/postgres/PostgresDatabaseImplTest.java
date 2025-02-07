@@ -2891,6 +2891,14 @@ class PostgresDatabaseImplTest {
                 assertThat(((List<String>) item.get("skills")).get(1)).isEqualTo("Golang");
                 assertThat((Map<String, Object>) item.get("contents")).containsEntry("sex", "Male");
 
+                // assert that in raw doc in db, the _ts is Double
+                var dataSource = ((PostgresImpl) db.getCosmosAccount()).getDataSource();
+
+                try(var conn = dataSource.getConnection()) {
+                    var doc = TableUtil.readRecord(conn, host, partition, id);
+                    assertThat((Double) doc.data.get("_ts")).isInstanceOf(Double.class).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(0.01));
+                }
+
             }
 
             {

@@ -313,7 +313,7 @@ public class AggregateUtil {
      * @param field
      * @return simple field name without "__"
      */
-    public static String getSimpleName(String field) {
+    static String getSimpleName(String field) {
         if (StringUtils.isEmpty(field)) {
             return field;
         }
