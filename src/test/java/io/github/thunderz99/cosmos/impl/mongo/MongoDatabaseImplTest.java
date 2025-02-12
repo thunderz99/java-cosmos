@@ -104,6 +104,11 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void ping_should_work() throws Exception {
+        assertThat(db.ping(host)).isTrue();
+    }
+
+    @Test
     void create_and_read_should_work() throws Exception {
 
         var user = new User("unittest_create_01", "first01", "last01");

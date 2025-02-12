@@ -1264,6 +1264,12 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         return result;
     }
 
+    @Override
+    public boolean ping(String coll) throws Exception {
+        var docs = this.find(coll, Condition.filter().limit(1), "_ping");
+        return docs.size() >= 0;
+    }
+
 
     static void checkBatchMaxOperations(List<?> data) {
         // There's a current limit of 100 operations per TransactionalBatch to ensure the performance is as expected and within SLAs:

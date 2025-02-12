@@ -67,6 +67,30 @@ public class TableUtil {
     }
 
     /**
+     * Checks if a schema exists in the database.
+     *
+     * @param conn       the database connection
+     * @param schemaName the schema name to check
+     * @return true if the schema exists, false otherwise
+     * @throws SQLException if a database error occurs
+     */
+    public static boolean schemaExists(Connection conn, String schemaName) throws SQLException {
+        // Optionally, normalize or validate the schema name as needed
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+
+        var metaData = conn.getMetaData();
+        try (var schemas = metaData.getSchemas()) {
+            while (schemas.next()) {
+                String existingSchema = schemas.getString("TABLE_SCHEM");
+                if (schemaName.equals(existingSchema)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Creates a table with the specified name and schema if it does not already exist.
      *
      * @param conn      the database connection

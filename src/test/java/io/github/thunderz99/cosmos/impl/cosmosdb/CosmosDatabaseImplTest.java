@@ -92,6 +92,10 @@ class CosmosDatabaseImplTest {
         cosmos.deleteCollection(dbName, coll);
     }
 
+    @Test
+    void ping_should_work() throws Exception {
+        assertThat(db.ping(coll)).isTrue();
+    }
 
     @Test
     void create_and_read_should_work() throws Exception {
