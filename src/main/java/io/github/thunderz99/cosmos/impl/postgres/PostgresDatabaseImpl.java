@@ -1262,4 +1262,12 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
             return TTLUtil.unScheduleJob(conn, coll, partition);
         }
     }
+
+    @Override
+    public boolean ping(String coll) throws Exception {
+        try(var conn = this.dataSource.getConnection()){
+            return TableUtil.schemaExists(conn, coll);
+        }
+    }
+
 }

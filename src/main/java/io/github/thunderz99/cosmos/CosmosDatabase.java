@@ -511,4 +511,14 @@ public interface CosmosDatabase {
      * @return CosmosBulkResult
      */
     public CosmosBulkResult bulkDelete(String coll, List<?> data, String partition) throws Exception;
+
+    /**
+     * Ping a collection to test whether it is accessible.
+     *
+     * @param coll      collection name
+     * @return true/false
+     */
+    public boolean ping(String coll) throws Exception;
+
+
 }

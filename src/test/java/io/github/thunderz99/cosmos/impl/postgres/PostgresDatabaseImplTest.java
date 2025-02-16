@@ -90,9 +90,11 @@ class PostgresDatabaseImplTest {
                 .withEtagEnabled(true)
                 .withConnectionString(EnvUtil.getOrDefault("POSTGRES_CONNECTION_STRING", PostgresImplTest.LOCAL_CONNECTION_STRING))
                 .build();
+
         // we do not need to create a collection here, so the second param is empty
         // we create collections in specific test cases
         db = (PostgresDatabaseImpl) cosmos.createIfNotExist(dbName, host);
+
         db.createTableIfNotExists(host, "Users");
         db.createTableIfNotExists(host, "Users2");
         db.createTableIfNotExists(host, "Families");
@@ -120,6 +122,11 @@ class PostgresDatabaseImplTest {
             cosmos.deleteCollection(dbName, host);
             cosmos.closeClient();
         }
+    }
+
+    @Test
+    void ping_should_work() throws Exception {
+        assertThat(db.ping(host)).isTrue();
     }
 
     @Test

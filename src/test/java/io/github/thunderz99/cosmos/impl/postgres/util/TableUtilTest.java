@@ -484,6 +484,14 @@ class TableUtilTest {
         }
     }
 
+    @Test
+    void schemaExists_should_work() throws Exception {
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            assertThat(TableUtil.schemaExists(conn, schemaName)).isTrue();
+            assertThat(TableUtil.schemaExists(conn, "not_exist_schema")).isFalse();
+        }
+    }
+
 
     @Test
     void batchUpsertRecords_should_work() throws Exception {
