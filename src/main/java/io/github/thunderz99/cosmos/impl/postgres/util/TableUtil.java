@@ -1390,6 +1390,7 @@ public class TableUtil {
      * <p>
      * Index can be created on nested json path under "data" column.
      * For example, to create a unique index on `lastName` field under `data` column:
+     * </p>
      * <pre>
      *     {@code
      *
@@ -1404,8 +1405,6 @@ public class TableUtil {
      *         CREATE UNIQUE INDEX table1_address_city_street_1 ON schema1.table1 ((data->'address'->'city'->>'street'));
      *     }
      * </pre>
-     *
-     * </p>
      *
      *
      * @param conn       the database connection
