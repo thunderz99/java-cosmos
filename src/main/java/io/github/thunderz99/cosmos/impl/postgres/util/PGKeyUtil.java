@@ -23,7 +23,7 @@ public class PGKeyUtil {
      */
     public static String getFormattedKey(String key) {
 
-        return getFormattedKeyWithAlias(key, "data", "");
+        return getFormattedKeyWithAlias(key, TableUtil.DATA, "");
     }
 
     /**

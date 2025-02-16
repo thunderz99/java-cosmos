@@ -8,6 +8,7 @@ import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImplTest;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresRecord;
+import io.github.thunderz99.cosmos.impl.postgres.dto.IndexOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -677,4 +678,67 @@ class TableUtilTest {
             }
         }
     }
+
+
+    @Test
+    void getIndexName_should_work() {
+        {
+            // normal cases
+            assertThat(TableUtil.getIndexName("table_name", "column_name")).isEqualTo("table_name_column_name_1");
+            assertThat(TableUtil.getIndexName("table1", "_uniqueKey1")).isEqualTo("table1__uniquekey1_1");
+            assertThat(TableUtil.getIndexName("table1", "address.city.street")).isEqualTo("table1_address_city_street_1");
+            assertThat(TableUtil.getIndexName("table1", "contents.77993598-a9d2-4862-ae77-73005d274697.v--alue")).isEqualTo("table1_contents_77993598_a9d2_4862_ae77_73005d274697_v__alue_1").hasSizeLessThan(64);
+
+        }
+
+        {
+            // irregular cases
+            assertThatThrownBy(() -> TableUtil.getIndexName("table_name", ""))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("entityName should be non-blank");
+            assertThatThrownBy(() -> TableUtil.getIndexName("", "column_name"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("entityName should be non-blank");
+            assertThatThrownBy(() -> TableUtil.getIndexName("table_name", ";"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("entityName should not contain invalid characters: ;");
+        }
+    }
+
+
+    @Test
+    void createIndexIfNotExists_should_work() throws Exception {
+
+        var tableName = "table1" + RandomStringUtils.randomAlphanumeric(3).toLowerCase();
+        var fieldName = "address.city.street";
+        var indexName = tableName + "_address_city_street_1";
+
+        try(var conn = cosmos.getDataSource().getConnection();) {
+            {
+                // create table
+                var createdTableName = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                assertThat(createdTableName).isEqualTo(schemaName + "." + tableName);
+            }
+
+            {
+                // create index
+                var createdIndexName = TableUtil.createIndexIfNotExist(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
+                assertThat(createdIndexName).isEqualTo(schemaName + "." + indexName);
+            }
+
+            {
+                // create index the second time. and it should be no-op
+                var created2 = TableUtil.createIndexIfNotExist(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
+                assertThat(created2).isEmpty();
+            }
+
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropIndexIfExist(conn, schemaName, indexName);
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+
+    }
+
 }
