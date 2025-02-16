@@ -12,7 +12,6 @@ import io.github.thunderz99.cosmos.impl.postgres.dto.IndexOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -722,19 +721,19 @@ class TableUtilTest {
 
             {
                 // create index
-                var createdIndexName = TableUtil.createIndexIfNotExist(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
+                var createdIndexName = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
                 assertThat(createdIndexName).isEqualTo(schemaName + "." + indexName);
             }
 
             {
                 // create index the second time. and it should be no-op
-                var created2 = TableUtil.createIndexIfNotExist(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
+                var created2 = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
                 assertThat(created2).isEmpty();
             }
 
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
-                TableUtil.dropIndexIfExist(conn, schemaName, indexName);
+                TableUtil.dropIndexIfExists(conn, schemaName, indexName);
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
             }
         }

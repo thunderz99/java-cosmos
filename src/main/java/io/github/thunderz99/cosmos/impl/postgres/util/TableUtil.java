@@ -1,10 +1,8 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
-import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.CosmosDocument;
 import io.github.thunderz99.cosmos.CosmosException;
-import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
@@ -15,7 +13,6 @@ import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.postgresql.jdbc.PgArray;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -1278,13 +1275,13 @@ public class TableUtil {
      * @return true if the index exists, false otherwise
      * @throws SQLException if a database error occurs
      */
-    static boolean indexExist(Connection conn, String schemaName, String tableName, String fieldName) throws SQLException {
+    static boolean indexExists(Connection conn, String schemaName, String tableName, String fieldName) throws SQLException {
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
         var indexName = getIndexName(tableName, fieldName);
 
-        return indexExistByName(conn, schemaName, tableName, indexName);
+        return indexExistsByName(conn, schemaName, tableName, indexName);
     }
 
 
@@ -1298,7 +1295,7 @@ public class TableUtil {
      * @return true if the index exists, false otherwise
      * @throws SQLException if a database error occurs
      */
-    static boolean indexExistByName(Connection conn, String schemaName, String tableName, String indexName) throws SQLException {
+    static boolean indexExistsByName(Connection conn, String schemaName, String tableName, String indexName) throws SQLException {
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
@@ -1325,12 +1322,12 @@ public class TableUtil {
      * @param fieldName  the field name for index
      * @throws SQLException if a database access error occurs
      */
-    static void dropIndexIfExist(Connection conn, String schemaName, String tableName, String fieldName) throws SQLException {
+    static void dropIndexIfExists(Connection conn, String schemaName, String tableName, String fieldName) throws SQLException {
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         var indexName = getIndexName(tableName, fieldName);
 
-        dropIndexIfExist(conn, schemaName, indexName);
+        dropIndexIfExists(conn, schemaName, indexName);
     }
 
 
@@ -1342,7 +1339,7 @@ public class TableUtil {
      * @param indexName  the index name to drop
      * @throws SQLException if a database access error occurs
      */
-    static void dropIndexIfExist(Connection connection, String schemaName, String indexName) throws SQLException {
+    static void dropIndexIfExists(Connection connection, String schemaName, String indexName) throws SQLException {
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         indexName = checkAndNormalizeValidEntityName(indexName);
@@ -1415,7 +1412,7 @@ public class TableUtil {
      * @return schema.indexName if created, or "" if index already exists
      * @throws SQLException if a database error occurs
      */
-    public static String createIndexIfNotExist(Connection conn, String schemaName, String tableName, String fieldName, IndexOption indexOption) throws SQLException {
+    public static String createIndexIfNotExists(Connection conn, String schemaName, String tableName, String fieldName, IndexOption indexOption) throws SQLException {
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
@@ -1425,7 +1422,7 @@ public class TableUtil {
         // e.g.  table1_address_city_street_1
         var indexName = getIndexName(tableName, fieldName);
 
-        if (indexExist(conn, schemaName, tableName, fieldName)) {
+        if (indexExists(conn, schemaName, tableName, fieldName)) {
             // already exists
             return "";
         }
