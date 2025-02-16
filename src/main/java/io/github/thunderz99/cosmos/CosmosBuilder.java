@@ -40,7 +40,7 @@ public class CosmosBuilder {
     boolean etagEnabled = false;
 
     /**
-     * Specify the dbType( "cosmosdb" or "mongodb" )
+     * Specify the dbType( "cosmosdb" or "mongodb" or "postgres")
      *
      * @param dbType
      * @return cosmosBuilder

@@ -49,24 +49,30 @@ class TableUtilTest {
     void createTableIfNotExist_should_work() throws Exception {
 
 
-        var tableName = "create_table_if_not_exist_" + RandomStringUtils.randomAlphanumeric(6);
+        var tableName = "create_table_if_not_exist_" + RandomStringUtils.randomAlphanumeric(6).toLowerCase();
 
         try (var conn = cosmos.getDataSource().getConnection()) {
             {
 
-                //table does not exist
+                // table does not exist
                 var tableExist = TableUtil.tableExist(conn, schemaName, tableName);
                 assertThat(tableExist).isFalse();
             }
             {
-                //create table
-                TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                // create table
+                var created = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
-                //table exists
+                assertThat(created).isEqualTo( schemaName + "." + tableName);
+
+                // table exists
                 try(var conn2 = cosmos.getDataSource().getConnection()){
                     var tableExist = TableUtil.tableExist(conn2, schemaName, tableName);
                     assertThat(tableExist).isTrue();
                 }
+
+                // create table the second time. and it should be no-op
+                var created2 = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                assertThat(created2).isEmpty();
             }
 
             {

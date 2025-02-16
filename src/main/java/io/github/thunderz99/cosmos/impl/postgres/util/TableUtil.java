@@ -97,42 +97,48 @@ public class TableUtil {
      * @param tableName the name of the table to create
      * @throws SQLException if a database error occurs
      */
-    public static void createTableIfNotExists(Connection conn, String schemaName, String tableName) throws SQLException {
+    public static String createTableIfNotExists(Connection conn, String schemaName, String tableName) throws SQLException {
 
-        if (!tableExist(conn, schemaName, tableName)) {
+        if (tableExist(conn, schemaName, tableName)) {
+            // already exists
+            return "";
+        }
 
-            schemaName = checkAndNormalizeValidEntityName(schemaName);
-            tableName = checkAndNormalizeValidEntityName(tableName);
+        // create table
 
-            // create table
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
 
-            var createTableSQL = String.format("""
-                        CREATE TABLE %s.%s (
-                            %s TEXT NOT NULL PRIMARY KEY,
-                            %s JSONB NOT NULL
-                        )
-                    """, schemaName, tableName, ID, DATA);
+        // create table
 
-            try (PreparedStatement pstmt = conn.prepareStatement(createTableSQL)) {
+        var createTableSQL = String.format("""
+                    CREATE TABLE %s.%s (
+                        %s TEXT NOT NULL PRIMARY KEY,
+                        %s JSONB NOT NULL
+                    )
+                """, schemaName, tableName, ID, DATA);
+
+        try (PreparedStatement pstmt = conn.prepareStatement(createTableSQL)) {
+            pstmt.executeUpdate();
+            if (log.isInfoEnabled()) {
+                log.info("Table '{}' created successfully.", tableName);
+            }
+        }
+
+        {
+            // create data index for json data search performance
+            var indexName = String.format("idx_%s_data", tableName);
+            var createIndexSQL = String.format("CREATE INDEX %s ON %s.%s USING GIN (%s);", indexName, schemaName, tableName, DATA);
+
+            try (PreparedStatement pstmt = conn.prepareStatement(createIndexSQL)) {
                 pstmt.executeUpdate();
                 if (log.isInfoEnabled()) {
-                    log.info("Table '{}' created successfully.", tableName);
-                }
-            }
-
-            {
-                // create data index for json data search performance
-                var indexName = String.format("idx_%s_data", tableName);
-                var createIndexSQL = String.format("CREATE INDEX %s ON %s.%s USING GIN (%s);", indexName, schemaName, tableName, DATA);
-
-                try (PreparedStatement pstmt = conn.prepareStatement(createIndexSQL)) {
-                    pstmt.executeUpdate();
-                    if (log.isInfoEnabled()) {
-                        log.info("Index({}) on column '{}' of table '{}' created successfully.", indexName, DATA, tableName);
-                    }
+                    log.info("Index({}) on column '{}' of table '{}' created successfully.", indexName, DATA, tableName);
                 }
             }
         }
+
+        return "%s.%s".formatted(schemaName, tableName);
     }
 
     /**
