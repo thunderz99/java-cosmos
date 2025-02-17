@@ -1,20 +1,18 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
-import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.CosmosDocument;
 import io.github.thunderz99.cosmos.CosmosException;
-import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresRecord;
+import io.github.thunderz99.cosmos.impl.postgres.dto.IndexOption;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.postgresql.jdbc.PgArray;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,72 +65,54 @@ public class TableUtil {
     }
 
     /**
-     * Checks if a schema exists in the database.
-     *
-     * @param conn       the database connection
-     * @param schemaName the schema name to check
-     * @return true if the schema exists, false otherwise
-     * @throws SQLException if a database error occurs
-     */
-    public static boolean schemaExists(Connection conn, String schemaName) throws SQLException {
-        // Optionally, normalize or validate the schema name as needed
-        schemaName = checkAndNormalizeValidEntityName(schemaName);
-
-        var metaData = conn.getMetaData();
-        try (var schemas = metaData.getSchemas()) {
-            while (schemas.next()) {
-                String existingSchema = schemas.getString("TABLE_SCHEM");
-                if (schemaName.equals(existingSchema)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    /**
      * Creates a table with the specified name and schema if it does not already exist.
      *
      * @param conn      the database connection
      * @param tableName the name of the table to create
      * @throws SQLException if a database error occurs
      */
-    public static void createTableIfNotExists(Connection conn, String schemaName, String tableName) throws SQLException {
+    public static String createTableIfNotExists(Connection conn, String schemaName, String tableName) throws SQLException {
 
-        if (!tableExist(conn, schemaName, tableName)) {
+        if (tableExist(conn, schemaName, tableName)) {
+            // already exists
+            return "";
+        }
 
-            schemaName = checkAndNormalizeValidEntityName(schemaName);
-            tableName = checkAndNormalizeValidEntityName(tableName);
+        // create table
 
-            // create table
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
 
-            var createTableSQL = String.format("""
-                        CREATE TABLE %s.%s (
-                            %s TEXT NOT NULL PRIMARY KEY,
-                            %s JSONB NOT NULL
-                        )
-                    """, schemaName, tableName, ID, DATA);
+        // create table
 
-            try (PreparedStatement pstmt = conn.prepareStatement(createTableSQL)) {
+        var createTableSQL = String.format("""
+                    CREATE TABLE %s.%s (
+                        %s TEXT NOT NULL PRIMARY KEY,
+                        %s JSONB NOT NULL
+                    )
+                """, schemaName, tableName, ID, DATA);
+
+        try (PreparedStatement pstmt = conn.prepareStatement(createTableSQL)) {
+            pstmt.executeUpdate();
+            if (log.isInfoEnabled()) {
+                log.info("Table '{}' created successfully.", tableName);
+            }
+        }
+
+        {
+            // create data index for json data search performance
+            var indexName = String.format("idx_%s_data", tableName);
+            var createIndexSQL = String.format("CREATE INDEX %s ON %s.%s USING GIN (%s);", indexName, schemaName, tableName, DATA);
+
+            try (PreparedStatement pstmt = conn.prepareStatement(createIndexSQL)) {
                 pstmt.executeUpdate();
                 if (log.isInfoEnabled()) {
-                    log.info("Table '{}' created successfully.", tableName);
-                }
-            }
-
-            {
-                // create data index for json data search performance
-                var indexName = String.format("idx_%s_data", tableName);
-                var createIndexSQL = String.format("CREATE INDEX %s ON %s.%s USING GIN (%s);", indexName, schemaName, tableName, DATA);
-
-                try (PreparedStatement pstmt = conn.prepareStatement(createIndexSQL)) {
-                    pstmt.executeUpdate();
-                    if (log.isInfoEnabled()) {
-                        log.info("Index({}) on column '{}' of table '{}' created successfully.", indexName, DATA, tableName);
-                    }
+                    log.info("Index({}) on column '{}' of table '{}' created successfully.", indexName, DATA, tableName);
                 }
             }
         }
+
+        return "%s.%s".formatted(schemaName, tableName);
     }
 
     /**
@@ -173,8 +153,11 @@ public class TableUtil {
 
         // the following characters are not allowed in entity names
         // https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
-        Checker.check(StringUtils.containsNone(entityName, ';', ',', '&', '"', '\'', '\\'),
+        Checker.check(StringUtils.containsNone(entityName, ';', ',', '&', '"', '\'', '\\', '(', ')', '\t', '\n', '\r'),
                 "entityName should not contain invalid characters: " + entityName);
+
+        Checker.check(!StringUtils.contains(entityName, "--"),
+                "entityName should not contain '--'" + entityName);
 
         return StringUtils.lowerCase(entityName);
 
@@ -1279,6 +1262,210 @@ public class TableUtil {
             log.warn("Error when count records in table'{}.{}'. sql:{}", schemaName, tableName, querySpec.queryText, e);
             throw e;
         }
+    }
+
+
+    /**
+     * Checks if an index exists in the specified schema.
+     *
+     * @param conn       the database connection
+     * @param schemaName the schema name
+     * @param tableName  the table name
+     * @param fieldName  the index name
+     * @return true if the index exists, false otherwise
+     * @throws SQLException if a database error occurs
+     */
+    static boolean indexExists(Connection conn, String schemaName, String tableName, String fieldName) throws SQLException {
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+        var indexName = getIndexName(tableName, fieldName);
+
+        return indexExistsByName(conn, schemaName, tableName, indexName);
+    }
+
+
+    /**
+     * Checks if an index exists in the specified schema.
+     *
+     * @param conn       the database connection
+     * @param schemaName the schema name
+     * @param tableName  the table name
+     * @param indexName  the index name
+     * @return true if the index exists, false otherwise
+     * @throws SQLException if a database error occurs
+     */
+    static boolean indexExistsByName(Connection conn, String schemaName, String tableName, String indexName) throws SQLException {
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+        indexName = checkAndNormalizeValidEntityName(indexName);
+
+        // Query pg_indexes to check for the index existence.
+        var query = "SELECT 1 FROM pg_indexes WHERE schemaname = ? AND tablename = ? AND indexname = ?";
+        try (var pstmt = conn.prepareStatement(query)) {
+            pstmt.setString(1, schemaName);
+            pstmt.setString(2, tableName);
+            pstmt.setString(3, indexName);
+            try (var rs = pstmt.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /**
+     * Drops the specified index if it exists.
+     *
+     * @param conn the JDBC connection
+     * @param schemaName the schema name
+     * @param tableName  the table name for index
+     * @param fieldName  the field name for index
+     * @throws SQLException if a database access error occurs
+     */
+    static void dropIndexIfExists(Connection conn, String schemaName, String tableName, String fieldName) throws SQLException {
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        var indexName = getIndexName(tableName, fieldName);
+
+        dropIndexIfExists(conn, schemaName, indexName);
+    }
+
+
+    /**
+     * Drops the specified index if it exists.
+     *
+     * @param connection the JDBC connection
+     * @param schemaName the schema name
+     * @param indexName  the index name to drop
+     * @throws SQLException if a database access error occurs
+     */
+    static void dropIndexIfExists(Connection connection, String schemaName, String indexName) throws SQLException {
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        indexName = checkAndNormalizeValidEntityName(indexName);
+
+        // postgres supports the "DROP INDEX IF EXISTS" syntax.
+        String sql = "DROP INDEX IF EXISTS " + schemaName + "." + indexName;
+        try (var stmt = connection.createStatement()) {
+            stmt.execute(sql);
+            if (log.isInfoEnabled()) {
+                log.info("Index '{}.{}' dropped successfully.", schemaName, indexName);
+            }
+        }
+    }
+
+
+
+    /**
+     * Checks if a schema exists in the database.
+     *
+     * @param conn       the database connection
+     * @param schemaName the schema name to check
+     * @return true if the schema exists, false otherwise
+     * @throws SQLException if a database error occurs
+     */
+    public static boolean schemaExists(Connection conn, String schemaName) throws SQLException {
+        // Optionally, normalize or validate the schema name as needed
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+
+        var metaData = conn.getMetaData();
+        try (var schemas = metaData.getSchemas()) {
+            while (schemas.next()) {
+                String existingSchema = schemas.getString("TABLE_SCHEM");
+                if (schemaName.equals(existingSchema)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Creates an index with the specified schemaName, tableName and fieldName if it does not already exist.
+     * Only index under "data" column is allowed.
+     *
+     * <p>
+     * Index can be created on nested json path under "data" column.
+     * For example, to create a unique index on `lastName` field under `data` column:
+     * </p>
+     * <pre>
+     *     {@code
+     *
+     *         // input:
+     *         // schemaName : schema1
+     *         // tableName : table1
+     *         // fieldName : address.city.street
+     *         // IndexOption: {unique: true}
+     *
+     *         // index name will be automatically generated from schemaName, tableName and fieldName
+     *
+     *         CREATE UNIQUE INDEX table1_address_city_street_1 ON schema1.table1 ((data->'address'->'city'->>'street'));
+     *     }
+     * </pre>
+     *
+     *
+     * @param conn       the database connection
+     * @param schemaName the schema name
+     * @param tableName  the table name
+     * @param fieldName  the field name representing a JSON path. e.g.   address.city.street
+     * @param indexOption     the index options
+     * @return schema.indexName if created, or "" if index already exists
+     * @throws SQLException if a database error occurs
+     */
+    public static String createIndexIfNotExists(Connection conn, String schemaName, String tableName, String fieldName, IndexOption indexOption) throws SQLException {
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+        fieldName = checkAndNormalizeValidEntityName(fieldName);
+
+        // Generate index name from table name and field name
+        // e.g.  table1_address_city_street_1
+        var indexName = getIndexName(tableName, fieldName);
+
+        if (indexExists(conn, schemaName, tableName, fieldName)) {
+            // already exists
+            return "";
+        }
+
+        // create index
+
+        // Construct JSON path expression
+        // data->'address'->'city'->>'street'
+        var jsonPathExpression = PGKeyUtil.getFormattedKey(fieldName);
+
+        var createIndexSQL = """
+                CREATE %s INDEX %s
+                  ON %s.%s ((%s));
+                """
+                .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, jsonPathExpression);
+
+        try (var pstmt = conn.prepareStatement(createIndexSQL)) {
+            pstmt.executeUpdate();
+            if (log.isInfoEnabled()) {
+                log.info("Index({}) on column '{}' with field '{}' of table '{}' created successfully.", indexName, DATA, fieldName, tableName);
+            }
+        }
+
+        return "%s.%s".formatted(schemaName, indexName);
+    }
+
+    /**
+     * Generate indexName from table name and field name
+     * @param tableName
+     * @param fieldName
+     * @return indexName e.g. table1_address_city_street_1
+     */
+    static String getIndexName(String tableName, String fieldName) {
+
+        fieldName = fieldName
+                .replace(".", "_")
+                .replace("-", "_")
+        ;
+
+        tableName = checkAndNormalizeValidEntityName(tableName);
+        fieldName = checkAndNormalizeValidEntityName(fieldName);
+
+        return String.format("%s_%s_1", tableName, fieldName);
     }
 
     /**
