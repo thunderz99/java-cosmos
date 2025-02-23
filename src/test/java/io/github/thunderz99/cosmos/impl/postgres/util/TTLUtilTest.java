@@ -23,6 +23,7 @@ class TTLUtilTest {
      */
     static final String dbName = "java_cosmos";
     static final String schemaName = "ttl_util_test_schema_" + StringUtils.lowerCase(RandomStringUtils.randomAlphanumeric(4));
+    static final String formattedSchemaName = TableUtil.checkAndNormalizeValidEntityName(schemaName);
 
     @BeforeAll
     static void beforeAll() throws Exception {
@@ -40,7 +41,9 @@ class TTLUtilTest {
 
     @Test
     void scheduleJob_should_work() throws Exception {
-        var tableName = "schedule_job_test_" + RandomStringUtils.randomAlphanumeric(4).toLowerCase();
+        var tableName = "schedule_job_test_" + RandomStringUtils.randomAlphanumeric(4);
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+
 
         try (var conn = cosmos.getDataSource().getConnection()) {
             // create table
@@ -68,7 +71,7 @@ class TTLUtilTest {
                 assertThatThrownBy( () -> TTLUtil.scheduleJob(conn, schemaName, "not_exist_table", 1))
                         .isInstanceOfSatisfying(SQLException.class, e -> {
                                     assertThat(e.getMessage()).contains("relation does not exist");
-                                    assertThat(e.getMessage()).contains("%s.%s".formatted(schemaName, "not_exist_table"));
+                                    assertThat(e.getMessage()).contains("%s.%s".formatted(formattedSchemaName, "not_exist_table"));
                                     assertThat(e.getSQLState()).isEqualTo("42P01");
                                 });
 
@@ -80,7 +83,7 @@ class TTLUtilTest {
                 assertThatThrownBy( () -> TTLUtil.scheduleJob(conn, "not_exist_schema", tableName, 1))
                         .isInstanceOfSatisfying(SQLException.class, e -> {
                             assertThat(e.getMessage()).contains("relation does not exist");
-                            assertThat(e.getMessage()).contains("%s.%s".formatted("not_exist_schema", tableName));
+                            assertThat(e.getMessage()).contains("%s.%s".formatted("not_exist_schema", formattedTableName));
                             assertThat(e.getSQLState()).isEqualTo("42P01");
                         });
 

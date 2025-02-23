@@ -1240,7 +1240,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      * @return database name
      */
     public String getDatabaseName() {
-        return this.db;
+        return TableUtil.removeQuotes(this.db);
     }
 
     /**

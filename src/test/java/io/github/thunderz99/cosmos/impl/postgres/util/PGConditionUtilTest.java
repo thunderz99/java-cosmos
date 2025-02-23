@@ -1049,7 +1049,6 @@ class PGConditionUtilTest {
             assertThat(q.getParameters().get(1).getName()).isEqualTo("@param001_rooms__name__0__for_select");
             assertThat(q.getParameters().get(1).getValue()).isEqualTo("r1");
 
-
         }
 
 

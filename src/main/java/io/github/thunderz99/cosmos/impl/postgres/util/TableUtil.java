@@ -58,8 +58,11 @@ public class TableUtil {
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
 
+        var schemaNameWithoutQuotes = removeQuotes(schemaName);
+        var tableNameWithoutQuotes = removeQuotes(tableName);
+
         var metaData = conn.getMetaData();
-        try (var tables = metaData.getTables(null, schemaName, tableName, new String[]{"TABLE"})) {
+        try (var tables = metaData.getTables(null, schemaNameWithoutQuotes, tableNameWithoutQuotes, new String[]{"TABLE"})) {
             return tables.next(); // If there's a result, the table exists
         }
     }
@@ -101,7 +104,7 @@ public class TableUtil {
 
         {
             // create data index for json data search performance
-            var indexName = String.format("idx_%s_data", tableName);
+            var indexName = getIndexName(tableName, DATA);
             var createIndexSQL = String.format("CREATE INDEX %s ON %s.%s USING GIN (%s);", indexName, schemaName, tableName, DATA);
 
             try (PreparedStatement pstmt = conn.prepareStatement(createIndexSQL)) {
@@ -148,16 +151,20 @@ public class TableUtil {
      * @return the normalized(to lower case) name
      */
     public static String checkAndNormalizeValidEntityName(String entityName) {
-
         checkValidEntityName(entityName);
 
-        // hyphen is not allowed in table name / index name
-        entityName = StringUtils.replace(entityName, "-", "_");
+        entityName = removeQuotes(entityName);
 
         // get a shortened version of entityName is length > 63 chars
         entityName = getShortenedEntityName(entityName);
 
-        return StringUtils.lowerCase(entityName);
+        if(isSimpleEntityName(entityName)) {
+            // if all lower case and no "-", no need to use double quotation
+            return entityName;
+        }
+
+        // use double quotation to let the entityName be a valid postgres table name. which supports upper character and "-"
+        return "\"%s\"".formatted(entityName);
 
     }
 
@@ -172,7 +179,7 @@ public class TableUtil {
 
         // the following characters are not allowed in entity names
         // https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
-        Checker.check(StringUtils.containsNone(entityName, ';', ',', '&', '"', '\'', '\\', '(', ')', '\t', '\n', '\r'),
+        Checker.check(StringUtils.containsNone(entityName, ';', ',', '&', '\'', '\\', '(', ')', '\t', '\n', '\r'),
                 "entityName should not contain invalid characters: " + entityName);
 
         Checker.check(!StringUtils.contains(entityName, "--"),
@@ -194,7 +201,7 @@ public class TableUtil {
         }
 
         var prefix = StringUtils.substring(entityName, 0, 32);
-        var suffix = StringUtils.substring(entityName, length - 12, length);
+        var suffix = StringUtils.substring(entityName, length - 8, length);
         var hash = HashUtil.toShortHash(entityName);
 
         return "%s_%s_%s".formatted(prefix, hash, suffix);
@@ -1338,6 +1345,10 @@ public class TableUtil {
         tableName = checkAndNormalizeValidEntityName(tableName);
         indexName = checkAndNormalizeValidEntityName(indexName);
 
+        schemaName = removeQuotes(schemaName);
+        tableName = removeQuotes(tableName);
+        indexName = removeQuotes(indexName);
+
         // Query pg_indexes to check for the index existence.
         var query = "SELECT 1 FROM pg_indexes WHERE schemaname = ? AND tablename = ? AND indexname = ?";
         try (var pstmt = conn.prepareStatement(query)) {
@@ -1348,6 +1359,16 @@ public class TableUtil {
                 return rs.next();
             }
         }
+    }
+
+    /**
+     * remove starting and ending quotes
+     * @param entityName
+     * @return
+     */
+    public static String removeQuotes(String entityName) {
+        entityName = StringUtils.removeStart(entityName,"\"");
+        return StringUtils.removeEnd(entityName,"\"");
     }
 
     /**
@@ -1405,11 +1426,12 @@ public class TableUtil {
         // Optionally, normalize or validate the schema name as needed
         schemaName = checkAndNormalizeValidEntityName(schemaName);
 
+        var expectedSchemaName = removeQuotes(schemaName);
         var metaData = conn.getMetaData();
         try (var schemas = metaData.getSchemas()) {
             while (schemas.next()) {
-                String existingSchema = schemas.getString("TABLE_SCHEM");
-                if (schemaName.equals(existingSchema)) {
+                var existingSchema = schemas.getString("TABLE_SCHEM");
+                if (expectedSchemaName.equals(existingSchema)) {
                     return true;
                 }
             }
@@ -1504,6 +1526,8 @@ public class TableUtil {
         checkValidEntityName(tableName);
         checkValidEntityName(fieldName);
 
+        tableName = removeQuotes(tableName);
+
         var indexName =  String.format("idx_%s_%s_1", tableName, fieldName);
 
         return checkAndNormalizeValidEntityName(indexName);
@@ -1570,5 +1594,37 @@ public class TableUtil {
         // Add more types as needed
         return "text"; // default to varchar
     }
+
+    /**
+     * Checks if the given name is suitable for a postgres table name.
+     *
+     * A valid postgres table name, according to the requirements, should:
+     * - Consist of lowercase alphanumeric characters (a-z, 0-9).
+     * - Allow underscores (_).
+     * - Not be empty or null.
+     *
+     * @param name The name to check.
+     * @return {@code true} if the name is a valid postgres table name, {@code false} otherwise.
+     */
+    static boolean isSimpleEntityName(String name) {
+        if (name == null || name.isEmpty()) {
+            return false; // Null or empty names are not valid
+        }
+
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (!isSimpleEntityChar(c)) {
+                return false; // Found an invalid character
+            }
+        }
+        return true; // All characters are valid
+    }
+
+    private static boolean isSimpleEntityChar(char c) {
+        return (c >= 'a' && c <= 'z') || // lowercase letters
+                (c >= '0' && c <= '9') || // digits
+                (c == '_');              // underscore
+    }
+
 
 }
