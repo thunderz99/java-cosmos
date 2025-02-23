@@ -428,4 +428,23 @@ class RetryUtilTest {
         return response;
     }
 
+    @Test
+    void calculateWaitTime_should_work() throws Exception {
+        {
+            // normal cases
+            assertThat(RetryUtil.calculateWaitTime(2000, 1)).isEqualTo(2000L);
+            assertThat(RetryUtil.calculateWaitTime(2000, 2)).isEqualTo(4000L);
+            assertThat(RetryUtil.calculateWaitTime(2000, 3)).isEqualTo(8000L);
+            assertThat(RetryUtil.calculateWaitTime(1000, 1)).isEqualTo(1000L);
+            assertThat(RetryUtil.calculateWaitTime(2000, 10)).isEqualTo(RetryUtil.SINGLE_EXECUTION_MAX_WAIT_TIME);
+
+            // irregular cases
+            assertThat(RetryUtil.calculateWaitTime(1, 1)).isEqualTo(1L);
+            assertThat(RetryUtil.calculateWaitTime(-1, 1)).isEqualTo(2000L);
+            assertThat(RetryUtil.calculateWaitTime(0, 1)).isEqualTo(2000L);
+            assertThat(RetryUtil.calculateWaitTime(2000, 0)).isEqualTo(1000L);
+            assertThat(RetryUtil.calculateWaitTime(2000, -1)).isEqualTo(500L);
+        }
+    }
+
 }

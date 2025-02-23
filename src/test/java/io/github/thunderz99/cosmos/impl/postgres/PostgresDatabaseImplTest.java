@@ -1056,28 +1056,21 @@ class PostgresDatabaseImplTest {
 
         {
             // both side calculation
-
-            // original cond for cosmosdb
-            //var cond = Condition.filter("$EXPRESSION exp1", "c.age / 10 < ARRAY_LENGTH(c.skills)");
-
-            // TODO support cosmosdb format
-            var cond = Condition.filter("$EXPRESSION exp1", "((data->>'age')::int / 10) < jsonb_array_length(data->'skills')");
-
+            var cond = Condition.filter("$EXPRESSION exp1", "c.age / 10 < ARRAY_LENGTH(c.skills)");
             var users = db.find(host, cond, partition).toList(User.class);
             assertThat(users).hasSizeGreaterThanOrEqualTo(1);
             assertThat(users).anyMatch(user -> user.id.equals("id_find_filter2"));
             assertThat(users).noneMatch(user -> Set.of("id_find_filter1", "id_find_filter3", "id_find_filter4").contains(user.id));
         }
 
-            // TODO support cosmosdb format
-//        {
-//            // using c["age"]
-//            var cond = Condition.filter("$EXPRESSION exp1", "c[\"age\"] < ARRAY_LENGTH(c.skills) * 10");
-//            var users = db.find(host, cond, partition).toList(User.class);
-//            assertThat(users).hasSizeGreaterThanOrEqualTo(1);
-//            assertThat(users).anyMatch(user -> user.id.equals("id_find_filter2"));
-//            assertThat(users).noneMatch(user -> Set.of("id_find_filter1", "id_find_filter3", "id_find_filter4").contains(user.id));
-//        }
+        {
+            // using c["age"]
+            var cond = Condition.filter("$EXPRESSION exp1", "c[\"age\"] < ARRAY_LENGTH(c.skills) * 10");
+            var users = db.find(host, cond, partition).toList(User.class);
+            assertThat(users).hasSizeGreaterThanOrEqualTo(1);
+            assertThat(users).anyMatch(user -> user.id.equals("id_find_filter2"));
+            assertThat(users).noneMatch(user -> Set.of("id_find_filter1", "id_find_filter3", "id_find_filter4").contains(user.id));
+        }
     }
 
     @Test
