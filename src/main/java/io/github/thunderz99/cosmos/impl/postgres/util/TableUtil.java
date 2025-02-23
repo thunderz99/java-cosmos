@@ -151,6 +151,9 @@ public class TableUtil {
 
         checkValidEntityName(entityName);
 
+        // hyphen is not allowed in table name / index name
+        entityName = StringUtils.replace(entityName, "-", "_");
+
         // get a shortened version of entityName is length > 63 chars
         entityName = getShortenedEntityName(entityName);
 
@@ -1498,12 +1501,12 @@ public class TableUtil {
                 .replace("-", "_")
         ;
 
-        tableName = checkAndNormalizeValidEntityName(tableName);
-        fieldName = checkAndNormalizeValidEntityName(fieldName);
+        checkValidEntityName(tableName);
+        checkValidEntityName(fieldName);
 
         var indexName =  String.format("idx_%s_%s_1", tableName, fieldName);
 
-        return getShortenedEntityName(indexName);
+        return checkAndNormalizeValidEntityName(indexName);
 
     }
 

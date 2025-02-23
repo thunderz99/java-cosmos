@@ -97,6 +97,56 @@ class TableUtilTest {
 
 
     @Test
+    void createTableIfNotExist_should_work_4_uuid() throws Exception {
+
+
+        var tableName = "create_table_if_not_exist_" + UUID.randomUUID().toString();
+
+        var convertedTableName = tableName.replace("-", "_");
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            {
+
+                // table does not exist
+                var tableExist = TableUtil.tableExist(conn, schemaName, tableName);
+                assertThat(tableExist).isFalse();
+            }
+            {
+                // create table
+                var created = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+                assertThat(created).isEqualTo( schemaName + "." + convertedTableName);
+
+                // table exists
+                try(var conn2 = cosmos.getDataSource().getConnection()){
+                    var tableExist = TableUtil.tableExist(conn2, schemaName, tableName);
+                    assertThat(tableExist).isTrue();
+                }
+
+                // create table the second time. and it should be no-op
+                var created2 = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                assertThat(created2).isEmpty();
+            }
+
+            {
+                //drop table
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+                //table does not exist
+                var tableExist = TableUtil.tableExist(conn, schemaName, tableName);
+
+                assertThat(tableExist).isFalse();
+            }
+
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+
+    }
+
+
+    @Test
     void crud_should_work() throws Exception {
 
         var tableName = "crud_test_" + RandomStringUtils.randomAlphanumeric(6);
@@ -762,8 +812,8 @@ class TableUtilTest {
 
             // long index names
             assertThat(TableUtil.getIndexName("table1", "contents.77993598-a9d2-4862-ae77-73005d274697.v--alue")).isEqualTo("idx_table1_contents_77993598_a9d_34a61b2575d6dae1_97_v__alue_1").hasSizeLessThan(64);
-            assertThat(TableUtil.getIndexName("mastersheets_standardremunerationmonthlyamountgrademaster", "_uniqueKey1")).isEqualTo("idx_mastersheets_standardremuner_4f5df5845645494c_uniquekey1_1").hasSizeLessThan(64);
-            assertThat(TableUtil.getIndexName("mastersheets_standardremunerationmonthlyamountgrademaster_recycle", "_uniqueKey1")).isEqualTo("idx_mastersheets_standardremuner_ab79875975b9a85e_uniquekey1_1").hasSizeLessThan(64);
+            assertThat(TableUtil.getIndexName("mastersheets_standardremunerationmonthlyamountgrademaster", "_uniqueKey1")).isEqualTo("idx_mastersheets_standardremuner_c602b16a8373b1aa_uniquekey1_1").hasSizeLessThan(64);
+            assertThat(TableUtil.getIndexName("mastersheets_standardremunerationmonthlyamountgrademaster_recycle", "_uniqueKey1")).isEqualTo("idx_mastersheets_standardremuner_e93ec18d49c213d8_uniquekey1_1").hasSizeLessThan(64);
 
 
 

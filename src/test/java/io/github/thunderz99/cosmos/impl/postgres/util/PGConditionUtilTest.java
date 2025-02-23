@@ -43,7 +43,7 @@ class PGConditionUtilTest {
                 // test with specific filters
                 var condFilter = Condition.filter().filter("age", 18);
                 var actualSpecFilter = PGConditionUtil.toQuerySpec(coll, condFilter, partition);
-                var expectedFilter = new CosmosSqlQuerySpec("SELECT *\n FROM schema1.table1\n WHERE ((data->>'age')::int = @param000_age) OFFSET 0 LIMIT 100", List.of(new CosmosSqlParameter("@param000_age", 18)));
+                var expectedFilter = new CosmosSqlQuerySpec("SELECT *\n FROM schema1.table1\n WHERE ((data->>'age')::numeric = @param000_age) OFFSET 0 LIMIT 100", List.of(new CosmosSqlParameter("@param000_age", 18)));
                 assertThat(actualSpecFilter).isEqualTo(expectedFilter);
             }
         }
@@ -81,7 +81,7 @@ class PGConditionUtilTest {
             var cond = Condition.filter("id", "001", "age >", 15);
             var filterQuery = PGConditionUtil.generateFilterQuery(cond, "", new ArrayList<>(), new AtomicInteger(), new AtomicInteger(), QueryContext.create());
 
-            var queryTextExpected = " WHERE (data->>'id' = @param000_id) AND ((data->>'age')::int > @param001_age)";
+            var queryTextExpected = " WHERE (data->>'id' = @param000_id) AND ((data->>'age')::numeric > @param001_age)";
             assertThat(filterQuery.queryText.toString()).isEqualTo(queryTextExpected);
             assertThat(filterQuery.params).hasSize(2);
             assertThat(filterQuery.params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_id", "001").toJson());
@@ -118,7 +118,7 @@ class PGConditionUtilTest {
             var expectedSQL = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE (data->'fullName'->>'last' = @param000_fullName__last) AND ((data->>'position' = @param001_position) OR (data->>'organization' = @param002_organization)) AND ((data->>'age')::int = @param003_age)
+                     WHERE (data->'fullName'->>'last' = @param000_fullName__last) AND ((data->>'position' = @param001_position) OR (data->>'organization' = @param002_organization)) AND ((data->>'age')::numeric = @param003_age)
                      ORDER BY data->>'_ts' DESC OFFSET 10 LIMIT 20
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expectedSQL.trim());
@@ -324,7 +324,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE (((data->>'id')::int = @param000_id)) OFFSET 0 LIMIT 100
+                     WHERE (((data->>'id')::numeric = @param000_id)) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim())
                     .isEqualTo(expected.trim());
@@ -339,7 +339,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE ((data->>'id')::int = @param000_id) OFFSET 0 LIMIT 100
+                     WHERE ((data->>'id')::numeric = @param000_id) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim())
                     .isEqualTo(expected.trim());
@@ -368,7 +368,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE ((data->>'id')::int = @param000_id) OFFSET 0 LIMIT 100
+                     WHERE ((data->>'id')::numeric = @param000_id) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim())
                     .isEqualTo(expected.trim());
@@ -383,7 +383,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE ((data->>'id')::int = @param000_id) AND ((data->>'name' = @param001_name)) OFFSET 0 LIMIT 100
+                     WHERE ((data->>'id')::numeric = @param000_id) AND ((data->>'name' = @param001_name)) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(
                     expected.trim());
@@ -399,8 +399,8 @@ class PGConditionUtilTest {
         assertThat(PGConditionUtil.processNegativeQuery("", true)).isEmpty();
         assertThat(PGConditionUtil.processNegativeQuery("", false)).isEmpty();
 
-        assertThat(PGConditionUtil.processNegativeQuery("(data->>'age')::int >= 1", false)).isEqualTo("(data->>'age')::int >= 1");
-        assertThat(PGConditionUtil.processNegativeQuery("(data->>'age')::int >= 1", true)).isEqualTo(" NOT((data->>'age')::int >= 1)");
+        assertThat(PGConditionUtil.processNegativeQuery("(data->>'age')::numeric >= 1", false)).isEqualTo("(data->>'age')::numeric >= 1");
+        assertThat(PGConditionUtil.processNegativeQuery("(data->>'age')::numeric >= 1", true)).isEqualTo(" NOT((data->>'age')::numeric >= 1)");
 
     }
 
@@ -469,7 +469,7 @@ class PGConditionUtilTest {
                              (
                            SELECT jsonb_agg(s3)
                            FROM jsonb_array_elements(data->'room*no-01') AS s3
-                           WHERE ( ((s3->>'area')::int = @PARAM))
+                           WHERE ( ((s3->>'area')::numeric = @PARAM))
                          ),
                             data->'room*no-01'
                           )
@@ -483,7 +483,7 @@ class PGConditionUtilTest {
                          ) AND EXISTS (
                            SELECT 1
                            FROM jsonb_array_elements(data->'room*no-01') AS j1
-                           WHERE ((j1->>'area')::int = @PARAM)
+                           WHERE ((j1->>'area')::numeric = @PARAM)
                          )
                          ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
                         """;

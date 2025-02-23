@@ -673,7 +673,8 @@ class PostgresDatabaseImplTest {
         // test basic find
         {
             var cond = Condition.filter("fullName.last", "Hanks", //
-                            "fullName.first", "Elise" //
+                            "fullName.first", "Elise", //
+                            "_ts >", 0
                     ).sort("id", "ASC") //
                     .limit(10) //
                     .offset(0);
