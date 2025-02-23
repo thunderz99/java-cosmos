@@ -16,9 +16,12 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,7 +32,8 @@ class TableUtilTest {
     static PostgresImpl cosmos;
 
     static final String dbName = "java_cosmos";
-    static final String schemaName = "table_util_test_schema_" + RandomStringUtils.randomAlphanumeric(6).toLowerCase();
+    static final String schemaName = "table_util_test_schema_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+    static final String formattedSchemaName = TableUtil.checkAndNormalizeValidEntityName(schemaName);
 
     @BeforeAll
     static void beforeAll() throws Exception {
@@ -49,7 +53,8 @@ class TableUtilTest {
     void createTableIfNotExist_should_work() throws Exception {
 
 
-        var tableName = "create_table_if_not_exist_" + RandomStringUtils.randomAlphanumeric(6).toLowerCase();
+        var tableName = "create_table_if_not_exist_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
 
         try (var conn = cosmos.getDataSource().getConnection()) {
             {
@@ -62,7 +67,57 @@ class TableUtilTest {
                 // create table
                 var created = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
-                assertThat(created).isEqualTo( schemaName + "." + tableName);
+                assertThat(created).isEqualTo( formattedSchemaName + "." + formattedTableName);
+
+                // table exists
+                try(var conn2 = cosmos.getDataSource().getConnection()){
+                    var tableExist = TableUtil.tableExist(conn2, schemaName, tableName);
+                    assertThat(tableExist).isTrue();
+                }
+
+                // create table the second time. and it should be no-op
+                var created2 = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                assertThat(created2).isEmpty();
+            }
+
+            {
+                //drop table
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+                //table does not exist
+                var tableExist = TableUtil.tableExist(conn, schemaName, tableName);
+
+                assertThat(tableExist).isFalse();
+            }
+
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+
+    }
+
+
+    @Test
+    void createTableIfNotExist_should_work_4_uuid() throws Exception {
+
+
+        var tableName = "create_table_if_not_exist_" + UUID.randomUUID().toString();
+
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            {
+
+                // table does not exist
+                var tableExist = TableUtil.tableExist(conn, schemaName, tableName);
+                assertThat(tableExist).isFalse();
+            }
+            {
+                // create table
+                var created = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+                assertThat(created).isEqualTo( formattedSchemaName + "." + formattedTableName);
 
                 // table exists
                 try(var conn2 = cosmos.getDataSource().getConnection()){
@@ -96,7 +151,69 @@ class TableUtilTest {
     @Test
     void crud_should_work() throws Exception {
 
-        var tableName = "crud_test_" + RandomStringUtils.randomAlphanumeric(6);
+        var tableName = "crud_test_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            {
+
+                //create table
+                TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+                //insert record
+                var id = RandomStringUtils.randomAlphanumeric(6);
+                Map<String, Object> data = Maps.newHashMap(Map.of("id", id, "name", "John Doe"));
+                var inserted = TableUtil.insertRecord(conn, schemaName, tableName, new PostgresRecord(id, data));
+                assertThat(inserted).isNotNull();
+                assertThat(inserted.id).isEqualTo(id);
+                assertThat(inserted.data.get("id")).isEqualTo(id);
+                assertThat(inserted.data.get("name")).isEqualTo("John Doe");
+
+
+                //read record
+                var read = TableUtil.readRecord(conn, schemaName, tableName, id);
+                assertThat(read).isNotNull();
+                assertThat(read.id).isEqualTo(id);
+                assertThat(read.data.get("id")).isEqualTo(id);
+                assertThat(read.data.get("name")).isEqualTo("John Doe");
+
+                //update record
+                Map<String, Object> updatedData = Maps.newHashMap(Map.of("name", "Jane Doe"));
+                var updated = TableUtil.updateRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData));
+                assertThat(updated).isNotNull();
+                assertThat(updated.id).isEqualTo(id);
+                assertThat(updated.data.get("id")).isEqualTo(id);
+                assertThat(updated.data.get("name")).isEqualTo("Jane Doe");
+
+
+                //read record
+                read = TableUtil.readRecord(conn, schemaName, tableName, id);
+                assertThat(read).isNotNull();
+                assertThat(read.id).isEqualTo(id);
+                assertThat(read.data.get("id")).isEqualTo(id);
+                assertThat(read.data.get("name")).isEqualTo("Jane Doe");
+
+                //delete record
+                TableUtil.deleteRecord(conn, schemaName, tableName, id);
+
+                //read record
+                read = TableUtil.readRecord(conn, schemaName, tableName, id);
+                assertThat(read).isNull();
+            }
+
+
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+
+    }
+
+    @Test
+    void crud_should_work_4_long_table_names() throws Exception {
+
+        //long table name (> 63 chars)
+        var tableName = "crud_test_" + RandomStringUtils.randomAlphanumeric(64);
 
         try (var conn = cosmos.getDataSource().getConnection()) {
             {
@@ -159,8 +276,6 @@ class TableUtilTest {
     void upsert_should_work() throws Exception {
 
         var tableName = "upsert_test_" + RandomStringUtils.randomAlphanumeric(6);
-
-        var tenantId = "Data_upsert_" + RandomStringUtils.randomAlphanumeric(6);
 
         try (var conn = cosmos.getDataSource().getConnection()) {
             {
@@ -236,7 +351,8 @@ class TableUtilTest {
     @Test
     void updatePartial_should_work() throws Exception {
 
-        var tableName = "upsert_partial_test_" + RandomStringUtils.randomAlphanumeric(6).toLowerCase();
+        var tableName = "upsert_partial_test_" + RandomStringUtils.randomAlphanumeric(6);
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
 
         try {
             try (var conn = cosmos.getDataSource().getConnection()) {
@@ -331,7 +447,7 @@ class TableUtilTest {
                             .isInstanceOfSatisfying(CosmosException.class, e -> {
                                 assertThat(e.getStatusCode()).isEqualTo(412);
                                 assertThat(e.getCode()).isEqualTo("412 Precondition Failed");
-                                assertThat(e.getMessage()).contains("table:'%s.%s', id:%s".formatted(schemaName, tableName, id));
+                                assertThat(e.getMessage()).contains("table:'%s.%s', id:%s".formatted(formattedSchemaName, formattedTableName, id));
                             });
                 }
 
@@ -568,73 +684,83 @@ class TableUtilTest {
 
     @Test
     void findRecords_should_work() throws Exception {
-        var tableName = "findRecords_test_" + RandomStringUtils.randomAlphanumeric(6);
 
-        try (var conn = cosmos.getDataSource().getConnection()) {
-            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+        // short table name
+        var tableName1 = "findRecords_test_" + RandomStringUtils.randomAlphanumeric(6);
 
-            var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord(String.valueOf(i), Maps.newHashMap(Map.of(
-                    "id", String.valueOf(i),
-                    "name", "John Doe " + i,
-                    "age", i,
-                    "address", Map.of("city", "NY" + i)
-            )
-            ))).toList();
-            TableUtil.batchUpsertRecords(conn, schemaName, tableName, records);
+        // long table name(> 63 chars)
+        var tableName2 = "findRecords_test_" + RandomStringUtils.randomAlphanumeric(63);
 
-            {
-                // normal case
+        for(var tableName : List.of(tableName1, tableName2)) {
 
-                // filtering with id
-                var querySpec = new CosmosSqlQuerySpec();
-                querySpec.setQueryText("SELECT * FROM %s.%s WHERE id = @param000_id".formatted(schemaName, tableName));
-                querySpec.addParameter(new CosmosSqlParameter("@param000_id", "5"));
-                var found = TableUtil.findRecords(conn, schemaName, tableName, querySpec);
-                assertThat(found).hasSize(1);
-                assertThat(found.get(0).id).isEqualTo(records.get(5).id);
-                assertThat(found.get(0).data).isEqualTo(records.get(5).data);
-            }
-
-            {
-                // filtering with name and age
-                var querySpec = new CosmosSqlQuerySpec();
-                querySpec.setQueryText("SELECT * FROM %s.%s WHERE (data->>'name' > @param000_name) AND ((data->>'age')::int < @param001_age)".formatted(schemaName, tableName));
-                querySpec.addParameter(new CosmosSqlParameter("@param000_name", "John Doe 2"));
-                querySpec.addParameter(new CosmosSqlParameter("@param001_age", 6));
-                var found = TableUtil.findRecords(conn, schemaName, tableName, querySpec);
-                assertThat(found).hasSize(3);
-                assertThat(found.get(0).id).isEqualTo(records.get(3).id);
-                assertThat(found.get(1).data).isEqualTo(records.get(4).data);
-                assertThat(found.get(2).id).isEqualTo(records.get(5).id);
-            }
-
-            {
-                // filtering address.city (nested fields)
-                var querySpec = new CosmosSqlQuerySpec();
-                querySpec.setQueryText("SELECT * FROM %s.%s WHERE (data->'address'->>'city' = @param000_city)".formatted(schemaName, tableName));
-                querySpec.addParameter(new CosmosSqlParameter("@param000_city", "NY5"));
-                var found = TableUtil.findRecords(conn, schemaName, tableName, querySpec);
-                assertThat(found).hasSize(1);
-                assertThat(found.get(0).id).isEqualTo(records.get(5).id);
-                assertThat(found.get(0).data).isEqualTo(records.get(5).data);
-            }
-
-            {
-                // irregular input values
-                // filter is null
-                assertThatThrownBy(() -> TableUtil.findRecords(conn, schemaName, tableName, null))
-                        .isInstanceOf(IllegalArgumentException.class)
-                        .hasMessage("querySpec should not be null");
-            }
-            {
-                // filter is empty
-                assertThatThrownBy(() -> TableUtil.findRecords(conn, schemaName, tableName, new CosmosSqlQuerySpec()))
-                        .isInstanceOf(IllegalArgumentException.class)
-                        .hasMessage("querySpec.queryText should be non-blank");
-            }
-        } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
-                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+                TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+                var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord(String.valueOf(i), Maps.newHashMap(Map.of(
+                                "id", String.valueOf(i),
+                                "name", "John Doe " + i,
+                                "age", i,
+                                "address", Map.of("city", "NY" + i)
+                        )
+                ))).toList();
+                TableUtil.batchUpsertRecords(conn, schemaName, tableName, records);
+
+                var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+
+                {
+                    // normal case
+
+                    // filtering with id
+                    var querySpec = new CosmosSqlQuerySpec();
+                    querySpec.setQueryText("SELECT * FROM %s.%s WHERE id = @param000_id".formatted(formattedSchemaName, formattedTableName));
+                    querySpec.addParameter(new CosmosSqlParameter("@param000_id", "5"));
+                    var found = TableUtil.findRecords(conn, schemaName, tableName, querySpec);
+                    assertThat(found).hasSize(1);
+                    assertThat(found.get(0).id).isEqualTo(records.get(5).id);
+                    assertThat(found.get(0).data).isEqualTo(records.get(5).data);
+                }
+
+                {
+                    // filtering with name and age
+                    var querySpec = new CosmosSqlQuerySpec();
+                    querySpec.setQueryText("SELECT * FROM %s.%s WHERE (data->>'name' > @param000_name) AND ((data->>'age')::int < @param001_age)".formatted(formattedSchemaName, formattedTableName));
+                    querySpec.addParameter(new CosmosSqlParameter("@param000_name", "John Doe 2"));
+                    querySpec.addParameter(new CosmosSqlParameter("@param001_age", 6));
+                    var found = TableUtil.findRecords(conn, schemaName, tableName, querySpec);
+                    assertThat(found).hasSize(3);
+                    assertThat(found.get(0).id).isEqualTo(records.get(3).id);
+                    assertThat(found.get(1).data).isEqualTo(records.get(4).data);
+                    assertThat(found.get(2).id).isEqualTo(records.get(5).id);
+                }
+
+                {
+                    // filtering address.city (nested fields)
+                    var querySpec = new CosmosSqlQuerySpec();
+                    querySpec.setQueryText("SELECT * FROM %s.%s WHERE (data->'address'->>'city' = @param000_city)".formatted(formattedSchemaName, formattedTableName));
+                    querySpec.addParameter(new CosmosSqlParameter("@param000_city", "NY5"));
+                    var found = TableUtil.findRecords(conn, schemaName, tableName, querySpec);
+                    assertThat(found).hasSize(1);
+                    assertThat(found.get(0).id).isEqualTo(records.get(5).id);
+                    assertThat(found.get(0).data).isEqualTo(records.get(5).data);
+                }
+
+                {
+                    // irregular input values
+                    // filter is null
+                    assertThatThrownBy(() -> TableUtil.findRecords(conn, schemaName, tableName, null))
+                            .isInstanceOf(IllegalArgumentException.class)
+                            .hasMessage("querySpec should not be null");
+                }
+                {
+                    // filter is empty
+                    assertThatThrownBy(() -> TableUtil.findRecords(conn, schemaName, tableName, new CosmosSqlQuerySpec()))
+                            .isInstanceOf(IllegalArgumentException.class)
+                            .hasMessage("querySpec.queryText should be non-blank");
+                }
+            } finally {
+                try (var conn = cosmos.getDataSource().getConnection()) {
+                    TableUtil.dropTableIfExists(conn, schemaName, tableName);
+                }
             }
         }
     }
@@ -642,6 +768,7 @@ class TableUtilTest {
     @Test
     void countRecords_should_work() throws Exception {
         var tableName = "countrecords_" + RandomStringUtils.randomAlphanumeric(4).toLowerCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
         var records = IntStream.range(0, 10).mapToObj(i -> new PostgresRecord(String.valueOf(i), Maps.newHashMap(Map.of("name", "John Doe " + i, "age", i)))).toList();
         try (var conn = cosmos.getDataSource().getConnection()) {
             TableUtil.createTableIfNotExists(conn, schemaName, tableName);
@@ -651,7 +778,7 @@ class TableUtilTest {
             {
                 // normal case
                 var querySpec = new CosmosSqlQuerySpec();
-                querySpec.setQueryText("SELECT COUNT(*) FROM %s.%s WHERE data->>'name' = @param000_name".formatted(schemaName, tableName));
+                querySpec.setQueryText("SELECT COUNT(*) FROM %s.%s WHERE data->>'name' = @param000_name".formatted(formattedSchemaName, formattedTableName));
                 querySpec.addParameter(new CosmosSqlParameter("@param000_name", "John Doe 2"));
                 var count = TableUtil.countRecords(conn, schemaName, tableName, querySpec);
                 assertThat(count).isEqualTo(1);
@@ -683,10 +810,17 @@ class TableUtilTest {
     void getIndexName_should_work() {
         {
             // normal cases
-            assertThat(TableUtil.getIndexName("table_name", "column_name")).isEqualTo("table_name_column_name_1");
-            assertThat(TableUtil.getIndexName("table1", "_uniqueKey1")).isEqualTo("table1__uniquekey1_1");
-            assertThat(TableUtil.getIndexName("table1", "address.city.street")).isEqualTo("table1_address_city_street_1");
-            assertThat(TableUtil.getIndexName("table1", "contents.77993598-a9d2-4862-ae77-73005d274697.v--alue")).isEqualTo("table1_contents_77993598_a9d2_4862_ae77_73005d274697_v__alue_1").hasSizeLessThan(64);
+            assertThat(TableUtil.getIndexName("table_name", "column_name")).isEqualTo("idx_table_name_column_name_1");
+            assertThat(TableUtil.getIndexName("table1", "_uniqueKey1")).isEqualTo("\"idx_table1__uniqueKey1_1\"");
+            assertThat(TableUtil.getIndexName("table1", "address.city.street")).isEqualTo("idx_table1_address_city_street_1");
+
+            // long index names
+            assertThat(TableUtil.getIndexName("table1", "contents.77993598-a9d2-4862-ae77-73005d274697.v--alue")).isEqualTo("idx_table1_contents_77993598_a9d_34a61b2575d6dae1___alue_1").hasSizeLessThan(64);
+            assertThat(TableUtil.getIndexName("mastersheets_standardremunerationmonthlyamountgrademaster", "_uniqueKey1")).isEqualTo("\"idx_mastersheets_standardremuner_c602b16a8373b1aa_ueKey1_1\"").hasSizeLessThan(64);
+            assertThat(TableUtil.getIndexName("mastersheets_standardremunerationmonthlyamountgrademaster_recycle", "_uniqueKey1")).isEqualTo("\"idx_mastersheets_standardremuner_e93ec18d49c213d8_ueKey1_1\"").hasSizeLessThan(64);
+
+
+
 
         }
 
@@ -709,20 +843,21 @@ class TableUtilTest {
     void createIndexIfNotExists_should_work() throws Exception {
 
         var tableName = "table1" + RandomStringUtils.randomAlphanumeric(3).toLowerCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
         var fieldName = "address.city.street";
-        var indexName = tableName + "_address_city_street_1";
+        var formattedIndexName = TableUtil.getIndexName(formattedTableName, fieldName);
 
         try(var conn = cosmos.getDataSource().getConnection();) {
             {
                 // create table
                 var createdTableName = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
-                assertThat(createdTableName).isEqualTo(schemaName + "." + tableName);
+                assertThat(createdTableName).isEqualTo(formattedSchemaName + "." + formattedTableName);
             }
 
             {
                 // create index
                 var createdIndexName = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
-                assertThat(createdIndexName).isEqualTo(schemaName + "." + indexName);
+                assertThat(createdIndexName).isEqualTo(formattedSchemaName + "." + formattedIndexName);
             }
 
             {
@@ -733,11 +868,93 @@ class TableUtilTest {
 
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
-                TableUtil.dropIndexIfExists(conn, schemaName, indexName);
+                TableUtil.dropIndexIfExists(conn, schemaName, formattedIndexName);
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
             }
         }
 
+    }
+
+    @Test
+    void createIndexIfNotExists_should_work_for_unique() throws Exception {
+
+        var tableName = "table1" + RandomStringUtils.randomAlphanumeric(3).toLowerCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+        var fieldName = "_uniqueKey1";
+        var formattedIndexName = TableUtil.getIndexName(formattedTableName, fieldName);
+
+        try(var conn = cosmos.getDataSource().getConnection();) {
+            {
+                // create table
+                var createdTableName = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                assertThat(createdTableName).isEqualTo(formattedSchemaName + "." + formattedTableName);
+            }
+
+            {
+                // create index
+                var createdIndexName = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
+                assertThat(createdIndexName).isEqualTo(formattedSchemaName + "." + formattedIndexName);
+            }
+
+            {
+                // create index the second time. and it should be no-op
+                var created2 = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
+                assertThat(created2).isEmpty();
+            }
+
+            {
+                // test unique constraint
+                var id = "uniqueKey1_test_" + RandomStringUtils.randomAlphanumeric(6);
+                TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, Maps.newLinkedHashMap(Map.of(fieldName, "1"))));
+
+                var id2 = "uniqueKey1_test_" + RandomStringUtils.randomAlphanumeric(6);
+                // although the id is same, but the fieldName is duplicated. so it should fail
+                assertThatThrownBy(() -> TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id2, Maps.newLinkedHashMap(Map.of(fieldName, "1")))))
+                        .isInstanceOfSatisfying(SQLException.class, e -> {
+                            assertThat(e.getSQLState()).isEqualTo("23505");
+                            assertThat(e.getMessage()).contains("duplicate key");
+                        });
+            }
+
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropIndexIfExists(conn, schemaName, formattedIndexName);
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+
+    }
+
+    @Test
+    void getShortenedEntityName_should_work() {
+        {
+            // normal case
+            assertThat(TableUtil.getShortenedEntityName("table_name")).isEqualTo("table_name");
+            assertThat(TableUtil.getShortenedEntityName("mastersheets_standardremunerationmonthlyamountgrademaster"))
+                    .isEqualTo("mastersheets_standardremunerationmonthlyamountgrademaster");
+        }
+
+        {
+            // length > 63
+            var longName = "a" + IntStream.range(0, 63).mapToObj(i -> "x").collect(Collectors.joining());
+            var expected = "axxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_3486051ba0508e5c_xxxxxxxx";
+            var shortenedName = TableUtil.getShortenedEntityName(longName);
+            assertThat(shortenedName).isEqualTo(expected).hasSize(58);
+        }
+
+        {
+            // length > 63, table name in real world
+            var longName = "mastersheets_standardremunerationmonthlyamountgrademaster_recycle";
+            var expected = "mastersheets_standardremuneratio_89d2e9f3e7423b7c__recycle";
+            var shortenedName = TableUtil.getShortenedEntityName(longName);
+            assertThat(shortenedName).isEqualTo(expected).hasSize(58);
+        }
+
+        {
+            // irregular cases
+            assertThat(TableUtil.getShortenedEntityName(null)).isEqualTo(null);
+            assertThat(TableUtil.getShortenedEntityName("")).isEqualTo("");
+        }
     }
 
 }

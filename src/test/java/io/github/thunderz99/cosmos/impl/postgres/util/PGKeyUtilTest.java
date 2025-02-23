@@ -18,14 +18,14 @@ class PGKeyUtilTest {
         {
             // normal cases
             assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", "12")).isEqualTo("data->>'age'");
-            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", 12)).isEqualTo("(data->>'age')::int");
-            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", Integer.MAX_VALUE)).isEqualTo("(data->>'age')::int");
-            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", Integer.MIN_VALUE)).isEqualTo("(data->>'age')::int");
-            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", 0)).isEqualTo("(data->>'age')::int");
+            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", 12)).isEqualTo("(data->>'age')::numeric");
+            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", Integer.MAX_VALUE)).isEqualTo("(data->>'age')::numeric");
+            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", Integer.MIN_VALUE)).isEqualTo("(data->>'age')::numeric");
+            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", 0)).isEqualTo("(data->>'age')::numeric");
             assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", "abc")).isEqualTo("data->>'age'");
             assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", true)).isEqualTo("(data->>'age')::boolean");
             assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "data", false)).isEqualTo("(data->>'age')::boolean");
-            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "extra", 12)).isEqualTo("(extra->>'age')::int");
+            assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "extra", 12)).isEqualTo("(extra->>'age')::numeric");
             assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "extra", "abc")).isEqualTo("extra->>'age'");
             assertThat(PGKeyUtil.getFormattedKeyWithAlias("age", "extra", true)).isEqualTo("(extra->>'age')::boolean");
         }

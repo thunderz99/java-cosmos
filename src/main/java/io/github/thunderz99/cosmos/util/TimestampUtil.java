@@ -48,9 +48,9 @@ public class TimestampUtil {
 
         if (ts instanceof Double doubleTs) {
             //for compatibility, convert 1714546148.123d to 1714546148L
-            map.put("_ts", doubleTs.longValue());
-        } else if( ts instanceof Integer intTs){
-            map.put("_ts", intTs.longValue());
+            map.put("_ts", doubleTs.intValue());
+        } else if( ts instanceof Long longTs){
+            map.put("_ts", longTs.intValue());
         }
     }
 

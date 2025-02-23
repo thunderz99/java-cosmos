@@ -14,6 +14,7 @@ import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosDatabaseImpl;
 import org.apache.commons.lang3.ObjectUtils;
+import org.postgresql.util.PSQLException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,12 +37,18 @@ public class RetryUtil {
     /**
      * max retries for a single CRUD execution
      */
-    static final int SINGLE_EXECUTION_MAX_RETRIES = 10;
+    public static final int SINGLE_EXECUTION_MAX_RETRIES = 10;
 
     /**
-     * Wait time before retry in Millis for a single CRUD execution
+     * Wait time before retry in Millis for a single CRUD execution. 2 seconds
      */
-    static final int SINGLE_EXECUTION_DEFAULT_WAIT_TIME = 2000;
+    public static final int SINGLE_EXECUTION_DEFAULT_WAIT_TIME = 2000;
+
+    /**
+     * Max wait time before retry in Millis for a single CRUD execution. 30 seconds
+     */
+    public static final int SINGLE_EXECUTION_MAX_WAIT_TIME = 30000;
+
 
     /**
      * An instance of LinkedHashMap<String, Object>, used to get the class instance in a convenience way.
@@ -56,7 +63,7 @@ public class RetryUtil {
      * Which is smaller than single. Because the reason a batch failed is more complicated, we should handle the issue more quickly to the caller.
      * </p>
      */
-    static final int BATCH_EXECUTION_MAX_RETRIES = 3;
+    public static final int BATCH_EXECUTION_MAX_RETRIES = 3;
 
     /**
      * Wait time before retry in Millis for a batch execution
@@ -65,7 +72,7 @@ public class RetryUtil {
      * We set 10 seconds for batch retry delay as default. Longer than a single execution.
      * </p>
      */
-    static final int BATCH_EXECUTION_DEFAULT_WAIT_TIME = 10_000;
+    public static final int BATCH_EXECUTION_DEFAULT_WAIT_TIME = 10_000;
 
 
     RetryUtil() {
@@ -92,6 +99,8 @@ public class RetryUtil {
                 cosmosException = new CosmosException(ce);
             } catch (MongoException me) {
                 cosmosException = new CosmosException(me);
+            } catch (PSQLException pe) {
+                cosmosException = new CosmosException(pe);
             } catch (CosmosException ce) {
                 // deal with java-cosmos's CosmosException
                 cosmosException = ce;
@@ -103,10 +112,10 @@ public class RetryUtil {
                 }
                 var wait = cosmosException.getRetryAfterInMilliseconds();
                 if (wait <= 0) {
-                    wait = defaultWaitTime;
+                    wait = calculateWaitTime(defaultWaitTime, i);
 
                     if (wait < 0) {
-                        log.warn("retryAfterInMilliseconds {} is minus. Will retry by defaultWaitTime(2000ms)", wait, cosmosException);
+                        log.warn("retryAfterInMilliseconds < 0. Will retry by time({} ms)", wait, cosmosException);
                     }
                 }
                 log.warn("RetryUtil 429 occurred. Code:{}, Wait:{} ms, Message:{}", cosmosException.getStatusCode(), wait, cosmosException.getMessage());
@@ -117,11 +126,47 @@ public class RetryUtil {
         }
     }
 
+    /**
+     * calculate wait time(ms) for retry by 2^n, n is the time of retry
+     *
+     * <p>
+     * for example, if defaultWaitTime is 2000, and retry 3 times, the wait time will be 2000, 4000, 8000
+     * </p>
+     *
+     * @param defaultWaitTime
+     * @param i retry times
+     * @return calculated wait time
+     */
+    static long calculateWaitTime(long defaultWaitTime, int i) {
+        if (defaultWaitTime <= 0){
+            defaultWaitTime = SINGLE_EXECUTION_DEFAULT_WAIT_TIME;
+        }
 
+        var ret = (long) (defaultWaitTime * Math.pow(2, i-1));
+
+        return Math.min(ret, SINGLE_EXECUTION_MAX_WAIT_TIME);
+
+    }
+
+
+    /**
+     * execute batch with retry. used for cosmosdb only
+     * @param func
+     * @return
+     * @throws Exception
+     */
     public static CosmosBatchResponseWrapper executeBatchWithRetry(Callable<CosmosBatchResponseWrapper> func) throws Exception {
         return executeBatchWithRetry(func, BATCH_EXECUTION_DEFAULT_WAIT_TIME, BATCH_EXECUTION_MAX_RETRIES);
     }
 
+    /**
+     * execute batch with retry. used for cosmosdb only
+     * @param func
+     * @param defaultWaitTime
+     * @param maxRetries
+     * @return
+     * @throws Exception
+     */
     public static CosmosBatchResponseWrapper executeBatchWithRetry(Callable<CosmosBatchResponseWrapper> func, long defaultWaitTime, int maxRetries) throws Exception {
         return executeWithRetry(() -> {
             var response = func.call();
@@ -134,7 +179,7 @@ public class RetryUtil {
     }
 
     /**
-     * do common bulk operation(create, upsert, delete) with retry
+     * do common bulk operation(create, upsert, delete) with retry. used in cosmosdb only
      *
      * @param coll           collection name
      * @param operations     operations to be executed

@@ -24,6 +24,7 @@ import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.assertj.core.data.Percentage;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
@@ -44,6 +45,11 @@ class CosmosDatabaseImplTest {
 
     static String dbName = "CosmosDB";
     static String coll = "UnitTest_" + RandomStringUtils.randomAlphanumeric(6);
+
+    /**
+     * alias for coll
+     */
+    static String host = coll;
 
     static FullNameUser user1 = null;
     static FullNameUser user2 = null;
@@ -111,6 +117,20 @@ class CosmosDatabaseImplTest {
             var read = db.read(coll, user.id, "Users").toObject(User.class);
             assertThat(read.id).isEqualTo(user.id);
             assertThat(read.firstName).isEqualTo(user.firstName);
+
+            // check _ts exist for timestamp is correct
+            var map = db.read(coll, user.id, "Users").toMap();
+            assertThat(map.get("_ts")).isInstanceOfSatisfying(Integer.class, i -> assertThat(i.longValue()).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0)));
+
+            // read not existing document should throw CosmosException(404 Not Found)
+            assertThatThrownBy(() -> db.read(coll, "notExistId", "Users"))
+                    .isInstanceOfSatisfying(CosmosException.class, ce -> {
+                        assertThat(ce.getStatusCode()).isEqualTo(404);
+                        assertThat(ce.getMessage()).contains("NotFound").contains("Resource Not Found");
+                    });
+
+            // readSuppressing404 should return null
+            assertThat(db.readSuppressing404(coll, "notExistId2", "Users")).isNull();
 
         } finally {
             db.delete(coll, user.id, "Users");
@@ -863,16 +883,19 @@ class CosmosDatabaseImplTest {
                     .limit(10) //
                     .offset(0);
 
-            var iterator = db.findToIterator(coll, cond, "Users");
+            var iterator = db.findToIterator(coll, cond, "Users").getMapIterator();
 
-            var users = new ArrayList<FullNameUser>();
+            var users = new ArrayList<Map<String, Object>>();
             while(iterator.hasNext()){
-                var user = iterator.next(FullNameUser.class);
+                var user = iterator.next();
                 users.add(user);
             }
 
             assertThat(users.size()).isEqualTo(1);
-            assertThat(users.get(0)).hasToString(user1.toString());
+            assertThat(users.get(0).get("id")).isEqualTo(user1.id);
+            assertThat(users.get(0).get("_ts")).isInstanceOfSatisfying(Integer.class, i ->
+                    assertThat(i.longValue()).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0)));
+
         }
 
         // test basic find using OR
@@ -1549,6 +1572,9 @@ class CosmosDatabaseImplTest {
             // the result of score be double
             // TODO: the result of score is integer at present, this would be an issue of CosmosDB or azure-cosmos
             assertThat(result.get(0).get("score")).isInstanceOf(Integer.class).isEqualTo(10);
+
+            assertThat(result.get(0).get("_ts")).isInstanceOf(Integer.class);
+
 
         } finally {
             db.delete(coll, id, partition);

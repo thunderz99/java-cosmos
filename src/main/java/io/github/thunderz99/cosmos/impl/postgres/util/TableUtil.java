@@ -58,8 +58,11 @@ public class TableUtil {
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
 
+        var schemaNameWithoutQuotes = removeQuotes(schemaName);
+        var tableNameWithoutQuotes = removeQuotes(tableName);
+
         var metaData = conn.getMetaData();
-        try (var tables = metaData.getTables(null, schemaName, tableName, new String[]{"TABLE"})) {
+        try (var tables = metaData.getTables(null, schemaNameWithoutQuotes, tableNameWithoutQuotes, new String[]{"TABLE"})) {
             return tables.next(); // If there's a result, the table exists
         }
     }
@@ -95,19 +98,19 @@ public class TableUtil {
         try (PreparedStatement pstmt = conn.prepareStatement(createTableSQL)) {
             pstmt.executeUpdate();
             if (log.isInfoEnabled()) {
-                log.info("Table '{}' created successfully.", tableName);
+                log.info("Table '{}.{}' created successfully.", schemaName, tableName);
             }
         }
 
         {
             // create data index for json data search performance
-            var indexName = String.format("idx_%s_data", tableName);
+            var indexName = getIndexName(tableName, DATA);
             var createIndexSQL = String.format("CREATE INDEX %s ON %s.%s USING GIN (%s);", indexName, schemaName, tableName, DATA);
 
             try (PreparedStatement pstmt = conn.prepareStatement(createIndexSQL)) {
                 pstmt.executeUpdate();
                 if (log.isInfoEnabled()) {
-                    log.info("Index({}) on column '{}' of table '{}' created successfully.", indexName, DATA, tableName);
+                    log.info("Index({}) on column '{}' of table '{}.{}' created successfully.", indexName, DATA, schemaName, tableName);
                 }
             }
         }
@@ -135,32 +138,73 @@ public class TableUtil {
             try (PreparedStatement pstmt = conn.prepareStatement(dropTableSQL)) {
                 pstmt.executeUpdate();
                 if (log.isInfoEnabled()) {
-                    log.info("Table '{}' dropped successfully.", tableName);
+                    log.info("Table '{}.{}' dropped successfully.", schemaName, tableName);
                 }
             }
         }
     }
 
     /**
-     * Check if the given entity name is valid.And then normalize(to lower case) the name
+     * Check if the given entity name is valid. And then normalize(to lower case) the name. if entityName's length is over 63, it will be shortened using a hash method.
      *
      * @param entityName the name of the entity
      * @return the normalized(to lower case) name
      */
     public static String checkAndNormalizeValidEntityName(String entityName) {
+        checkValidEntityName(entityName);
 
+        entityName = removeQuotes(entityName);
+
+        // get a shortened version of entityName is length > 63 chars
+        entityName = getShortenedEntityName(entityName);
+
+        if(isSimpleEntityName(entityName)) {
+            // if all lower case and no "-", no need to use double quotation
+            return entityName;
+        }
+
+        // use double quotation to let the entityName be a valid postgres table name. which supports upper character and "-"
+        return "\"%s\"".formatted(entityName);
+
+    }
+
+    /**
+     * Check if the given entity name is valid.(only check)
+     *
+     * @param entityName the name of the entity
+     */
+
+    static void checkValidEntityName(String entityName) {
         Checker.checkNotBlank(entityName, "entityName");
 
         // the following characters are not allowed in entity names
         // https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
-        Checker.check(StringUtils.containsNone(entityName, ';', ',', '&', '"', '\'', '\\', '(', ')', '\t', '\n', '\r'),
+        Checker.check(StringUtils.containsNone(entityName, ';', ',', '&', '\'', '\\', '(', ')', '\t', '\n', '\r'),
                 "entityName should not contain invalid characters: " + entityName);
 
         Checker.check(!StringUtils.contains(entityName, "--"),
-                "entityName should not contain '--'" + entityName);
+                "entityName should not contain '--': " + entityName);
+    }
 
-        return StringUtils.lowerCase(entityName);
+    /**
+     * if entityName's length > 63 (postgres table/index name limit), return a shortened version of entityName by hashing a part of the entityName.
+     *
+     * @param entityName
+     * @return a shortened entityName
+     */
+    static String getShortenedEntityName(String entityName) {
 
+        var length = StringUtils.length(entityName);
+
+        if(length < 64){
+            return entityName;
+        }
+
+        var prefix = StringUtils.substring(entityName, 0, 32);
+        var suffix = StringUtils.substring(entityName, length - 8, length);
+        var hash = HashUtil.toShortHash(entityName);
+
+        return "%s_%s_%s".formatted(prefix, hash, suffix);
     }
 
     /**
@@ -1301,6 +1345,10 @@ public class TableUtil {
         tableName = checkAndNormalizeValidEntityName(tableName);
         indexName = checkAndNormalizeValidEntityName(indexName);
 
+        schemaName = removeQuotes(schemaName);
+        tableName = removeQuotes(tableName);
+        indexName = removeQuotes(indexName);
+
         // Query pg_indexes to check for the index existence.
         var query = "SELECT 1 FROM pg_indexes WHERE schemaname = ? AND tablename = ? AND indexname = ?";
         try (var pstmt = conn.prepareStatement(query)) {
@@ -1311,6 +1359,16 @@ public class TableUtil {
                 return rs.next();
             }
         }
+    }
+
+    /**
+     * remove starting and ending quotes
+     * @param entityName
+     * @return
+     */
+    public static String removeQuotes(String entityName) {
+        entityName = StringUtils.removeStart(entityName,"\"");
+        return StringUtils.removeEnd(entityName,"\"");
     }
 
     /**
@@ -1368,11 +1426,12 @@ public class TableUtil {
         // Optionally, normalize or validate the schema name as needed
         schemaName = checkAndNormalizeValidEntityName(schemaName);
 
+        var expectedSchemaName = removeQuotes(schemaName);
         var metaData = conn.getMetaData();
         try (var schemas = metaData.getSchemas()) {
             while (schemas.next()) {
-                String existingSchema = schemas.getString("TABLE_SCHEM");
-                if (schemaName.equals(existingSchema)) {
+                var existingSchema = schemas.getString("TABLE_SCHEM");
+                if (expectedSchemaName.equals(existingSchema)) {
                     return true;
                 }
             }
@@ -1416,13 +1475,15 @@ public class TableUtil {
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
-        fieldName = checkAndNormalizeValidEntityName(fieldName);
+        // fieldName only checked. no need to normalize.
+        // because we will need to use the origin fieldName in index creation SQL
+        checkValidEntityName(fieldName);
 
         // Generate index name from table name and field name
-        // e.g.  table1_address_city_street_1
+        // e.g.  idx_table1_address_city_street_1
         var indexName = getIndexName(tableName, fieldName);
 
-        if (indexExists(conn, schemaName, tableName, fieldName)) {
+        if (indexExistsByName(conn, schemaName, tableName, indexName)) {
             // already exists
             return "";
         }
@@ -1442,7 +1503,7 @@ public class TableUtil {
         try (var pstmt = conn.prepareStatement(createIndexSQL)) {
             pstmt.executeUpdate();
             if (log.isInfoEnabled()) {
-                log.info("Index({}) on column '{}' with field '{}' of table '{}' created successfully.", indexName, DATA, fieldName, tableName);
+                log.info("Index({}) on column '{}' with field '{}' of table '{}.{}' created successfully.", indexName, DATA, fieldName, schemaName, tableName);
             }
         }
 
@@ -1462,10 +1523,15 @@ public class TableUtil {
                 .replace("-", "_")
         ;
 
-        tableName = checkAndNormalizeValidEntityName(tableName);
-        fieldName = checkAndNormalizeValidEntityName(fieldName);
+        checkValidEntityName(tableName);
+        checkValidEntityName(fieldName);
 
-        return String.format("%s_%s_1", tableName, fieldName);
+        tableName = removeQuotes(tableName);
+
+        var indexName =  String.format("idx_%s_%s_1", tableName, fieldName);
+
+        return checkAndNormalizeValidEntityName(indexName);
+
     }
 
     /**
@@ -1491,6 +1557,8 @@ public class TableUtil {
                 pstmt.setBoolean(index, boolValue);
             } else if (param.value instanceof Float floatValue) {
                 pstmt.setFloat(index, floatValue);
+            } else if (param.value instanceof Double doubleValue) {
+                pstmt.setDouble(index, doubleValue);
             } else if (param.value instanceof BigDecimal bigDecimalValue) {
                 pstmt.setBigDecimal(index, bigDecimalValue);
             } else if (param.value instanceof Collection<?> collectionValue) {
@@ -1526,5 +1594,37 @@ public class TableUtil {
         // Add more types as needed
         return "text"; // default to varchar
     }
+
+    /**
+     * Checks if the given name is suitable for a postgres table name.
+     *
+     * A valid postgres table name, according to the requirements, should:
+     * - Consist of lowercase alphanumeric characters (a-z, 0-9).
+     * - Allow underscores (_).
+     * - Not be empty or null.
+     *
+     * @param name The name to check.
+     * @return {@code true} if the name is a valid postgres table name, {@code false} otherwise.
+     */
+    static boolean isSimpleEntityName(String name) {
+        if (name == null || name.isEmpty()) {
+            return false; // Null or empty names are not valid
+        }
+
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (!isSimpleEntityChar(c)) {
+                return false; // Found an invalid character
+            }
+        }
+        return true; // All characters are valid
+    }
+
+    private static boolean isSimpleEntityChar(char c) {
+        return (c >= 'a' && c <= 'z') || // lowercase letters
+                (c >= '0' && c <= '9') || // digits
+                (c == '_');              // underscore
+    }
+
 
 }

@@ -559,7 +559,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        var docs = _findToIterable(coll, cond, partition).into(new ArrayList<>());
+        var docs = _findToIterable(coll, cond, partition).into(new ArrayList<>())
+                .stream().map(doc -> getCosmosDocument(doc).toMap()).toList();
 
         var ret = new CosmosDocumentList(docs);
 

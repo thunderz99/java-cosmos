@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
  * A class representing simple expression for postgres
  * <p>
  * {@code
- * data->>'id' = "001", (data->>'age')::int > 15,  data->'skills' @> 'java' (means CONTAINS "java"), and other simple filter
+ * data->>'id' = "001", (data->>'age')::numeric > 15,  data->'skills' @> 'java' (means CONTAINS "java"), and other simple filter
  * }
  */
 public class PGSimpleExpression implements Expression {
@@ -291,7 +291,7 @@ public class PGSimpleExpression implements Expression {
 
                     // modify the key to data->'no' (without ::int to do a jsonb contains)
                     jsonKey = StringUtils.removeStart(jsonKey,"(");
-                    jsonKey = StringUtils.removeEnd(jsonKey,")::int");
+                    jsonKey = StringUtils.removeEnd(jsonKey,")::numeric");
 
                     querySpec.setQueryText(String.format(" (%s @> %s::jsonb)", jsonKey, valuePart));
                 } else {

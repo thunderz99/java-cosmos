@@ -100,11 +100,11 @@ public class PostgresImplTest {
         try {
             var db1 = cosmos.createIfNotExist(db, coll);
             assertThat(db1).isNotNull();
-            assertThat(db1.getDatabaseName()).isEqualTo(db.toLowerCase());
+            assertThat(db1.getDatabaseName()).isEqualTo(db);
 
             var db2 = (PostgresDatabaseImpl)cosmos.getDatabase(db);
             assertThat(db2.getAccount()).isNotEmpty();
-            assertThat(db2.getDatabaseName()).isEqualTo(db.toLowerCase());
+            assertThat(db2.getDatabaseName()).isEqualTo(db);
 
         } finally {
             if(cosmos != null) {

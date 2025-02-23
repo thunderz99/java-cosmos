@@ -84,11 +84,11 @@ public class PGKeyUtil {
         if (value instanceof Boolean) {
             return "(" + basePath + ")::boolean";
         } else if (value instanceof Integer) {
-            return "(" + basePath + ")::int";
+            return "(" + basePath + ")::numeric";
         } else if (value instanceof Long) {
-            return "(" + basePath + ")::bigint";
+            return "(" + basePath + ")::numeric";
         } else if (value instanceof Float || value instanceof Double) {
-            return "(" + basePath + ")::float8"; // float8 = double precision
+            return "(" + basePath + ")::numeric"; // float8 = double precision
         } else if (value instanceof java.math.BigDecimal) {
             return "(" + basePath + ")::numeric";
         } else if (value instanceof String) {

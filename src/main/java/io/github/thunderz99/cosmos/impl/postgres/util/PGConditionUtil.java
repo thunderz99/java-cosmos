@@ -510,12 +510,9 @@ public class PGConditionUtil {
                 // support expression using combination of function and the basic operators
                 // e.g.: Condition.filter("$EXPRESSION exp1", "c.age / 10 < ARRAY_LENGTH(c.skills)");
 
-                if ((entry.getValue() instanceof String)) {
+                if ((entry.getValue() instanceof String expressionStr)) {
                     //only support expression write in string
-                    var expressionStr = (String) entry.getValue();
-                    if (StringUtils.isNotEmpty(expressionStr)) {
-                        subFilterQueryToAdd = String.format(" (%s)", expressionStr);
-                    }
+                    subFilterQueryToAdd = PGExpressionConvertUtil.convert(expressionStr);
                 }
 
             } else {

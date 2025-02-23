@@ -135,10 +135,13 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
         PostgresRecord record = null;
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            record = TableUtil.insertRecord(conn, coll, partition, new PostgresRecord(id, map));
-        }
+
+        final var _coll = coll;
+        record = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.insertRecord(conn, _coll, partition, new PostgresRecord(id, map));
+            }
+        });
 
         if (log.isInfoEnabled()){
             log.info("created Document:{}/docs/{}, partition:{}, account:{}", collectionLink, record.id, partition, getAccount());
@@ -253,7 +256,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     }
 
     /**
-     * process precision of timestamp and get CosmosDucment instance from response
+     * process precision of timestamp and get CosmosDocument instance from response
      *
      * @param record
      * @return cosmos document
@@ -265,6 +268,10 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         return new CosmosDocument(record.data);
     }
 
+    /**
+     * convert expireAt from Long to Date, in order to be compatible with mongo
+     * @param map
+     */
     static void convertExpireAt2Date(Map<String, Object> map) {
         if (MapUtils.isEmpty(map)) {
             return;
@@ -304,19 +311,21 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
 
-        // TODO: RetryUtil.executeWithRetry
-        try(var conn = this.dataSource.getConnection()) {
-            var record = TableUtil.readRecord(conn, coll, partition, id);
-
-            if(log.isInfoEnabled()) {
-                log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
+        final var _coll = coll;
+        var record = RetryUtil.executeWithRetry(() -> {
+            try(var conn = this.dataSource.getConnection()) {
+                return TableUtil.readRecord(conn, _coll, partition, id);
             }
+        });
 
-            if(record == null){
-                return null;
-            }
-            return getCosmosDocument(record);
+        if(log.isInfoEnabled()) {
+            log.info("read Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
         }
+
+        if(record == null){
+            return null;
+        }
+        return getCosmosDocument(record);
 
     }
 
@@ -356,11 +365,12 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        PostgresRecord record = null;
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            record = TableUtil.updateRecord(conn, coll, partition, new PostgresRecord(id, map));
-        }
+        final var _coll = coll;
+        var record = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.updateRecord(conn, _coll, partition, new PostgresRecord(id, map));
+            }
+        });
 
         if (log.isInfoEnabled()){
             log.info("updated Document:{}/docs/{}, partition:{}, account:{}", collectionLink, record.id, partition, getAccount());
@@ -440,12 +450,12 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        PostgresRecord record = null;
-
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            record = TableUtil.updatePartialRecord(conn, coll, partition, new PostgresRecord(id, map), option, etag);
-        }
+        final var _coll = coll;
+        var record = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.updatePartialRecord(conn, _coll, partition, new PostgresRecord(id, map), option, etag);
+            }
+        });
 
         if (log.isInfoEnabled()){
             log.info("updatePartial Document:{}/docs/{}, partition:{}, account:{}", collectionLink, record.id, partition, getAccount());
@@ -501,12 +511,12 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        PostgresRecord record = null;
-
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            record = TableUtil.upsertRecord(conn, coll, partition, new PostgresRecord(id, map));
-        }
+        final var _coll = coll;
+        PostgresRecord record = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.upsertRecord(conn, _coll, partition, new PostgresRecord(id, map));
+            }
+        });
 
         if (log.isInfoEnabled()){
             log.info("upsert Document:{}/docs/{}, partition:{}, account:{}", collectionLink, record.id, partition, getAccount());
@@ -534,13 +544,14 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
 
 
-        try(var conn = this.dataSource.getConnection()){
-            // TODO: RetryUtil
-            TableUtil.deleteRecord(conn, coll, partition, id);
-        }
+        final var _coll = coll;
+        RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.deleteRecord(conn, _coll, partition, id);
+            }
+        });
 
         log.info("deleted Document:{}, partition:{}, account:{}", documentLink, partition, getAccount());
-
         return this;
 
     }
@@ -646,13 +657,16 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var querySpec = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
-        // TODO: RetryUtil.executeWithRetry
 
-        try(var conn = this.dataSource.getConnection()) {
-            var records = TableUtil.findRecords(conn, coll, partition, querySpec);
-            var maps = records.stream().map(r -> r.data).toList();
-            return new PostgresDocumentIteratorImpl(new CosmosDocumentList(maps));
-        }
+        final var _coll = coll;
+        var records = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.findRecords(conn, _coll, partition, querySpec);
+            }
+        });
+
+        var maps = records.stream().map(r -> getCosmosDocument(r).toMap()).toList();
+        return new PostgresDocumentIteratorImpl(new CosmosDocumentList(maps));
 
     }
 
@@ -708,16 +722,17 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var querySpec = PGConditionUtil.toQuerySpec4Aggregate(coll, cond, aggregate, partition);
 
-        // TODO: RetryUtil.executeWithRetry
-
-        try(var conn = this.dataSource.getConnection()) {
-            var records = TableUtil.aggregateRecords(conn, coll, partition, querySpec);
-            List<Map<String, Object>> maps = records.stream().map(r -> r.data).toList();
-            // Process result of aggregate. convert Long value to Integer if possible.
-            // Because "itemsCount: 1L" is not acceptable by some users. They prefer "itemsCount: 1" more.
-            maps = PGAggregateUtil.convertAggregateResultsToInteger(maps);
-            return new CosmosDocumentList(maps);
-        }
+        final var _coll = coll;
+        List<Map<String, Object>> maps = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                var records = TableUtil.aggregateRecords(conn, _coll, partition, querySpec);
+                return records.stream().map(r -> r.data).toList();
+            }
+        });
+        // Process result of aggregate. convert Long value to Integer if possible.
+        // Because "itemsCount: 1L" is not acceptable by some users. They prefer "itemsCount: 1" more.
+        maps = PGAggregateUtil.convertAggregateResultsToInteger(maps);
+        return new CosmosDocumentList(maps);
     }
 
     /**
@@ -754,15 +769,18 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var querySpec = PGConditionUtil.toQuerySpecForCount(coll, cond, partition);
 
-        // TODO: RetryUtil.executeWithRetry
+        final var _coll = coll;
+        final var _cond = cond;
 
-        try(var conn = this.dataSource.getConnection()) {
-            var count = TableUtil.countRecords(conn, coll, partition, querySpec);
-            if(log.isInfoEnabled()) {
-                log.info("count Document:{}, cond:{}, collection:{}, partition:{}, account:{}", coll, cond, collectionLink, partition, getAccount());
+        return RetryUtil.executeWithRetry(() -> {
+            try(var conn = this.dataSource.getConnection()) {
+                var count = TableUtil.countRecords(conn, _coll, partition, querySpec);
+                if(log.isInfoEnabled()) {
+                    log.info("count Document:{}, cond:{}, collection:{}, partition:{}, account:{}", _coll, _cond, collectionLink, partition, getAccount());
+                }
+                return count;
             }
-            return count;
-        }
+        });
     }
 
     /**
@@ -833,10 +851,14 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
         PostgresRecord record = null;
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            record = TableUtil.patchRecord(conn, coll, partition, id, operations);
-        }
+        final var _coll = coll;
+        final var _partition = partition;
+        final var _id = id;
+        record = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.patchRecord(conn, _coll, _partition, _id, operations);
+            }
+        });
 
         if (log.isInfoEnabled()){
             log.info("patched Document:{}/docs/{}, partition:{}, account:{}", collectionLink, record.id, partition, getAccount());
@@ -887,16 +909,19 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            TableUtil.batchInsertRecords(conn, coll, partition, records);
-            if (log.isInfoEnabled()){
-                log.info("batch created Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
+        final var _coll = coll;
+        RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                var ret = TableUtil.batchInsertRecords(conn, _coll, partition, records);
+                if (log.isInfoEnabled()){
+                    log.info("batch created Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
+                }
+                return ret;
+            } catch (SQLException e){
+                log.warn("Error when batch creating records from table '{}.{}'. records size:{}. ", _coll, partition, records.size(), e);
+                throw e;
             }
-        } catch (SQLException e){
-            log.warn("Error when batch creating records from table '{}.{}'. records size:{}. ", coll, partition, records.size(), e);
-            throw e;
-        }
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, RetryUtil.BATCH_EXECUTION_MAX_RETRIES);
 
         return records.stream().map(r -> getCosmosDocument(r)).toList();
     }
@@ -941,16 +966,19 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            TableUtil.batchUpsertRecords(conn, coll, partition, records);
-            if (log.isInfoEnabled()) {
-                log.info("batch upserted Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
+        final var _coll = coll;
+        RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                var ret = TableUtil.batchUpsertRecords(conn, _coll, partition, records);
+                if (log.isInfoEnabled()) {
+                    log.info("batch upserted Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
+                }
+                return ret;
+            } catch (SQLException e) {
+                log.warn("Error when batch upserting records from table '{}.{}'. records size:{}. ", _coll, partition, records.size(), e);
+                throw e;
             }
-        } catch (SQLException e) {
-            log.warn("Error when batch upserting records from table '{}.{}'. records size:{}. ", coll, partition, records.size(), e);
-            throw e;
-        }
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, RetryUtil.BATCH_EXECUTION_MAX_RETRIES);
 
         return records.stream().map(r -> getCosmosDocument(r)).toList();
     }
@@ -981,16 +1009,19 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            TableUtil.batchDeleteRecords(conn, coll, partition, ids);
-            if (log.isInfoEnabled()){
-                log.info("batch deleted Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, ids.size(), partition, getAccount());
+        final var _coll = coll;
+        RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                var ret = TableUtil.batchDeleteRecords(conn, _coll, partition, ids);
+                if (log.isInfoEnabled()){
+                    log.info("batch deleted Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, ids.size(), partition, getAccount());
+                }
+                return ret;
+            } catch(SQLException e){
+                log.warn("Error when batch deleting records from table '{}.{}'. records size:{}. ", _coll, partition, ids.size(), e);
+                throw e;
             }
-        } catch(SQLException e){
-            log.warn("Error when batch deleting records from table '{}.{}'. records size:{}. ", coll, partition, ids.size(), e);
-            throw e;
-        }
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, RetryUtil.BATCH_EXECUTION_MAX_RETRIES);
 
         return ids.stream().map(id -> new CosmosDocument(Map.of("id", id))).toList();
     }
@@ -1051,17 +1082,23 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            var ret = TableUtil.bulkInsertRecords(conn, coll, partition, records);
-            if (log.isInfoEnabled()){
-                log.info("bulk created Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
+        final var _coll = coll;
+
+        // currently, we wrap the SQLException to CosmosException. And do not retry(maxRetries = 0)
+        // TODO: retry for bulk operations
+        var ret = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.bulkInsertRecords(conn, _coll, partition, records);
+            } catch (SQLException e){
+                log.warn("Error when bulk creating records from table '{}.{}'. records size:{}. ", _coll, partition, records.size(), e);
+                throw e;
             }
-            return ret;
-        } catch (SQLException e){
-            log.warn("Error when bulk creating records from table '{}.{}'. records size:{}. ", coll, partition, records.size(), e);
-            throw e;
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, 0);
+
+        if (log.isInfoEnabled()){
+            log.info("bulk created Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
         }
+        return ret;
 
     }
 
@@ -1105,17 +1142,23 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            var ret = TableUtil.bulkUpsertRecords(conn, coll, partition, records);
-            if (log.isInfoEnabled()){
-                log.info("bulk upserted Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
+        final var _coll = coll;
+        // currently, we wrap the SQLException to CosmosException. And do not retry(maxRetries = 0)
+        // TODO: retry for bulk operations
+        var ret = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.bulkUpsertRecords(conn, _coll, partition, records);
+            } catch (SQLException e){
+                log.warn("Error when bulk upserting records from table '{}.{}'. records size:{}. ", _coll, partition, records.size(), e);
+                throw e;
             }
-            return ret;
-        } catch (SQLException e){
-            log.warn("Error when bulk upserting records from table '{}.{}'. records size:{}. ", coll, partition, records.size(), e);
-            throw e;
+
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, 0);
+
+        if (log.isInfoEnabled()){
+            log.info("bulk upserted Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, records.size(), partition, getAccount());
         }
+        return ret;
 
     }
 
@@ -1145,17 +1188,21 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
 
-        try (var conn = this.dataSource.getConnection()) {
-            // TODO: RetryUtil.executeWithRetry
-            var ret = TableUtil.bulkDeleteRecords(conn, coll, partition, ids);
-            if (log.isInfoEnabled()){
-                log.info("bulk deleted Document:{}/docs/, deleted count:{}, partition:{}, account:{}", collectionLink, ids.size(), partition, getAccount());
+        final var _coll = coll;
+        // currently, we wrap the SQLException to CosmosException. And do not retry(maxRetries = 0)
+        // TODO: retry for bulk operations
+        var ret = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.bulkDeleteRecords(conn, _coll, partition, ids);
+            } catch (SQLException e){
+                log.warn("Error when bulk deleting records from table '{}.{}'. records size:{}. ", _coll, partition, ids.size(), e);
+                throw e;
             }
-            return ret;
-        } catch (SQLException e){
-            log.warn("Error when bulk deleting records from table '{}.{}'. records size:{}. ", coll, partition, ids.size(), e);
-            throw e;
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, 0);
+        if (log.isInfoEnabled()){
+            log.info("bulk deleted Document:{}/docs/, deleted count:{}, partition:{}, account:{}", collectionLink, ids.size(), partition, getAccount());
         }
+        return ret;
     }
 
 
@@ -1193,7 +1240,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
      * @return database name
      */
     public String getDatabaseName() {
-        return this.db;
+        return TableUtil.removeQuotes(this.db);
     }
 
     /**
