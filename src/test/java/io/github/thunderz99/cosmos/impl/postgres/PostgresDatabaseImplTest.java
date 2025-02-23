@@ -147,9 +147,9 @@ class PostgresDatabaseImplTest {
             assertThat(read.id).isEqualTo(user.id);
             assertThat(read.firstName).isEqualTo(user.firstName);
 
-            // check _ts exist for timestamp
+            // check _ts exist for timestamp is correct
             var map = db.read(host, user.id, "Users").toMap();
-            assertThat((Long) map.get("_ts")).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0));
+            assertThat(map.get("_ts")).isInstanceOfSatisfying(Integer.class, i -> assertThat(i.longValue()).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0)));
 
             // read not existing document should throw CosmosException(404 Not Found)
             assertThatThrownBy(() -> db.read(host, "notExistId", "Users"))
@@ -284,8 +284,9 @@ class PostgresDatabaseImplTest {
 
             // _ts exist for timestamp
             var map = db.read(host, user.id, "Users").toMap();
-            var timestamp1 = (Long) map.get("_ts");
-            assertThat(timestamp1).isNotNull().isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0));
+            assertThat(map.get("_ts")).isInstanceOfSatisfying(Integer.class, i ->
+                    assertThat(i.longValue()).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0)));
+            var timestamp1 = (Integer) map.get("_ts");
 
 
             var upsert1 = new User(user.id, "firstUpsert", "lastUpsert");
@@ -299,9 +300,8 @@ class PostgresDatabaseImplTest {
 
             // _ts should also be updated
             var upserted1Map = db.read(host, upsert1.id, "Users").toMap();
-            var timestamp2 = (Long) upserted1Map.get("_ts");
-            assertThat(timestamp2).isNotNull().isGreaterThan(timestamp1)
-                    .isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0));
+            assertThat(upserted1Map.get("_ts")).isInstanceOfSatisfying(Integer.class, i ->
+                    assertThat(i.longValue()).isGreaterThan(timestamp1.longValue()).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0)));
 
 
         } finally {
@@ -324,9 +324,8 @@ class PostgresDatabaseImplTest {
 
             // _ts exist for timestamp
             var map = db.read(host, user.id, partition).toMap();
-            var timestamp1 = (Long) map.get("_ts");
-            assertThat(timestamp1).isNotNull().isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0));
-
+            assertThat(map.get("_ts")).isInstanceOfSatisfying(Integer.class, i ->
+                    assertThat(i.longValue()).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0)));
 
             var upsert1 = new User(user.id, "firstUpsert", "lastUpsert");
 
@@ -782,6 +781,21 @@ class PostgresDatabaseImplTest {
             assertThat(count).isEqualTo(1);
         }
 
+        // test compare operator for double
+        {
+            var cond = Condition.filter( //
+                            "fullName.last !=", "Henry", //
+                            "age >=", 29.5).sort("_ts", "DESC") //
+                    .limit(10) //
+                    .offset(0);
+
+            // test find
+            var users = db.find(host, cond, "Users").toList(FullNameUser.class);
+
+            assertThat(users.size()).isEqualTo(1);
+            assertThat(users.get(0)).hasToString(user2.toString());
+        }
+
         // test function operator
         {
             var cond = Condition.filter( //
@@ -1077,16 +1091,19 @@ class PostgresDatabaseImplTest {
                     .limit(10) //
                     .offset(0);
 
-            var iterator = db.findToIterator(host, cond, "Users");
+            var iterator = db.findToIterator(host, cond, "Users").getMapIterator();
 
-            var users = new ArrayList<FullNameUser>();
+            var users = new ArrayList<Map<String, Object>>();
             while(iterator.hasNext()){
-                var user = iterator.next(FullNameUser.class);
+                var user = iterator.next();
                 users.add(user);
             }
 
             assertThat(users.size()).isEqualTo(1);
-            assertThat(users.get(0)).hasToString(user1.toString());
+            assertThat(users.get(0).get("id")).isEqualTo(user1.id);
+            assertThat(users.get(0).get("_ts")).isInstanceOfSatisfying(Integer.class, i ->
+                    assertThat(i.longValue()).isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0)));
+
         }
 
         // test basic find using OR
@@ -1721,8 +1738,11 @@ class PostgresDatabaseImplTest {
             assertThat(result).hasSize(1);
 
             // the result of score be double
-            // MongoDB works correctly
+            // postgres works correctly
             assertThat(result.get(0).get("score")).isInstanceOf(Double.class).isEqualTo(10d);
+
+            assertThat(result.get(0).get("_ts")).isInstanceOf(Integer.class);
+
 
         } finally {
             db.delete(host, id, partition);

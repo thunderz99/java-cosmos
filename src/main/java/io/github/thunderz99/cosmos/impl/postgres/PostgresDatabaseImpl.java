@@ -253,7 +253,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     }
 
     /**
-     * process precision of timestamp and get CosmosDucment instance from response
+     * process precision of timestamp and get CosmosDocument instance from response
      *
      * @param record
      * @return cosmos document
@@ -265,6 +265,10 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         return new CosmosDocument(record.data);
     }
 
+    /**
+     * convert expireAt from Long to Date, in order to be compatible with mongo
+     * @param map
+     */
     static void convertExpireAt2Date(Map<String, Object> map) {
         if (MapUtils.isEmpty(map)) {
             return;
@@ -650,7 +654,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         try(var conn = this.dataSource.getConnection()) {
             var records = TableUtil.findRecords(conn, coll, partition, querySpec);
-            var maps = records.stream().map(r -> r.data).toList();
+            var maps = records.stream().map(r -> getCosmosDocument(r).toMap()).toList();
             return new PostgresDocumentIteratorImpl(new CosmosDocumentList(maps));
         }
 

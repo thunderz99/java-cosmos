@@ -16,6 +16,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -808,6 +809,55 @@ class TableUtilTest {
                 // create index the second time. and it should be no-op
                 var created2 = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
                 assertThat(created2).isEmpty();
+            }
+
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropIndexIfExists(conn, schemaName, indexName);
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+
+    }
+
+    @Test
+    void createIndexIfNotExists_should_work_for_unique() throws Exception {
+
+        var tableName = "table1" + RandomStringUtils.randomAlphanumeric(3).toLowerCase();
+        var fieldName = "_uniqueKey1";
+        var indexName = "idx_" + tableName + "__uniquekey1_1";
+
+        try(var conn = cosmos.getDataSource().getConnection();) {
+            {
+                // create table
+                var createdTableName = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                assertThat(createdTableName).isEqualTo(schemaName + "." + tableName);
+            }
+
+            {
+                // create index
+                var createdIndexName = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
+                assertThat(createdIndexName).isEqualTo(schemaName + "." + indexName);
+            }
+
+            {
+                // create index the second time. and it should be no-op
+                var created2 = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(true));
+                assertThat(created2).isEmpty();
+            }
+
+            {
+                // test unique constraint
+                var id = "uniqueKey1_test_" + RandomStringUtils.randomAlphanumeric(6);
+                TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, Maps.newLinkedHashMap(Map.of(fieldName, "1"))));
+
+                var id2 = "uniqueKey1_test_" + RandomStringUtils.randomAlphanumeric(6);
+                // although the id is same, but the fieldName is duplicated. so it should fail
+                assertThatThrownBy(() -> TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id2, Maps.newLinkedHashMap(Map.of(fieldName, "1")))))
+                        .isInstanceOfSatisfying(SQLException.class, e -> {
+                            assertThat(e.getSQLState()).isEqualTo("23505");
+                            assertThat(e.getMessage()).contains("duplicate key");
+                        });
             }
 
         } finally {

@@ -149,6 +149,22 @@ public class TableUtil {
      */
     public static String checkAndNormalizeValidEntityName(String entityName) {
 
+        checkValidEntityName(entityName);
+
+        // get a shortened version of entityName is length > 63 chars
+        entityName = getShortenedEntityName(entityName);
+
+        return StringUtils.lowerCase(entityName);
+
+    }
+
+    /**
+     * Check if the given entity name is valid.(only check)
+     *
+     * @param entityName the name of the entity
+     */
+
+    static void checkValidEntityName(String entityName) {
         Checker.checkNotBlank(entityName, "entityName");
 
         // the following characters are not allowed in entity names
@@ -158,13 +174,6 @@ public class TableUtil {
 
         Checker.check(!StringUtils.contains(entityName, "--"),
                 "entityName should not contain '--': " + entityName);
-
-
-        // get a shortened version of entityName is length > 63 chars
-        entityName = getShortenedEntityName(entityName);
-
-        return StringUtils.lowerCase(entityName);
-
     }
 
     /**
@@ -1441,7 +1450,9 @@ public class TableUtil {
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
-        fieldName = checkAndNormalizeValidEntityName(fieldName);
+        // fieldName only checked. no need to normalize.
+        // because we will need to use the origin fieldName in index creation SQL
+        checkValidEntityName(fieldName);
 
         // Generate index name from table name and field name
         // e.g.  idx_table1_address_city_street_1
@@ -1519,6 +1530,8 @@ public class TableUtil {
                 pstmt.setBoolean(index, boolValue);
             } else if (param.value instanceof Float floatValue) {
                 pstmt.setFloat(index, floatValue);
+            } else if (param.value instanceof Double doubleValue) {
+                pstmt.setDouble(index, doubleValue);
             } else if (param.value instanceof BigDecimal bigDecimalValue) {
                 pstmt.setBigDecimal(index, bigDecimalValue);
             } else if (param.value instanceof Collection<?> collectionValue) {

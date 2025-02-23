@@ -47,7 +47,7 @@ public class MongoDocumentIteratorImpl implements CosmosDocumentIterator {
         if(iterator == null){
             return null;
         }
-        return new CosmosDocument(iterator.next());
+        return MongoDatabaseImpl.getCosmosDocument(iterator.next());
     }
 
     @Override
