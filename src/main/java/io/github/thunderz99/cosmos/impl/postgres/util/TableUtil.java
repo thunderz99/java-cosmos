@@ -95,7 +95,7 @@ public class TableUtil {
         try (PreparedStatement pstmt = conn.prepareStatement(createTableSQL)) {
             pstmt.executeUpdate();
             if (log.isInfoEnabled()) {
-                log.info("Table '{}' created successfully.", tableName);
+                log.info("Table '{}.{}' created successfully.", schemaName, tableName);
             }
         }
 
@@ -107,7 +107,7 @@ public class TableUtil {
             try (PreparedStatement pstmt = conn.prepareStatement(createIndexSQL)) {
                 pstmt.executeUpdate();
                 if (log.isInfoEnabled()) {
-                    log.info("Index({}) on column '{}' of table '{}' created successfully.", indexName, DATA, tableName);
+                    log.info("Index({}) on column '{}' of table '{}.{}' created successfully.", indexName, DATA, schemaName, tableName);
                 }
             }
         }
@@ -135,14 +135,14 @@ public class TableUtil {
             try (PreparedStatement pstmt = conn.prepareStatement(dropTableSQL)) {
                 pstmt.executeUpdate();
                 if (log.isInfoEnabled()) {
-                    log.info("Table '{}' dropped successfully.", tableName);
+                    log.info("Table '{}.{}' dropped successfully.", schemaName, tableName);
                 }
             }
         }
     }
 
     /**
-     * Check if the given entity name is valid.And then normalize(to lower case) the name
+     * Check if the given entity name is valid. And then normalize(to lower case) the name. if entityName's length is over 63, it will be shortened using a hash method.
      *
      * @param entityName the name of the entity
      * @return the normalized(to lower case) name
@@ -157,10 +157,35 @@ public class TableUtil {
                 "entityName should not contain invalid characters: " + entityName);
 
         Checker.check(!StringUtils.contains(entityName, "--"),
-                "entityName should not contain '--'" + entityName);
+                "entityName should not contain '--': " + entityName);
+
+
+        // get a shortened version of entityName is length > 63 chars
+        entityName = getShortenedEntityName(entityName);
 
         return StringUtils.lowerCase(entityName);
 
+    }
+
+    /**
+     * if entityName's length > 63 (postgres table/index name limit), return a shortened version of entityName by hashing a part of the entityName.
+     *
+     * @param entityName
+     * @return a shortened entityName
+     */
+    static String getShortenedEntityName(String entityName) {
+
+        var length = StringUtils.length(entityName);
+
+        if(length < 64){
+            return entityName;
+        }
+
+        var prefix = StringUtils.substring(entityName, 0, 32);
+        var suffix = StringUtils.substring(entityName, length - 12, length);
+        var hash = HashUtil.toShortHash(entityName);
+
+        return "%s_%s_%s".formatted(prefix, hash, suffix);
     }
 
     /**
@@ -1419,10 +1444,10 @@ public class TableUtil {
         fieldName = checkAndNormalizeValidEntityName(fieldName);
 
         // Generate index name from table name and field name
-        // e.g.  table1_address_city_street_1
+        // e.g.  idx_table1_address_city_street_1
         var indexName = getIndexName(tableName, fieldName);
 
-        if (indexExists(conn, schemaName, tableName, fieldName)) {
+        if (indexExistsByName(conn, schemaName, tableName, indexName)) {
             // already exists
             return "";
         }
@@ -1442,7 +1467,7 @@ public class TableUtil {
         try (var pstmt = conn.prepareStatement(createIndexSQL)) {
             pstmt.executeUpdate();
             if (log.isInfoEnabled()) {
-                log.info("Index({}) on column '{}' with field '{}' of table '{}' created successfully.", indexName, DATA, fieldName, tableName);
+                log.info("Index({}) on column '{}' with field '{}' of table '{}.{}' created successfully.", indexName, DATA, fieldName, schemaName, tableName);
             }
         }
 
@@ -1465,7 +1490,10 @@ public class TableUtil {
         tableName = checkAndNormalizeValidEntityName(tableName);
         fieldName = checkAndNormalizeValidEntityName(fieldName);
 
-        return String.format("%s_%s_1", tableName, fieldName);
+        var indexName =  String.format("idx_%s_%s_1", tableName, fieldName);
+
+        return getShortenedEntityName(indexName);
+
     }
 
     /**

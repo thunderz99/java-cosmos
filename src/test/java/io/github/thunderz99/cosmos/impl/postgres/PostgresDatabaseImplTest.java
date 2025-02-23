@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.google.common.collect.Maps;
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
-import com.mongodb.client.model.Filters;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
@@ -13,7 +12,6 @@ import io.github.thunderz99.cosmos.dto.CheckBox;
 import io.github.thunderz99.cosmos.dto.EvalSkip;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosImpl;
-import io.github.thunderz99.cosmos.impl.mongo.MongoImpl;
 import io.github.thunderz99.cosmos.impl.postgres.util.TTLUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.EnvUtil;
@@ -83,6 +81,8 @@ class PostgresDatabaseImplTest {
         }
     }
 
+    static String longPartitionName = "Users_" + RandomStringUtils.randomAlphanumeric(64).toLowerCase() + "s";
+
     @BeforeAll
     public static void beforeAll() throws Exception {
         cosmos = new CosmosBuilder().withDatabaseType("postgres")
@@ -110,6 +110,7 @@ class PostgresDatabaseImplTest {
         db.createTableIfNotExists(host, "FindTests");
         db.createTableIfNotExists(host, "SheetContents2");
         db.createTableIfNotExists(host, "UserSorts");
+        db.createTableIfNotExists(host, longPartitionName);
 
         initFamiliesData();
         initData4ComplexQuery();
@@ -305,6 +306,44 @@ class PostgresDatabaseImplTest {
 
         } finally {
             db.delete(host, user.id, "Users");
+        }
+
+    }
+
+    @Test
+    void upsert_should_work_4_long_partition_name() throws Exception {
+
+        var partition = longPartitionName;
+        var user = new User("unittest_upsert_01", "first01", "last01");
+        db.delete(host, user.id, partition);
+
+        try {
+            var upserted = db.upsert(host, user, partition).toObject(User.class);
+            assertThat(upserted.id).isEqualTo(user.id);
+            assertThat(upserted.firstName).isEqualTo(user.firstName);
+
+            // _ts exist for timestamp
+            var map = db.read(host, user.id, partition).toMap();
+            var timestamp1 = (Long) map.get("_ts");
+            assertThat(timestamp1).isNotNull().isCloseTo(Instant.now().getEpochSecond(), Percentage.withPercentage(1.0));
+
+
+            var upsert1 = new User(user.id, "firstUpsert", "lastUpsert");
+
+            // full upsert
+            var upserted1 = db.upsert(host, upsert1, partition).toObject(User.class);
+            assertThat(upserted1.id).isEqualTo(upsert1.id);
+            assertThat(upserted1.firstName).isEqualTo(upsert1.firstName);
+            assertThat(upserted1.lastName).isEqualTo(upsert1.lastName);
+
+            // find
+            var docs = db.find(host, Condition.filter("lastName", "lastUpsert"), partition).toList(User.class);
+            assertThat(docs).hasSize(1);
+            assertThat(docs.get(0).firstName).isEqualTo(upsert1.firstName);
+
+
+        } finally {
+            db.delete(host, user.id, partition);
         }
 
     }
