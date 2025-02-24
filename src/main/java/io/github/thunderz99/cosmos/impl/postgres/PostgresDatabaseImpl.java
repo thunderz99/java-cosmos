@@ -1313,7 +1313,11 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     @Override
     public boolean ping(String coll) throws Exception {
         try(var conn = this.dataSource.getConnection()){
-            return TableUtil.schemaExists(conn, coll);
+            var schemaExists = TableUtil.schemaExists(conn, coll);
+            if(!schemaExists){
+                throw new CosmosException(404, "404 Schema Not Found", "schema " + coll + " not found.");
+            }
+            return schemaExists;
         }
     }
 

@@ -320,8 +320,8 @@ public class PGConditionUtil {
                     formattedKey = PGKeyUtil.getFormattedKey4JsonWithAlias(dotFieldName, TableUtil.DATA);
                 } else {
                     // (data->'room'->>'area')::numeric
-                    // TODO deal with other type(e.g string)
-                    formattedKey = "(%s)::numeric".formatted(PGKeyUtil.getFormattedKey(dotFieldName));
+
+                    formattedKey = PGKeyUtil.getFormattedKey4Aggregate(dotFieldName, function);
                 }
 
                 if(StringUtils.equalsAny(field, "1", "*")){
@@ -398,9 +398,9 @@ public class PGConditionUtil {
             sortMap.put("_ts", firstOrder);
         }
 
-        // TODO: sort by integer
         var ret = sortMap.entrySet().stream()
-                .map(entry -> String.format(" %s %s", PGKeyUtil.getFormattedKeyWithAlias(entry.getKey(), TableUtil.DATA, ""), entry.getValue().toUpperCase()))
+                .filter(entry -> StringUtils.isNotBlank(entry.getKey()))
+                .map(entry -> String.format(" %s %s", PGKeyUtil.getFormattedKey4Sort(entry.getKey()), entry.getValue().toUpperCase()))
                 .collect(Collectors.joining(",", " ORDER BY", ""));
         return ret;
     }

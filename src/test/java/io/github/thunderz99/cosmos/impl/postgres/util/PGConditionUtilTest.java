@@ -57,7 +57,7 @@ class PGConditionUtilTest {
                     SELECT id,
                     jsonb_build_object('id', data->'id', 'name', data->'name') AS \"data\"
                     \n FROM coll.partition
-                    \n ORDER BY data->>'name' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 100
+                    \n ORDER BY data->>'name' COLLATE "C" ASC, data->>'_ts' ASC OFFSET 0 LIMIT 100
                     """;
             var expectedFieldsSort = new CosmosSqlQuerySpec(expectedSQL.trim(), new ArrayList<>());
             assertThat(actualSpecFieldsSort).isEqualTo(expectedFieldsSort);
@@ -414,20 +414,49 @@ class PGConditionUtilTest {
         {
             var sorts = List.of("name", "ASC");
             var q = PGConditionUtil.buildSorts(sorts);
-            assertThat(q).isEqualTo(" ORDER BY data->>'name' ASC, data->>'_ts' ASC");
+            assertThat(q).isEqualTo(" ORDER BY data->>'name' COLLATE \"C\" ASC, data->>'_ts' ASC");
         }
 
         {
             var sorts = List.of("name", "ASC", "age", "DESC");
             var q = PGConditionUtil.buildSorts(sorts);
-            assertThat(q).isEqualTo(" ORDER BY data->>'name' ASC, data->>'age' DESC, data->>'_ts' ASC");
+            assertThat(q).isEqualTo(" ORDER BY data->>'name' COLLATE \"C\" ASC, data->'age' COLLATE \"C\" DESC, data->>'_ts' ASC");
         }
 
         {
             var sorts = List.of("id", "DESC", "_ts", "ASC");
             var q = PGConditionUtil.buildSorts(sorts);
-            assertThat(q).isEqualTo(" ORDER BY data->>'id' DESC, data->>'_ts' ASC");
+            assertThat(q).isEqualTo(" ORDER BY data->>'id' COLLATE \"C\" DESC, data->>'_ts' ASC");
         }
+
+        {
+            // build sort should work for type specify(text)
+            var sorts = List.of("employCode::text", "DESC", "_ts", "ASC");
+            var q = PGConditionUtil.buildSorts(sorts);
+            assertThat(q).isEqualTo(" ORDER BY data->>'employCode' COLLATE \"C\" DESC, data->>'_ts' ASC");
+        }
+
+        {
+            // build sort should work for type specify(int)
+            var sorts = List.of("age::int", "ASC");
+            var q = PGConditionUtil.buildSorts(sorts);
+            assertThat(q).isEqualTo(" ORDER BY (data->>'age')::int ASC, data->>'_ts' ASC");
+        }
+
+        {
+            // build sort should work for type specify(numeric)
+            var sorts = List.of("sort::numeric", "DESC");
+            var q = PGConditionUtil.buildSorts(sorts);
+            assertThat(q).isEqualTo(" ORDER BY (data->>'sort')::numeric DESC, data->>'_ts' DESC");
+        }
+
+        {
+            // build sort should work for type specify(wrong type)
+            var sorts = List.of("sort::double", "DESC");
+            var q = PGConditionUtil.buildSorts(sorts);
+            assertThat(q).isEqualTo(" ORDER BY data->'sort' COLLATE \"C\" DESC, data->>'_ts' DESC");
+        }
+
 
     }
 
@@ -485,7 +514,7 @@ class PGConditionUtilTest {
                            FROM jsonb_array_elements(data->'room*no-01') AS j1
                            WHERE ((j1->>'area')::numeric = @PARAM)
                          )
-                         ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
+                         ORDER BY data->>'id' COLLATE "C" ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
                         """;
 
                 assertThat(actual).isEqualTo(expected.trim());
@@ -513,7 +542,7 @@ class PGConditionUtilTest {
                            FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS j0
                            WHERE (j0->>'no' = @param000_no)
                          )
-                         ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
+                         ORDER BY data->>'id' COLLATE "C" ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
                         """;
                 assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
 
@@ -554,7 +583,7 @@ class PGConditionUtilTest {
                            FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS j0
                            WHERE (j0->>'no' LIKE @param000_no)
                          )
-                         ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
+                         ORDER BY data->>'id' COLLATE "C" ASC, data->>'_ts' ASC OFFSET 0 LIMIT 10
                         """;
                 assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
 
@@ -786,7 +815,7 @@ class PGConditionUtilTest {
                     jsonb_build_object('id', data->'id', 'floors', data->'floors', '_ts', data->'_ts') AS "data"
                     
                     FROM filtered_data
-                     ORDER BY data->>'id' ASC, data->>'_ts' ASC OFFSET 0 LIMIT 100
+                     ORDER BY data->>'id' COLLATE "C" ASC, data->>'_ts' ASC OFFSET 0 LIMIT 100
                     """;
 
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
@@ -948,7 +977,7 @@ class PGConditionUtilTest {
                     jsonb_build_object('id', data->'id', 'address', jsonb_build_object('street', data->'address'->'street'), 'area*no-1', data->'area*no-1') AS "data"
                     
                     FROM filtered_data
-                     ORDER BY data->>'_ts' DESC, data->'address'->>'street' ASC OFFSET 0 LIMIT 10
+                     ORDER BY data->>'_ts' DESC, data->'address'->'street' COLLATE "C" ASC OFFSET 0 LIMIT 10
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(4);

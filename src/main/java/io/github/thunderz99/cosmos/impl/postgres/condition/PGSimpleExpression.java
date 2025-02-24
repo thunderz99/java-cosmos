@@ -10,6 +10,7 @@ import io.github.thunderz99.cosmos.impl.postgres.util.PGKeyUtil;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.ParamUtil;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.*;
@@ -101,8 +102,7 @@ public class PGSimpleExpression implements Expression {
             // array equals or not
             if (Set.of("=", "!=").contains(this.operator)) {
                 // use = or !=
-                ret.setQueryText(String.format(" (%s %s %s)", PGKeyUtil.getFormattedKeyWithAlias(this.key, selectAlias, paramValue), this.operator, paramName));
-                params.add(Condition.createSqlParameter(paramName, paramValue));
+                ret.setQueryText(buildEqualArray(this.key, this.operator, paramName, coll, params, selectAlias));
             } else {
                 //the default operator for collection "IN"
                 // c.foo IN ['A','B','C']
@@ -115,7 +115,12 @@ public class PGSimpleExpression implements Expression {
 				}
 			}
 
-		} else {
+		} else  if (paramValue == null && Set.of("=", "!=").contains(this.operator)) {
+            // compares to null value
+            // e.g ( c.parentId != null )
+            ret.setQueryText(buildEqualNull(this.key, this.operator, selectAlias));
+
+        } else {
             // single param value
 
             if (StringUtils.isEmpty(this.operator)) {
@@ -161,7 +166,7 @@ public class PGSimpleExpression implements Expression {
 
 	}
 
-    /**
+        /**
      * Build query text for typeCheckFunctions. e.g. IS_DEFINED, IS_NUMBER, IS_PRIMITIVE, etc.
      * see docs/postgres-type-check-functions.md for details
      *
@@ -262,6 +267,15 @@ public class PGSimpleExpression implements Expression {
                 var param = params.get(currentIndex);
                 param.value = param.getValue() + "%";
             }
+            case "ENDSWITH"-> {
+                // use LIKE
+                querySpec.setQueryText(String.format(" (%s LIKE %s)", formattedKey, valuePart));
+
+                // modify the paramValue to "%paramValue%"
+                var currentIndex = params.size() - 1;
+                var param = params.get(currentIndex);
+                param.value = "%" + param.getValue();
+            }
             case "CONTAINS" -> {
                 // use LIKE
                 querySpec.setQueryText(String.format(" (%s LIKE %s)", formattedKey, valuePart));
@@ -321,9 +335,52 @@ public class PGSimpleExpression implements Expression {
      * </p>
      */
     static String buildInArray(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params, String selectAlias) {
-        var ret = String.format(" (%s = ANY(%s))", PGKeyUtil.getFormattedKeyWithAlias(key, selectAlias, ""), paramName);
+
+        var ret = String.format(" (%s = ANY(%s))", PGKeyUtil.getFormattedKeyWithAlias(key, selectAlias, getTypicalValue(paramValue)), paramName);
         params.add(Condition.createSqlParameter(paramName, paramValue));
         return ret;
+    }
+
+
+    /**
+     * A helper function to generate c.foo = @param000_array1 queryText
+     * <p>
+     * INPUT: "parentId", "@parentId", ["id001", "id002", "id005"], params OUTPUT:
+     * (data->'parentId' = '["id001", "id002", "id005"]'):jsonb)
+     * paramsValue into params
+     * </p>
+     */
+    static String buildEqualArray(String key, String operator, String paramName, Collection<?> paramValue, ArrayList<CosmosSqlParameter> params, String selectAlias) {
+        var ret = String.format(" (%s %s (%s)::jsonb)", PGKeyUtil.getFormattedKey4JsonWithAlias(key, selectAlias), operator, paramName);
+        params.add(Condition.createSqlParameter(paramName, JsonUtil.toJson(paramValue)));
+        return ret;
+    }
+
+    /**
+     * A helper function to generate c.foo = null queryText (or != null)
+     * <p>
+     * INPUT: "parentId", !=, DATA. OUTPUT:
+     * (data->'parentId' IS NOT NULL)
+     * paramsValue into params
+     * </p>
+     */
+    String buildEqualNull(String key, String operator, String selectAlias) {
+        return String.format(" (%s IS %s)", PGKeyUtil.getFormattedKey4JsonWithAlias(key, selectAlias),
+                "=".equals(operator) ? "NULL" : "NOT NULL");
+    }
+
+    /**
+     * get the typical value of a collection, e.g. [1,2,3] -> 1. in order to determine the data type used in the query
+     * @param paramValue
+     * @return
+     */
+    static Object getTypicalValue(Collection<?> paramValue) {
+
+        if (CollectionUtils.isEmpty(paramValue)) {
+            return "";
+        } else {
+            return paramValue.iterator().next();
+        }
     }
 
 }

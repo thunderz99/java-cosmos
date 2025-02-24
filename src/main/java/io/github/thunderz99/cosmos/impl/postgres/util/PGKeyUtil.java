@@ -1,12 +1,11 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
+import com.microsoft.azure.documentdb.SqlParameterCollection;
 import io.github.thunderz99.cosmos.util.Checker;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -14,6 +13,20 @@ import java.util.stream.Collectors;
  */
 public class PGKeyUtil {
 
+    /**
+     * Sort keys which is predefined with formatted value
+     */
+    static Set<String> preservedSorts = Set.of("_ts");
+
+    /**
+     * Sort keys which should be sorted by text
+     */
+    static Set<String> textSorts = Set.of("id", "mail", "name", "kana", "title");
+
+    /**
+     * Sort types that supported, other types should be sorted as jsonb
+     */
+    static Set<String> sortTypes = Set.of("int", "float8", "numeric", "text");
 
     /**
      * Instead of data.key, return data->'key' or data->'address'->>'city' for query
@@ -147,6 +160,63 @@ public class PGKeyUtil {
         var joinPartJsonbPath = Arrays.stream(joinPartArray).map(s -> "\""+s+"\"").collect(Collectors.joining(".", "$.", "[*]"));
         var keyJsonbPath = Arrays.stream(keyArray).map(s -> "\""+s+"\"").collect(Collectors.joining(".", "@.", ""));
         return Pair.of(joinPartJsonbPath, keyJsonbPath);
+
+    }
+
+    /**
+     * generate a formatted key for sort
+     * @param key key in dot format address.city.street::text / content.age.value::numeric
+     * @return data->'address'->'city'->>'street' / (data->'content'->'age'->>'value')::numeric
+     */
+    public static String getFormattedKey4Sort(String key) {
+
+        if(preservedSorts.contains(key)){
+            return getFormattedKeyWithAlias(key, TableUtil.DATA, "");
+        }
+
+        if(textSorts.contains(key)){
+            // sort by string, using COLLATE "C" to deal with lower/upper case correctly
+            return "%s COLLATE \"C\"".formatted(getFormattedKeyWithAlias(key, TableUtil.DATA, ""));
+        }
+
+        var parts = key.split("::");
+
+        if(parts.length == 2) {
+            // type is defined explicitly
+            key = parts[0];
+            var type = parts[1];
+
+            if(sortTypes.contains(type)){
+                return "text".equals(type) ?
+                        "%s COLLATE \"C\"".formatted(getFormattedKey(key))
+                        : "(%s)::%s".formatted(getFormattedKey(key), type);
+            }
+        }
+
+        // default to jsonb type
+        // we will sort it in jsonb type
+        // null < booleans < numbers < strings < arrays < objects
+        // this will fulfill most needs
+        return "%s COLLATE \"C\"".formatted(getFormattedKey4JsonWithAlias(key, TableUtil.DATA));
+
+    }
+
+    /**
+     * generate a formatted key for aggregate
+     * @param key key in dot format (address.city.street)
+     * @param function function part. e.g. COUNT(address.city.street)
+     * @return formatted key
+     */
+    public static String getFormattedKey4Aggregate(String key, String function) {
+
+        if(StringUtils.startsWithIgnoreCase(function, "COUNT(")){
+            // COUNT will not need calculation in numeric, just use data->>'key'
+            return getFormattedKeyWithAlias(key, TableUtil.DATA, "");
+        }
+
+        // for others (SUM, MIN, MAX, AVG, etc.)
+        // return (data->>'key')::numeric
+        return getFormattedKeyWithAlias(key, TableUtil.DATA, 0);
 
     }
 }

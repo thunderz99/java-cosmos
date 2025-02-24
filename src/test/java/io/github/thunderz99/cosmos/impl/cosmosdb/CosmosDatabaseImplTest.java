@@ -18,6 +18,7 @@ import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.dto.CheckBox;
 import io.github.thunderz99.cosmos.dto.EvalSkip;
+import io.github.thunderz99.cosmos.dto.FullNameUser;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
@@ -379,60 +380,6 @@ class CosmosDatabaseImplTest {
 
     }
 
-    public static class FullNameUser {
-        public String id;
-
-        public FullName fullName;
-
-        public int age;
-
-        /**
-         * a reserved word in cosmosdb ( to test c["end"])
-         */
-        public String end;
-
-        public List<String> skills = new ArrayList<>();
-
-        public FullNameUser() {
-        }
-
-        public FullNameUser(String id, String firstName, String lastName, int age, String end, String... skills) {
-            this.id = id;
-            this.fullName = new FullName(firstName, lastName);
-            this.age = age;
-            this.end = end;
-            if (skills != null) {
-                this.skills.addAll(List.of(skills));
-            }
-        }
-
-        @Override
-        public String toString() {
-            return JsonUtil.toJson(this);
-        }
-    }
-
-    public static class FullName {
-        public String first;
-        public String last;
-
-        public FullName() {
-        }
-
-        public FullName(String first, String last) {
-            this.first = first;
-            this.last = last;
-        }
-
-        @Override
-        public String toString() {
-            return JsonUtil.toJson(this);
-        }
-    }
-
-    public enum Skill {
-        Typescript, Javascript, Java, Python, Go
-    }
 
     @Test
     public void find_should_work_with_filter() throws Exception {
@@ -449,6 +396,19 @@ class CosmosDatabaseImplTest {
 
             assertThat(users.size()).isEqualTo(1);
             assertThat(users.get(0)).hasToString(user1.toString());
+        }
+
+        // test sort with lower and upper cases
+        {
+            var cond = Condition.filter("mail ENDSWITH", "@example.com"
+                    ).sort("mail", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+            assertThat(users.size()).isEqualTo(3);
+            assertThat(users.get(0).id).isEqualTo(user2.id);
         }
 
         // test basic find using OR
@@ -594,7 +554,7 @@ class CosmosDatabaseImplTest {
         // test enum
         {
             var cond = Condition.filter( //
-                            "skills ARRAY_CONTAINS", Skill.Python, //
+                            "skills ARRAY_CONTAINS", FullNameUser.Skill.Python, //
                             "age <", 100) //
                     .sort("id", "ASC") //
                     .limit(10) //
@@ -634,6 +594,84 @@ class CosmosDatabaseImplTest {
 
         }
 
+    }
+
+    @Test
+    void find_should_work_with_filter_comparing_array() throws Exception {
+        // test != array
+        {
+            var cond = Condition.filter("skills !=", List.of()
+                    ).sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+            assertThat(users.size()).isEqualTo(3);
+            assertThat(users.get(0)).hasToString(user1.toString());
+        }
+
+        // test = array
+        {
+            var cond = Condition.filter("skills =", List.of("Java", "Go", "Python")
+                    ).sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var users = db.find(coll, cond, "Users").toList(FullNameUser.class);
+
+            assertThat(users.size()).isEqualTo(1);
+            assertThat(users.get(0)).hasToString(user3.toString());
+        }
+    }
+
+    @Test
+    void find_should_work_with_filter_comparing_null() throws Exception {
+
+        var partition = "SearchViews";
+        var id1 = "comparing_null1" + RandomStringUtils.randomAlphanumeric(6);
+        var id2 = "comparing_null2" + RandomStringUtils.randomAlphanumeric(6);
+
+        try {
+
+            var data1 = Maps.newLinkedHashMap(Map.of("id", id1, "product", "TALENT"));
+            data1.put("accountId", null);
+            var data2 = Map.of("id", id2, "accountId", "hana", "product", "");
+
+            db.upsert(host, data1, partition);
+            db.upsert(host, data2, partition);
+
+            // test != null
+            {
+                var cond = Condition.filter("accountId !=", null
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var users = db.find(coll, cond, partition).toMap();
+
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0).get("id")).isEqualTo(data2.get("id"));
+            }
+
+            // test = null(null will not be saved under cosmosdb, so used IS_DEFINED = false instead)
+            {
+                var cond = Condition.filter("accountId IS_DEFINED", false
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var users = db.find(coll, cond, partition).toMap();
+
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0).get("id")).isEqualTo(data1.get("id"));
+            }
+
+
+        } finally {
+            db.delete(coll, id1, partition);
+            db.delete(coll, id2, partition);
+        }
     }
 
     @Test
@@ -1209,6 +1247,26 @@ class CosmosDatabaseImplTest {
 
             var lastName2 = result.get(1).getOrDefault("last", "").toString();
             assertThat(result.get(1).get("facetCount")).isEqualTo(expect.get(lastName2));
+
+        }
+
+        // test aggregate(count specific field)
+        {
+            var aggregate = Aggregate.function("count(c.fullName.last) AS lastNameCount").groupBy("age")
+                    .conditionAfterAggregate(Condition.filter().sort("age", "ASC"));
+
+            var result = db.aggregate(coll, aggregate, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+            var expect = Map.of("12", 1,  "30", 1, "45", 1);
+
+            var age1 = result.get(0).getOrDefault("age", "").toString();
+
+            // the result of count should be integer
+            assertThat(result.get(0).get("lastNameCount")).isInstanceOf(Integer.class).isEqualTo(expect.get(age1));
+
+            var age2 = result.get(1).getOrDefault("age", "").toString();
+            assertThat(result.get(1).get("lastNameCount")).isEqualTo(expect.get(age2));
 
         }
 
@@ -3334,10 +3392,10 @@ class CosmosDatabaseImplTest {
     }
 
     static void initData4ComplexQuery() throws Exception {
-        user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "2020-10-01", "Blanco");
-        user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "2020-11-01", "Typescript", "Javascript", "React", "Java");
-        user3 = new FullNameUser("id_find_filter3", "Tom", "Henry", 45, "2020-12-01", "Java", "Go", "Python");
-        user4 = new FullNameUser("id_find_filter4", "Andy", "Henry", 45, "2020-12-01", "Javascript", "Java");
+        user1 = new FullNameUser("id_find_filter1", "Elise", "Hanks", 12, "test1@example.com", "2020-10-01", "Blanco");
+        user2 = new FullNameUser("id_find_filter2", "Matt", "Hanks", 30, "Test2@example.com", "2020-11-01", "Typescript", "Javascript", "React", "Java");
+        user3 = new FullNameUser("id_find_filter3", "Tom", "Henry", 45,  "test3@example.com", "2020-12-01", "Java", "Go", "Python");
+        user4 = new FullNameUser("id_find_filter4", "Andy", "Henry", 45,  "Test4@example.com", "2020-12-01", "Javascript", "Java");
 
         // prepare
         db.upsert(coll, user1, "Users");
