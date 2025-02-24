@@ -197,7 +197,31 @@ public class PGKeyUtil {
         // we will sort it in jsonb type
         // null < booleans < numbers < strings < arrays < objects
         // this will fulfill most needs
-        return "%s COLLATE \"C\"".formatted(getFormattedKey4JsonWithAlias(key, TableUtil.DATA));
+        // for details, see docs/postgres-sort-order.md
+
+        var complicatedSortKey = """
+                  
+                  CASE jsonb_typeof(%s)
+                    WHEN 'null' THEN 0
+                    WHEN 'boolean' THEN 1
+                    WHEN 'number' THEN 2
+                    WHEN 'string' THEN 3
+                    WHEN 'array' THEN 4
+                    WHEN 'object' THEN 5
+                    ELSE 6
+                  END,
+                  CASE
+                    WHEN jsonb_typeof(%s) = 'string'
+                      THEN %s COLLATE "C"
+                    ELSE NULL
+                  END,
+                  %s
+                """;
+
+        var jsonKey = getFormattedKey4JsonWithAlias(key, TableUtil.DATA);
+        var textKey = getFormattedKey(key);
+
+        return complicatedSortKey.formatted(jsonKey, jsonKey, textKey, jsonKey);
 
     }
 

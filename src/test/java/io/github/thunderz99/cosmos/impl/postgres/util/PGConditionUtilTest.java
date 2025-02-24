@@ -420,7 +420,26 @@ class PGConditionUtilTest {
         {
             var sorts = List.of("name", "ASC", "age", "DESC");
             var q = PGConditionUtil.buildSorts(sorts);
-            assertThat(q).isEqualTo(" ORDER BY data->>'name' COLLATE \"C\" ASC, data->'age' COLLATE \"C\" DESC, data->>'_ts' ASC");
+            var expected = """
+                    ORDER BY data->>'name' COLLATE "C" ASC,\s
+                      CASE jsonb_typeof(data->'age')
+                        WHEN 'null' THEN 0
+                        WHEN 'boolean' THEN 1
+                        WHEN 'number' THEN 2
+                        WHEN 'string' THEN 3
+                        WHEN 'array' THEN 4
+                        WHEN 'object' THEN 5
+                        ELSE 6
+                      END,
+                      CASE
+                        WHEN jsonb_typeof(data->'age') = 'string'
+                          THEN data->>'age' COLLATE "C"
+                        ELSE NULL
+                      END,
+                      data->'age'
+                     DESC, data->>'_ts' ASC
+                    """;
+            assertThat(q.trim()).isEqualTo(expected.trim());
         }
 
         {
@@ -454,7 +473,26 @@ class PGConditionUtilTest {
             // build sort should work for type specify(wrong type)
             var sorts = List.of("sort::double", "DESC");
             var q = PGConditionUtil.buildSorts(sorts);
-            assertThat(q).isEqualTo(" ORDER BY data->'sort' COLLATE \"C\" DESC, data->>'_ts' DESC");
+            var expected = """
+                     ORDER BY\s
+                      CASE jsonb_typeof(data->'sort')
+                        WHEN 'null' THEN 0
+                        WHEN 'boolean' THEN 1
+                        WHEN 'number' THEN 2
+                        WHEN 'string' THEN 3
+                        WHEN 'array' THEN 4
+                        WHEN 'object' THEN 5
+                        ELSE 6
+                      END,
+                      CASE
+                        WHEN jsonb_typeof(data->'sort') = 'string'
+                          THEN data->>'sort' COLLATE "C"
+                        ELSE NULL
+                      END,
+                      data->'sort'
+                     DESC, data->>'_ts' DESC
+                    """;
+            assertThat(q.trim()).isEqualTo(expected.trim());
         }
 
 
@@ -977,7 +1015,23 @@ class PGConditionUtilTest {
                     jsonb_build_object('id', data->'id', 'address', jsonb_build_object('street', data->'address'->'street'), 'area*no-1', data->'area*no-1') AS "data"
                     
                     FROM filtered_data
-                     ORDER BY data->>'_ts' DESC, data->'address'->'street' COLLATE "C" ASC OFFSET 0 LIMIT 10
+                     ORDER BY data->>'_ts' DESC,\s
+                      CASE jsonb_typeof(data->'address'->'street')
+                        WHEN 'null' THEN 0
+                        WHEN 'boolean' THEN 1
+                        WHEN 'number' THEN 2
+                        WHEN 'string' THEN 3
+                        WHEN 'array' THEN 4
+                        WHEN 'object' THEN 5
+                        ELSE 6
+                      END,
+                      CASE
+                        WHEN jsonb_typeof(data->'address'->'street') = 'string'
+                          THEN data->'address'->>'street' COLLATE "C"
+                        ELSE NULL
+                      END,
+                      data->'address'->'street'
+                     ASC OFFSET 0 LIMIT 10
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(4);
