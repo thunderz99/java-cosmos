@@ -79,7 +79,7 @@ public class PostgresImpl implements Cosmos {
      * @param connectionString postgres connectionString
      * @return pair of HikariConfig and account(hostName)
      */
-    static Pair<HikariConfig, String> parseToHikariConfig(String connectionString) {
+    public static Pair<HikariConfig, String> parseToHikariConfig(String connectionString) {
 
         Checker.checkNotBlank(connectionString, "connectionString");
         var config = new HikariConfig();

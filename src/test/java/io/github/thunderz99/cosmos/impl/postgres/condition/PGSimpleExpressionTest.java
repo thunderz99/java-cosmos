@@ -25,15 +25,6 @@ class PGSimpleExpressionTest {
             assertThat(actual).isEqualTo(expected);
         }
 
-        {
-            // array value
-            var expr = new PGSimpleExpression("name", List.of("Hanks", "Tom", "Jerry"));
-            var actual = expr.toQuerySpec(new AtomicInteger(0), "data");
-            var expected = new CosmosSqlQuerySpec();
-            expected.setQueryText(" (data->>'name' = ANY(@param000_name))");
-            expected.addParameter(new CosmosSqlParameter("@param000_name", List.of("Hanks", "Tom", "Jerry")));
-            assertThat(actual).isEqualTo(expected);
-        }
 
         {
             // int value
@@ -76,5 +67,56 @@ class PGSimpleExpressionTest {
             assertThat(actual).isEqualTo(expected);
         }
 
+        {
+            // array value
+            var list = List.of("Hanks", "Tom", "Jerry");
+            var expr = new PGSimpleExpression("name", list);
+            var actual = expr.toQuerySpec(new AtomicInteger(0), "data");
+            var expected = new CosmosSqlQuerySpec();
+            expected.setQueryText(" (data->>'name' = ANY(@param000_name))");
+            expected.addParameter(new CosmosSqlParameter("@param000_name", list));
+            assertThat(actual).isEqualTo(expected);
+        }
+
+        {
+            // array value of int
+            var list = List.of(1, 2, 3);
+            var expr = new PGSimpleExpression("name", list);
+            var actual = expr.toQuerySpec(new AtomicInteger(0), "data");
+            var expected = new CosmosSqlQuerySpec();
+            expected.setQueryText(" ((data->>'name')::numeric = ANY(@param000_name))");
+            expected.addParameter(new CosmosSqlParameter("@param000_name", list));
+            assertThat(actual).isEqualTo(expected);
+        }
+
+        {
+            // array value of double
+            var list = List.of(1.0, 2, 3);
+            var expr = new PGSimpleExpression("name", list);
+            var actual = expr.toQuerySpec(new AtomicInteger(0), "data");
+            var expected = new CosmosSqlQuerySpec();
+            expected.setQueryText(" ((data->>'name')::numeric = ANY(@param000_name))");
+            expected.addParameter(new CosmosSqlParameter("@param000_name", list));
+            assertThat(actual).isEqualTo(expected);
+        }
+
+    }
+
+    @Test
+    void getTypicalValue_should_work() {
+        {
+            // normal cases
+            assertThat(PGSimpleExpression.getTypicalValue(List.of(1,2,3))).isEqualTo(1);
+            assertThat(PGSimpleExpression.getTypicalValue(List.of("a", "b"))).isEqualTo("a");
+            assertThat(PGSimpleExpression.getTypicalValue(List.of(1.0, -0.2))).isEqualTo(1.0);
+            assertThat(PGSimpleExpression.getTypicalValue(List.of(1L, 2L))).isEqualTo(1L);
+        }
+
+        {
+            // irregular cases
+            assertThat(PGSimpleExpression.getTypicalValue(List.of())).isEqualTo("");
+            assertThat(PGSimpleExpression.getTypicalValue(List.of(1))).isEqualTo(1);
+            assertThat(PGSimpleExpression.getTypicalValue(null)).isEqualTo("");
+        }
     }
 }
