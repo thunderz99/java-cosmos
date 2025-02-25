@@ -400,7 +400,7 @@ public class PGConditionUtil {
 
         var ret = sortMap.entrySet().stream()
                 .filter(entry -> StringUtils.isNotBlank(entry.getKey()))
-                .map(entry -> String.format(" %s %s", PGKeyUtil.getFormattedKey4Sort(entry.getKey()), entry.getValue().toUpperCase()))
+                .map(entry -> String.format(" %s", PGKeyUtil.getFormattedKey4Sort(entry.getKey(), entry.getValue().toUpperCase())))
                 .collect(Collectors.joining(",", " ORDER BY", ""));
         return ret;
     }

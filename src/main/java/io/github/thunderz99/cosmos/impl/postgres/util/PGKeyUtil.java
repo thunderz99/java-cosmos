@@ -168,15 +168,15 @@ public class PGKeyUtil {
      * @param key key in dot format address.city.street::text / content.age.value::numeric
      * @return data->'address'->'city'->>'street' / (data->'content'->'age'->>'value')::numeric
      */
-    public static String getFormattedKey4Sort(String key) {
+    public static String getFormattedKey4Sort(String key, String sortDirection) {
 
         if(preservedSorts.contains(key)){
-            return getFormattedKeyWithAlias(key, TableUtil.DATA, "");
+            return "%s %s".formatted(getFormattedKeyWithAlias(key, TableUtil.DATA, ""), sortDirection);
         }
 
         if(textSorts.contains(key)){
             // sort by string, using COLLATE "C" to deal with lower/upper case correctly
-            return "%s COLLATE \"C\"".formatted(getFormattedKeyWithAlias(key, TableUtil.DATA, ""));
+            return "%s COLLATE \"C\" %s".formatted(getFormattedKeyWithAlias(key, TableUtil.DATA, ""), sortDirection);
         }
 
         var parts = key.split("::");
@@ -188,8 +188,8 @@ public class PGKeyUtil {
 
             if(sortTypes.contains(type)){
                 return "text".equals(type) ?
-                        "%s COLLATE \"C\"".formatted(getFormattedKey(key))
-                        : "(%s)::%s".formatted(getFormattedKey(key), type);
+                        "%s COLLATE \"C\" %s".formatted(getFormattedKey(key), sortDirection)
+                        : "(%s)::%s %s".formatted(getFormattedKey(key), type, sortDirection);
             }
         }
 
@@ -209,19 +209,20 @@ public class PGKeyUtil {
                     WHEN 'array' THEN 4
                     WHEN 'object' THEN 5
                     ELSE 6
-                  END,
+                  END %s,
                   CASE
                     WHEN jsonb_typeof(%s) = 'string'
                       THEN %s COLLATE "C"
                     ELSE NULL
-                  END,
-                  %s
+                  END %s,
+                  %s %s
                 """;
-
         var jsonKey = getFormattedKey4JsonWithAlias(key, TableUtil.DATA);
         var textKey = getFormattedKey(key);
 
-        return complicatedSortKey.formatted(jsonKey, jsonKey, textKey, jsonKey);
+        return complicatedSortKey.formatted(jsonKey, sortDirection,
+                jsonKey, textKey, sortDirection,
+                jsonKey, sortDirection);
 
     }
 

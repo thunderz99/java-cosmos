@@ -430,14 +430,14 @@ class PGConditionUtilTest {
                         WHEN 'array' THEN 4
                         WHEN 'object' THEN 5
                         ELSE 6
-                      END,
+                      END DESC,
                       CASE
                         WHEN jsonb_typeof(data->'age') = 'string'
                           THEN data->>'age' COLLATE "C"
                         ELSE NULL
-                      END,
-                      data->'age'
-                     DESC, data->>'_ts' ASC
+                      END DESC,
+                      data->'age' DESC
+                    , data->>'_ts' ASC
                     """;
             assertThat(q.trim()).isEqualTo(expected.trim());
         }
@@ -483,14 +483,14 @@ class PGConditionUtilTest {
                         WHEN 'array' THEN 4
                         WHEN 'object' THEN 5
                         ELSE 6
-                      END,
+                      END DESC,
                       CASE
                         WHEN jsonb_typeof(data->'sort') = 'string'
                           THEN data->>'sort' COLLATE "C"
                         ELSE NULL
-                      END,
-                      data->'sort'
-                     DESC, data->>'_ts' DESC
+                      END DESC,
+                      data->'sort' DESC
+                    , data->>'_ts' DESC
                     """;
             assertThat(q.trim()).isEqualTo(expected.trim());
         }
@@ -1024,14 +1024,14 @@ class PGConditionUtilTest {
                         WHEN 'array' THEN 4
                         WHEN 'object' THEN 5
                         ELSE 6
-                      END,
+                      END ASC,
                       CASE
                         WHEN jsonb_typeof(data->'address'->'street') = 'string'
                           THEN data->'address'->>'street' COLLATE "C"
                         ELSE NULL
-                      END,
-                      data->'address'->'street'
-                     ASC OFFSET 0 LIMIT 10
+                      END ASC,
+                      data->'address'->'street' ASC
+                     OFFSET 0 LIMIT 10
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(4);

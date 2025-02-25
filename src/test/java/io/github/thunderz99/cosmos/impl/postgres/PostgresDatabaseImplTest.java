@@ -947,7 +947,7 @@ class PostgresDatabaseImplTest {
             db.upsert(host, data2, partition);
             db.upsert(host, data3, partition);
 
-            // test sort
+            // test sort ASC
             {
                 var cond = Condition.filter("type", "Phone"
                         ).sort("value", "ASC") //
@@ -962,6 +962,23 @@ class PostgresDatabaseImplTest {
                 assertThat(docs.get(0).get("value")).isEqualTo("Galaxy");
                 assertThat(docs.get(1).get("value")).isEqualTo("Pixel");
                 assertThat(docs.get(2).get("value")).isEqualTo("iPhone");
+            }
+
+            // test sort DESC
+            {
+                var cond = Condition.filter("type", "Phone"
+                        ).sort("value", "DESC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var docs = db.find(host, cond, partition).toMap();
+
+                // expected: "Galaxy" < "Pixel" < "iPhone"
+                // wrong case: "Galaxy" < "iPhone" < "Pixel" (which ignores upper and lower case)
+                assertThat(docs.size()).isEqualTo(3);
+                assertThat(docs.get(0).get("value")).isEqualTo("iPhone");
+                assertThat(docs.get(1).get("value")).isEqualTo("Pixel");
+                assertThat(docs.get(2).get("value")).isEqualTo("Galaxy");
             }
 
         } finally {
