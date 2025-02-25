@@ -908,10 +908,83 @@ class PostgresDatabaseImplTest {
                 assertThat(users.get(0).get("id")).isEqualTo(data1.get("id"));
             }
 
+            // using IS_DEFINED = false
+            {
+                var cond = Condition.filter("accountId IS_DEFINED", false
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var users = db.find(host, cond, partition).toMap();
+
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0).get("id")).isEqualTo(data1.get("id"));
+            }
+
 
         } finally {
             db.delete(host, id1, partition);
             db.delete(host, id2, partition);
+        }
+    }
+
+
+    @Test
+    void find_should_work_with_sort_lower_upper() throws Exception {
+
+        var partition = "SheetContents";
+        var id1 = "sort_lower_upper1" + RandomStringUtils.randomAlphanumeric(6);
+        var id2 = "sort_lower_upper2" + RandomStringUtils.randomAlphanumeric(6);
+        var id3 = "sort_lower_upper3" + RandomStringUtils.randomAlphanumeric(6);
+
+        try {
+
+            var data1 = Map.of("id", id1, "type", "Phone", "value", "Galaxy");
+            var data2 = Map.of("id", id2, "type", "Phone", "value", "Pixel");
+            var data3 = Map.of("id", id3, "type", "Phone", "value", "iPhone");
+
+            db.upsert(host, data1, partition);
+            db.upsert(host, data2, partition);
+            db.upsert(host, data3, partition);
+
+            // test sort ASC
+            {
+                var cond = Condition.filter("type", "Phone"
+                        ).sort("value", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var docs = db.find(host, cond, partition).toMap();
+
+                // expected: "Galaxy" < "Pixel" < "iPhone"
+                // wrong case: "Galaxy" < "iPhone" < "Pixel" (which ignores upper and lower case)
+                assertThat(docs.size()).isEqualTo(3);
+                assertThat(docs.get(0).get("value")).isEqualTo("Galaxy");
+                assertThat(docs.get(1).get("value")).isEqualTo("Pixel");
+                assertThat(docs.get(2).get("value")).isEqualTo("iPhone");
+            }
+
+            // test sort DESC
+            {
+                var cond = Condition.filter("type", "Phone"
+                        ).sort("value", "DESC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var docs = db.find(host, cond, partition).toMap();
+
+                // expected: "Galaxy" < "Pixel" < "iPhone"
+                // wrong case: "Galaxy" < "iPhone" < "Pixel" (which ignores upper and lower case)
+                assertThat(docs.size()).isEqualTo(3);
+                assertThat(docs.get(0).get("value")).isEqualTo("iPhone");
+                assertThat(docs.get(1).get("value")).isEqualTo("Pixel");
+                assertThat(docs.get(2).get("value")).isEqualTo("Galaxy");
+            }
+
+        } finally {
+            db.delete(host, id1, partition);
+            db.delete(host, id2, partition);
+            db.delete(host, id3, partition);
         }
     }
 
