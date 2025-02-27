@@ -80,7 +80,7 @@ public class PGConditionUtil {
 
         // sort
         if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
-            var sorts = buildSorts(cond.sort);
+            var sorts = buildSorts(cond.sort, cond.collate);
             queryText.append("\n").append(sorts);
         }
 
@@ -372,7 +372,7 @@ public class PGConditionUtil {
      * @param sort list of sort key and orders
      * @return sort queryText
      */
-    static String buildSorts(List<String> sort) {
+    static String buildSorts(List<String> sort, String collate) {
 
         if(CollectionUtils.isEmpty(sort)){
             return "";
@@ -400,7 +400,7 @@ public class PGConditionUtil {
 
         var ret = sortMap.entrySet().stream()
                 .filter(entry -> StringUtils.isNotBlank(entry.getKey()))
-                .map(entry -> String.format(" %s", PGKeyUtil.getFormattedKey4Sort(entry.getKey(), entry.getValue().toUpperCase())))
+                .map(entry -> String.format(" %s", PGSortUtil.getFormattedKey4Sort(entry.getKey(), entry.getValue().toUpperCase(), collate)))
                 .collect(Collectors.joining(",", " ORDER BY", ""));
         return ret;
     }

@@ -655,6 +655,9 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         // TODO crossPartition query
 
+        if(StringUtils.isEmpty(cond.collate)){
+            cond.collate = ((PostgresImpl)cosmosAccount).collate;
+        }
         var querySpec = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
 

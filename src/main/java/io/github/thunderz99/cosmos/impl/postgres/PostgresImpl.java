@@ -9,6 +9,7 @@ import io.github.thunderz99.cosmos.CosmosDatabase;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosContainerResponse;
 import io.github.thunderz99.cosmos.dto.UniqueKeyPolicy;
+import io.github.thunderz99.cosmos.impl.postgres.util.PGSortUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.Checker;
 import org.apache.commons.lang3.StringUtils;
@@ -42,6 +43,8 @@ public class PostgresImpl implements Cosmos {
 
     String account;
 
+    public String collate;
+
     /**
      * whether automatically add "_expireAt" field based on "ttl" field
      */
@@ -54,10 +57,10 @@ public class PostgresImpl implements Cosmos {
 
 
     public PostgresImpl(String connectionString) {
-        this(connectionString, false, false);
+        this(connectionString, false, false, PGSortUtil.COLLATE_C);
     }
 
-    public PostgresImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled) {
+    public PostgresImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled, String collate) {
 
         var pair = parseToHikariConfig(connectionString);
         var config = pair.getLeft();
@@ -69,6 +72,7 @@ public class PostgresImpl implements Cosmos {
 
         this.expireAtEnabled = expireAtEnabled;
         this.etagEnabled = etagEnabled;
+        this.collate = collate;
 
         Runtime.getRuntime().addShutdownHook(new Thread(this::closeClient));
 

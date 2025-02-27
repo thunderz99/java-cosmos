@@ -5,6 +5,7 @@ import java.util.List;
 import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosImpl;
 import io.github.thunderz99.cosmos.impl.mongo.MongoImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
+import io.github.thunderz99.cosmos.impl.postgres.util.PGSortUtil;
 import io.github.thunderz99.cosmos.util.Checker;
 import org.apache.commons.lang3.StringUtils;
 
@@ -34,6 +35,15 @@ public class CosmosBuilder {
     String connectionString;
 
     List<String> preferredRegions;
+
+    /**
+     * db sort settings. only affects postgres. see docs/postgres-sort-order.md for details
+     *
+     * <p>
+     *     default to "en_US"
+     * </p>
+     */
+    String collate = PGSortUtil.COLLATE_EN_US;
 
     boolean expireAtEnabled = false;
 
@@ -68,13 +78,28 @@ public class CosmosBuilder {
     }
 
     /**
-     * Specify the preferredRegions for cosmosdb. Note there is no effect to mongodb.
+     * Specify the preferredRegions for cosmosdb. Note there is no effect to mongodb/postgres.
      *
      * @param preferredRegions
      * @return
      */
     public CosmosBuilder withPreferredRegions(List<String> preferredRegions) {
         this.preferredRegions = preferredRegions;
+        return this;
+    }
+
+    /**
+     * Specify the collate setting for postgres(affects sort order). Note there is no effect to cosmosdb/mongodb.
+     *
+     * <p>
+     *     see docs/postgres-sort-order.md for details
+     * </p>
+     *
+     * @param collate "C" or "en_US", default to "en_US"
+     * @return
+     */
+    public CosmosBuilder withCollate(String collate) {
+        this.collate = collate;
         return this;
     }
 
@@ -131,7 +156,7 @@ public class CosmosBuilder {
         }
 
         if (StringUtils.equals(dbType, POSTGRES)) {
-            return new PostgresImpl(connectionString, expireAtEnabled, etagEnabled);
+            return new PostgresImpl(connectionString, expireAtEnabled, etagEnabled, collate);
         }
 
         throw new IllegalArgumentException("Not supported dbType: " + dbType);
