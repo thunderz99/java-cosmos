@@ -50,7 +50,7 @@ class PGConditionUtilTest {
 
         {
             // test with specific fields and sort
-            var condFieldsSort = Condition.filter().fields("id", "name").sort("name", "ASC");
+            var condFieldsSort = Condition.filter().fields("id", "name").sort("name", "ASC").collate("C");
             var actualSpecFieldsSort = PGConditionUtil.toQuerySpec("coll", condFieldsSort, "partition");
 
             var expectedSQL= """
@@ -408,18 +408,18 @@ class PGConditionUtilTest {
     void buildSorts_should_work() {
         {
             var sorts = new ArrayList<String>();
-            var q = PGConditionUtil.buildSorts(sorts);
+            var q = PGConditionUtil.buildSorts(sorts, "C");
             assertThat(q).isEmpty();
         }
         {
             var sorts = List.of("name", "ASC");
-            var q = PGConditionUtil.buildSorts(sorts);
+            var q = PGConditionUtil.buildSorts(sorts, "C");
             assertThat(q).isEqualTo(" ORDER BY data->>'name' COLLATE \"C\" ASC, data->>'_ts' ASC");
         }
 
         {
             var sorts = List.of("name", "ASC", "age", "DESC");
-            var q = PGConditionUtil.buildSorts(sorts);
+            var q = PGConditionUtil.buildSorts(sorts, "C");
             var expected = """
                     ORDER BY data->>'name' COLLATE "C" ASC,\s
                       CASE jsonb_typeof(data->'age')
@@ -444,35 +444,35 @@ class PGConditionUtilTest {
 
         {
             var sorts = List.of("id", "DESC", "_ts", "ASC");
-            var q = PGConditionUtil.buildSorts(sorts);
+            var q = PGConditionUtil.buildSorts(sorts, "C");
             assertThat(q).isEqualTo(" ORDER BY data->>'id' COLLATE \"C\" DESC, data->>'_ts' ASC");
         }
 
         {
             // build sort should work for type specify(text)
             var sorts = List.of("employCode::text", "DESC", "_ts", "ASC");
-            var q = PGConditionUtil.buildSorts(sorts);
+            var q = PGConditionUtil.buildSorts(sorts, "C");
             assertThat(q).isEqualTo(" ORDER BY data->>'employCode' COLLATE \"C\" DESC, data->>'_ts' ASC");
         }
 
         {
             // build sort should work for type specify(int)
             var sorts = List.of("age::int", "ASC");
-            var q = PGConditionUtil.buildSorts(sorts);
+            var q = PGConditionUtil.buildSorts(sorts, "C");
             assertThat(q).isEqualTo(" ORDER BY (data->>'age')::int ASC, data->>'_ts' ASC");
         }
 
         {
             // build sort should work for type specify(numeric)
             var sorts = List.of("sort::numeric", "DESC");
-            var q = PGConditionUtil.buildSorts(sorts);
+            var q = PGConditionUtil.buildSorts(sorts, "C");
             assertThat(q).isEqualTo(" ORDER BY (data->>'sort')::numeric DESC, data->>'_ts' DESC");
         }
 
         {
             // build sort should work for type specify(wrong type)
             var sorts = List.of("sort::double", "DESC");
-            var q = PGConditionUtil.buildSorts(sorts);
+            var q = PGConditionUtil.buildSorts(sorts, "C");
             var expected = """
                      ORDER BY\s
                       CASE jsonb_typeof(data->'sort')
@@ -511,6 +511,7 @@ class PGConditionUtilTest {
                         .limit(10) //
                         .offset(0)
                         .join(Set.of("area.city.street.rooms", "room*no-01"))
+                        .collate("C")
                         .returnAllSubArray(false);
 
                 var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
@@ -568,6 +569,7 @@ class PGConditionUtilTest {
                         .limit(10) //
                         .offset(0)
                         .join(Set.of("area.city.street.rooms"))
+                        .collate("C")
                         .returnAllSubArray(true);
 
                 var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
@@ -596,6 +598,7 @@ class PGConditionUtilTest {
                         .limit(10) //
                         .offset(0)
                         .join(Set.of("area.city.street.rooms"))
+                        .collate("C")
                         .returnAllSubArray(false);
 
 
@@ -818,6 +821,7 @@ class PGConditionUtilTest {
                     .returnAllSubArray(false)
                     .fields("id", "floors", "_ts")
                     .sort("id", "ASC")
+                    .collate("C")
                     ;
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
@@ -988,6 +992,8 @@ class PGConditionUtilTest {
                     ;
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
+            // collate not specified, so default to COLLATE "en_US" .
+            // the sort should be simply " ORDER BY data->>'_ts' DESC,  data->'address'->'street' ASC"
             var expected = """
                     WITH filtered_data AS (
                     SELECT id, jsonb_set(
@@ -1015,23 +1021,7 @@ class PGConditionUtilTest {
                     jsonb_build_object('id', data->'id', 'address', jsonb_build_object('street', data->'address'->'street'), 'area*no-1', data->'area*no-1') AS "data"
                     
                     FROM filtered_data
-                     ORDER BY data->>'_ts' DESC,\s
-                      CASE jsonb_typeof(data->'address'->'street')
-                        WHEN 'null' THEN 0
-                        WHEN 'boolean' THEN 1
-                        WHEN 'number' THEN 2
-                        WHEN 'string' THEN 3
-                        WHEN 'array' THEN 4
-                        WHEN 'object' THEN 5
-                        ELSE 6
-                      END ASC,
-                      CASE
-                        WHEN jsonb_typeof(data->'address'->'street') = 'string'
-                          THEN data->'address'->>'street' COLLATE "C"
-                        ELSE NULL
-                      END ASC,
-                      data->'address'->'street' ASC
-                     OFFSET 0 LIMIT 10
+                     ORDER BY data->>'_ts' DESC,  data->'address'->'street' ASC OFFSET 0 LIMIT 10
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(4);

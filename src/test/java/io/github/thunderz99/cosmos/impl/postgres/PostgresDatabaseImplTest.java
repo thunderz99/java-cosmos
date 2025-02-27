@@ -90,6 +90,7 @@ class PostgresDatabaseImplTest {
                 .withExpireAtEnabled(true)
                 .withEtagEnabled(true)
                 .withConnectionString(EnvUtil.getOrDefault("POSTGRES_CONNECTION_STRING", PostgresImplTest.LOCAL_CONNECTION_STRING))
+                .withCollate("C")
                 .build();
 
         // we do not need to create a collection here, so the second param is empty

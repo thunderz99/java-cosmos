@@ -58,7 +58,17 @@ public class Condition {
     public int limit = 100;
 
     /**
-     * whether this query is cross-partition or not (default to false)
+     * when sort db records, what collate should be used. supported only by postgres
+     * if not set, default to CosmosBuilder.withCollate values(which is "C" in default)
+     *
+     * <p>
+     *     see docs/postgres-sort-order.md for details
+     * </p>
+     */
+    public String collate;
+
+    /**
+     * whether this query is cross-partition or not (default to false). supported only by cosmosdb
      */
     public boolean crossPartition = false;
 
@@ -234,6 +244,17 @@ public class Condition {
      */
     public Condition crossPartition(boolean crossPartition) {
         this.crossPartition = crossPartition;
+        return this;
+    }
+
+    /**
+     * set the collate for db sorts
+     *
+     * @param collate "C" or "en_US". default to CosmosBuilder.withCollate settings
+     * @return condition
+     */
+    public Condition collate(String collate) {
+        this.collate = collate;
         return this;
     }
 
@@ -953,6 +974,7 @@ public class Condition {
         cond.negative = this.negative;
         cond.join = this.join;
         cond.returnAllSubArray = this.returnAllSubArray;
+        cond.collate = this.collate;
 
         if (this.rawQuerySpec != null) {
             cond.rawQuerySpec = this.rawQuerySpec.copy();

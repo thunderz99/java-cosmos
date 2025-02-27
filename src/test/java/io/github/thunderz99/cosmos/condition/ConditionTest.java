@@ -737,7 +737,9 @@ class ConditionTest {
 			// normal case
 			var skillSet = Set.of("java", "python");
 			var original = Condition.filter("id", "ID001", "aaa-bbb.value IS_DEFINED", true, "int", 10, "skills ARRAY_CONTAINS_ANY", skillSet)
-					.offset(40).limit(20).sort("id", "DESC").crossPartition(true).fields("id", "_ts");
+					.offset(40).limit(20).sort("id", "DESC").crossPartition(true).fields("id", "_ts")
+                    .collate("en_US")
+                    ;
 			var copy = original.copy();
 
 			assertThat(copy.filter.get("id")).isEqualTo("ID001");
@@ -750,8 +752,11 @@ class ConditionTest {
 			assertThat(copy.fields).isEqualTo(original.fields);
 			assertThat(copy.sort).isEqualTo(original.sort);
 			assertThat(copy.crossPartition).isEqualTo(original.crossPartition);
+			assertThat(copy.returnAllSubArray).isEqualTo(original.returnAllSubArray);
+			assertThat(copy.join).isEqualTo(original.join);
+			assertThat(copy.collate).isEqualTo(original.collate);
 
-			// deep copy, so change the copy wont affect the original
+			// deep copy, so change the copy won't affect the original
 			copy.filter.put("copy", true);
 			assertThat(original.filter).doesNotContainEntry("copy", true);
 

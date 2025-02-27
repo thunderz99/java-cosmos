@@ -14,21 +14,6 @@ import java.util.stream.Collectors;
 public class PGKeyUtil {
 
     /**
-     * Sort keys which is predefined with formatted value
-     */
-    static Set<String> preservedSorts = Set.of("_ts");
-
-    /**
-     * Sort keys which should be sorted by text
-     */
-    static Set<String> textSorts = Set.of("id", "mail", "name", "kana", "title");
-
-    /**
-     * Sort types that supported, other types should be sorted as jsonb
-     */
-    static Set<String> sortTypes = Set.of("int", "float8", "numeric", "text");
-
-    /**
      * Instead of data.key, return data->'key' or data->'address'->>'city' for query
      *
      * @param key filter's key
@@ -160,69 +145,6 @@ public class PGKeyUtil {
         var joinPartJsonbPath = Arrays.stream(joinPartArray).map(s -> "\""+s+"\"").collect(Collectors.joining(".", "$.", "[*]"));
         var keyJsonbPath = Arrays.stream(keyArray).map(s -> "\""+s+"\"").collect(Collectors.joining(".", "@.", ""));
         return Pair.of(joinPartJsonbPath, keyJsonbPath);
-
-    }
-
-    /**
-     * generate a formatted key for sort
-     * @param key key in dot format address.city.street::text / content.age.value::numeric
-     * @return data->'address'->'city'->>'street' / (data->'content'->'age'->>'value')::numeric
-     */
-    public static String getFormattedKey4Sort(String key, String sortDirection) {
-
-        if(preservedSorts.contains(key)){
-            return "%s %s".formatted(getFormattedKeyWithAlias(key, TableUtil.DATA, ""), sortDirection);
-        }
-
-        if(textSorts.contains(key)){
-            // sort by string, using COLLATE "C" to deal with lower/upper case correctly
-            return "%s COLLATE \"C\" %s".formatted(getFormattedKeyWithAlias(key, TableUtil.DATA, ""), sortDirection);
-        }
-
-        var parts = key.split("::");
-
-        if(parts.length == 2) {
-            // type is defined explicitly
-            key = parts[0];
-            var type = parts[1];
-
-            if(sortTypes.contains(type)){
-                return "text".equals(type) ?
-                        "%s COLLATE \"C\" %s".formatted(getFormattedKey(key), sortDirection)
-                        : "(%s)::%s %s".formatted(getFormattedKey(key), type, sortDirection);
-            }
-        }
-
-        // default to jsonb type
-        // we will sort it in jsonb type
-        // null < booleans < numbers < strings < arrays < objects
-        // this will fulfill most needs
-        // for details, see docs/postgres-sort-order.md
-
-        var complicatedSortKey = """
-                  
-                  CASE jsonb_typeof(%s)
-                    WHEN 'null' THEN 0
-                    WHEN 'boolean' THEN 1
-                    WHEN 'number' THEN 2
-                    WHEN 'string' THEN 3
-                    WHEN 'array' THEN 4
-                    WHEN 'object' THEN 5
-                    ELSE 6
-                  END %s,
-                  CASE
-                    WHEN jsonb_typeof(%s) = 'string'
-                      THEN %s COLLATE "C"
-                    ELSE NULL
-                  END %s,
-                  %s %s
-                """;
-        var jsonKey = getFormattedKey4JsonWithAlias(key, TableUtil.DATA);
-        var textKey = getFormattedKey(key);
-
-        return complicatedSortKey.formatted(jsonKey, sortDirection,
-                jsonKey, textKey, sortDirection,
-                jsonKey, sortDirection);
 
     }
 
