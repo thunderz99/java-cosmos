@@ -6,7 +6,7 @@ import io.github.thunderz99.cosmos.util.Checker;
 import java.util.Map;
 
 /**
- * A standard record for postgres table in java-cosmos
+ * An aggregate result record for postgres
  */
 public class AggregateRecord {
 
@@ -29,6 +29,8 @@ public class AggregateRecord {
         this.id = id;
         Checker.checkNotNull(data, "data");
         // the aggregate data
+        // unlike PostgresRecord, the "id" field will not be put back to the data
+        // because row id is different from the "id" in aggregate data
         this.data = data;
     }
 }
