@@ -304,8 +304,14 @@ public class PGSimpleExpression implements Expression {
                     param.value = String.valueOf(param.getValue());
 
                     // modify the key to data->'no' (without ::int to do a jsonb contains)
-                    jsonKey = StringUtils.removeStart(jsonKey,"(");
-                    jsonKey = StringUtils.removeEnd(jsonKey,")::numeric");
+
+                    if(jsonKey.startsWith("NULLIF")){
+                        jsonKey = StringUtils.removeStart(jsonKey,"NULLIF(");
+                        jsonKey = StringUtils.removeEnd(jsonKey,",'')::numeric");
+                    } else {
+                        jsonKey = StringUtils.removeStart(jsonKey,"(");
+                        jsonKey = StringUtils.removeEnd(jsonKey,")::numeric");
+                    }
 
                     querySpec.setQueryText(String.format(" (%s @> %s::jsonb)", jsonKey, valuePart));
                 } else {

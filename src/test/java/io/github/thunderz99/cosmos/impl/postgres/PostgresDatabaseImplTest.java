@@ -19,6 +19,7 @@ import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.data.Percentage;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -931,6 +932,43 @@ class PostgresDatabaseImplTest {
 
 
     @Test
+    void find_should_work_with_filter_comparing_text_to_int() throws Exception {
+
+        var partition = "Users";
+        var id1 = "comparing_text_to_int1_" + RandomStringUtils.randomAlphanumeric(6);
+        var id2 = "comparing_text_to_int2_" + RandomStringUtils.randomAlphanumeric(6);
+
+        try {
+
+            var data1 = Map.of("id", id1, "age", 20);
+            var data2 = Map.of("id", id2, "age", "");
+
+            db.upsert(host, data1, partition);
+            db.upsert(host, data2, partition);
+
+            // test comparing age
+            {
+                var cond = Condition.filter("id STARTSWITH", "comparing_text_to_int",
+                        "age >", 1
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var users = db.find(host, cond, partition).toMap();
+
+                assertThat(users.size()).isEqualTo(1);
+                assertThat(users.get(0).get("id")).isEqualTo(data1.get("id"));
+            }
+
+
+        } finally {
+            db.delete(host, id1, partition);
+            db.delete(host, id2, partition);
+        }
+    }
+
+
+    @Test
     void find_should_work_with_sort_lower_upper() throws Exception {
 
         var partition = "SheetContents";
@@ -1608,6 +1646,25 @@ class PostgresDatabaseImplTest {
             var lastName2 = result.get(1).getOrDefault("last", "").toString();
             assertThat(result.get(1).get("ageSum")).isEqualTo(expect.get(lastName2));
 
+        }
+    }
+
+    @Test
+    void aggregate_should_work_grouping_by_id() throws Exception {
+        // test aggregate(simple group by)
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("id");
+            var cond = Condition.filter("id STARTSWITH", "id_find_filter");
+
+            var result = db.aggregate(host, aggregate, cond, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+            // the result of count should be integer
+            assertThat(result.get(0).get("facetCount")).isInstanceOf(Integer.class);
+
+            assertThat(result.get(0).get("id")).isInstanceOfSatisfying(String.class, (id) ->{
+                    assertThat(id).startsWith("id_find_filter");
+            });
         }
     }
 
