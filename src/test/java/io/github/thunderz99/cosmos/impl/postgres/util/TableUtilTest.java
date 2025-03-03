@@ -12,6 +12,8 @@ import io.github.thunderz99.cosmos.impl.postgres.dto.IndexOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -955,6 +960,51 @@ class TableUtilTest {
             assertThat(TableUtil.getShortenedEntityName(null)).isEqualTo(null);
             assertThat(TableUtil.getShortenedEntityName("")).isEqualTo("");
         }
+    }
+
+    private static final BasicThreadFactory threadFactory = new BasicThreadFactory.Builder().namingPattern("java-cosmos"+"-%s").build();
+    private static final ThreadPoolExecutor SINGLE_TASK_EXECUTOR = (ThreadPoolExecutor) Executors.newFixedThreadPool(100, threadFactory);
+
+
+    @Test
+    void createTableIfNotExist_should_work_in_multi_thread() throws Exception {
+
+        var tableName = "table1_multi_thread_test";
+        try {
+            List<Future<String>> futures = new ArrayList<>();
+
+            int threadCount = 100;
+
+            for (int i = 0; i < threadCount; i++) {
+                futures.add(SINGLE_TASK_EXECUTOR.submit(() -> {
+
+                    try (var conn = cosmos.getDataSource().getConnection()) {
+                        return TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                    } catch (SQLException e) {
+                        throw new RuntimeException(e);
+                    }
+
+                }));
+            }
+
+            List<String> results = new ArrayList<>();
+
+            for (int i = 0; i < threadCount; i++) {
+                results.add(futures.get(i).get());
+            }
+
+            assertThat(results).hasSize(threadCount);
+
+            results = results.stream().filter(StringUtils::isNotEmpty).toList();
+
+            // only few threads execute "CREATE TABLE IF NOT EXISTS"
+            assertThat(results).hasSizeLessThan(5);
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+
     }
 
 }

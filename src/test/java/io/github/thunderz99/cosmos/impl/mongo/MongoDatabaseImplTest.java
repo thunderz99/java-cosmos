@@ -1430,6 +1430,25 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void aggregate_should_work_grouping_by_id() throws Exception {
+        // test aggregate(simple group by)
+        {
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("id");
+            var cond = Condition.filter("id STARTSWITH", "id_find_filter");
+
+            var result = db.aggregate(host, aggregate, cond, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+            // the result of count should be integer
+            assertThat(result.get(0).get("facetCount")).isInstanceOf(Integer.class);
+
+            assertThat(result.get(0).get("id")).isInstanceOfSatisfying(String.class, (id) ->{
+                assertThat(id).startsWith("id_find_filter");
+            });
+        }
+    }
+
+    @Test
     void aggregate_should_work_without_group_by() throws Exception {
 
         // test count(without group by)

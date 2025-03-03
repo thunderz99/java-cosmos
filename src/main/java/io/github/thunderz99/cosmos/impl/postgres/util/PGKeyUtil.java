@@ -81,14 +81,13 @@ public class PGKeyUtil {
 
         if (value instanceof Boolean) {
             return "(" + basePath + ")::boolean";
-        } else if (value instanceof Integer) {
-            return "(" + basePath + ")::numeric";
-        } else if (value instanceof Long) {
-            return "(" + basePath + ")::numeric";
-        } else if (value instanceof Float || value instanceof Double) {
-            return "(" + basePath + ")::numeric"; // float8 = double precision
-        } else if (value instanceof java.math.BigDecimal) {
-            return "(" + basePath + ")::numeric";
+        } else if (value instanceof Integer
+                || value instanceof Double
+                || value instanceof Long
+                || value instanceof Float
+                || value instanceof java.math.BigDecimal )  {
+            // cast to numeric. if empty string, return null
+            return "NULLIF(" + basePath + ",'')::numeric";
         } else if (value instanceof String) {
             return basePath;
         } else if (value instanceof Collection<?>) {

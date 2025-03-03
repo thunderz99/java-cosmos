@@ -7,6 +7,7 @@ import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.impl.postgres.AggregateRecord;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresRecord;
 import io.github.thunderz99.cosmos.impl.postgres.dto.IndexOption;
 import io.github.thunderz99.cosmos.util.*;
@@ -83,37 +84,102 @@ public class TableUtil {
 
         // create table
 
+        var previousAutoCommit = conn.getAutoCommit();
+
+
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
 
-        // create table
+        var qualifiedName = "%s.%s".formatted(schemaName, tableName);
 
-        var createTableSQL = String.format("""
-                    CREATE TABLE %s.%s (
-                        %s TEXT NOT NULL PRIMARY KEY,
-                        %s JSONB NOT NULL
-                    )
-                """, schemaName, tableName, ID, DATA);
+        // Generate the lock key by hashing the qualified name
+        long lockKey = qualifiedName.hashCode();
 
-        try (PreparedStatement pstmt = conn.prepareStatement(createTableSQL)) {
-            pstmt.executeUpdate();
+
+        try(var stmt = conn.createStatement()) {
+
+            // create table and index in one transaction
+            conn.setAutoCommit(false);
+
+            var lockAcquired = false;
+            // Acquire the advisory lock using the generated key
+            try(var rs = stmt.executeQuery("SELECT pg_try_advisory_lock(%d)".formatted(lockKey))){
+                if (rs.next()) {
+                    lockAcquired = rs.getBoolean(1);
+                }
+            }
+
+            if (!lockAcquired) {
+                // lock not acquired. so do nothing and return
+                conn.commit();
+                return "";
+            }
+
+            var pgTypeSQL = """
+                    SELECT typname, n.nspname, n.oid
+                    FROM pg_type t
+                    JOIN pg_namespace n ON t.typnamespace = n.oid
+                    WHERE t.typname = '%s'
+                      AND n.nspname = '%s';
+                    """.formatted(removeQuotes(tableName), removeQuotes(schemaName));
+
+            var typeExists = false;
+            try(var rs = stmt.executeQuery(pgTypeSQL)){
+                if (rs.next()) {
+                    typeExists = true;
+                }
+            }
+
+            if(typeExists){
+                // type name already exists. do nothing and return
+                conn.commit();
+                return "";
+            }
+
+            // create table
+            var createTableSQL = String.format("""
+                        CREATE TABLE IF NOT EXISTS %s.%s (
+                            %s TEXT NOT NULL PRIMARY KEY,
+                            %s JSONB NOT NULL
+                        )
+                    """, schemaName, tableName, ID, DATA);
+
+            stmt.execute(createTableSQL);
+
             if (log.isInfoEnabled()) {
                 log.info("Table '{}.{}' created successfully.", schemaName, tableName);
             }
-        }
 
-        {
             // create data index for json data search performance
             var indexName = getIndexName(tableName, DATA);
-            var createIndexSQL = String.format("CREATE INDEX %s ON %s.%s USING GIN (%s);", indexName, schemaName, tableName, DATA);
+            var createIndexSQL = String.format("CREATE INDEX IF NOT EXISTS %s ON %s.%s USING GIN (%s);", indexName, schemaName, tableName, DATA);
 
-            try (PreparedStatement pstmt = conn.prepareStatement(createIndexSQL)) {
-                pstmt.executeUpdate();
-                if (log.isInfoEnabled()) {
-                    log.info("Index({}) on column '{}' of table '{}.{}' created successfully.", indexName, DATA, schemaName, tableName);
-                }
+            stmt.execute(createIndexSQL);
+            if (log.isInfoEnabled()) {
+                log.info("Index({}) on column '{}' of table '{}.{}' created successfully.", indexName, DATA, schemaName, tableName);
             }
+
+            // Release the advisory lock
+            stmt.execute("SELECT pg_advisory_unlock(" + lockKey + ")");
+
+            conn.commit();
+
+        } catch (SQLException e) {
+            // Roll back the transaction if an error occurs
+            if (conn != null) {
+                conn.rollback();
+            }
+            var message = e.getMessage();
+            if(StringUtils.contains(message, "pg_type_typname_nsp_index")
+                    && StringUtils.contains(message, "duplicate key value violates unique constraint") ) {
+                log.warn("type name {}.{} already exist. skip table creation. msg:{}", schemaName, tableName, e.getMessage());
+            } else {
+                throw e;
+            }
+        } finally {
+            conn.setAutoCommit(previousAutoCommit);
         }
+
 
         return "%s.%s".formatted(schemaName, tableName);
     }
@@ -1174,7 +1240,7 @@ public class TableUtil {
      * @return aggregate results
      * @throws SQLException if a database error occurs
      */
-    public static List<PostgresRecord> aggregateRecords(Connection conn, String schemaName, String tableName, CosmosSqlQuerySpec querySpec) throws Exception {
+    public static List<AggregateRecord> aggregateRecords(Connection conn, String schemaName, String tableName, CosmosSqlQuerySpec querySpec) throws Exception {
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
@@ -1191,7 +1257,7 @@ public class TableUtil {
         try (var pstmt = conn.prepareStatement(sql)) {
 
             setParamsForStatement(conn, params, pstmt);
-            var ret = new ArrayList<PostgresRecord>();
+            var ret = new ArrayList<AggregateRecord>();
             // Execute the query and return the result
 
             var rowNumber = 0;
@@ -1213,7 +1279,7 @@ public class TableUtil {
                     }
 
                     // Construct your PostgresRecord (adjust constructor as needed)
-                    ret.add(new PostgresRecord(String.valueOf(rowNumber), row));
+                    ret.add(new AggregateRecord(String.valueOf(rowNumber), row));
                     rowNumber++;
                 }
                 return ret;

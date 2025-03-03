@@ -31,7 +31,7 @@ class PGSimpleExpressionTest {
             var expr = new PGSimpleExpression("age", 123);
             var actual = expr.toQuerySpec(new AtomicInteger(0), "data");
             var expected = new CosmosSqlQuerySpec();
-            expected.setQueryText(" ((data->>'age')::numeric = @param000_age)");
+            expected.setQueryText(" (NULLIF(data->>'age','')::numeric = @param000_age)");
             expected.addParameter(new CosmosSqlParameter("@param000_age", 123));
             assertThat(actual).isEqualTo(expected);
         }
@@ -41,7 +41,7 @@ class PGSimpleExpressionTest {
             var expr = new PGSimpleExpression("score", 123.45f);
             var actual = expr.toQuerySpec(new AtomicInteger(0), "data");
             var expected = new CosmosSqlQuerySpec();
-            expected.setQueryText(" ((data->>'score')::numeric = @param000_score)");
+            expected.setQueryText(" (NULLIF(data->>'score','')::numeric = @param000_score)");
             expected.addParameter(new CosmosSqlParameter("@param000_score", 123.45f));
             assertThat(actual).isEqualTo(expected);
         }
@@ -52,7 +52,7 @@ class PGSimpleExpressionTest {
             var expr = new PGSimpleExpression("score", 123.45);
             var actual = expr.toQuerySpec(new AtomicInteger(0), "data");
             var expected = new CosmosSqlQuerySpec();
-            expected.setQueryText(" ((data->>'score')::numeric = @param000_score)");
+            expected.setQueryText(" (NULLIF(data->>'score','')::numeric = @param000_score)");
             expected.addParameter(new CosmosSqlParameter("@param000_score", 123.45));
             assertThat(actual).isEqualTo(expected);
         }
@@ -84,7 +84,7 @@ class PGSimpleExpressionTest {
             var expr = new PGSimpleExpression("name", list);
             var actual = expr.toQuerySpec(new AtomicInteger(0), "data");
             var expected = new CosmosSqlQuerySpec();
-            expected.setQueryText(" ((data->>'name')::numeric = ANY(@param000_name))");
+            expected.setQueryText(" (NULLIF(data->>'name','')::numeric = ANY(@param000_name))");
             expected.addParameter(new CosmosSqlParameter("@param000_name", list));
             assertThat(actual).isEqualTo(expected);
         }
@@ -95,7 +95,7 @@ class PGSimpleExpressionTest {
             var expr = new PGSimpleExpression("name", list);
             var actual = expr.toQuerySpec(new AtomicInteger(0), "data");
             var expected = new CosmosSqlQuerySpec();
-            expected.setQueryText(" ((data->>'name')::numeric = ANY(@param000_name))");
+            expected.setQueryText(" (NULLIF(data->>'name','')::numeric = ANY(@param000_name))");
             expected.addParameter(new CosmosSqlParameter("@param000_name", list));
             assertThat(actual).isEqualTo(expected);
         }
