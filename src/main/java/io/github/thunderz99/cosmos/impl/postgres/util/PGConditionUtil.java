@@ -1,5 +1,6 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
+import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -100,7 +101,7 @@ public class PGConditionUtil {
      * @param partition
      * @return querySpec for postgres
      */
-    public static CosmosSqlQuerySpec toQuerySpec4Aggregate(String coll, Condition cond, Aggregate aggregate,String partition) {
+    public static CosmosSqlQuerySpec toQuerySpec4Aggregate(String coll, Condition cond, Aggregate aggregate, String partition, QueryContext queryContext) {
 
         // When rawSql is set, other filter / limit / offset / sort will be ignored.
         if (cond.rawQuerySpec != null) {
@@ -114,15 +115,17 @@ public class PGConditionUtil {
         var schema = TableUtil.checkAndNormalizeValidEntityName(coll);
         var table = TableUtil.checkAndNormalizeValidEntityName(partition);
 
+        queryContext.schemaName = schema;
+        queryContext.tableName = table;
+
         // select
-        var select = generateAggregateSelect(aggregate);
+        var select = generateAggregateSelect(aggregate, queryContext);
 
         var initialText = String.format("SELECT %s\n FROM %s.%s\n", select, schema, table);
         var initialParams = new ArrayList<CosmosSqlParameter>();
         var initialConditionIndex = new AtomicInteger(0);
         var initialParamIndex = new AtomicInteger(0);
 
-        var queryContext = QueryContext.create();
         var filterQuery = generateFilterQuery(cond, initialText, initialParams, initialConditionIndex, initialParamIndex, queryContext);
 
         var queryText = filterQuery.queryText;
@@ -130,7 +133,7 @@ public class PGConditionUtil {
 
         // group by
         if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
-            var groupBy = aggregate.groupBy.stream().map(g -> PGKeyUtil.getFormattedKey(g)).collect(Collectors.joining(", "));
+            var groupBy = aggregate.groupBy.stream().map(g -> PGKeyUtil.getFormattedKey4JsonWithAlias(g, TableUtil.DATA)).collect(Collectors.joining(", "));
             queryText.append("\n GROUP BY ").append(groupBy);
         }
 
@@ -258,7 +261,7 @@ public class PGConditionUtil {
      * @param aggregate
      * @return
      */
-    static String generateAggregateSelect(Aggregate aggregate) {
+    static String generateAggregateSelect(Aggregate aggregate, QueryContext queryContext) {
 
         Checker.checkNotNull(aggregate, "aggregate");
 
@@ -266,6 +269,12 @@ public class PGConditionUtil {
 
         // $1 $2 $3... used for aggregate function or group by that without alias "e.g. COUNT(1)" without " AS facetCount"
         var columnIndex = 1;
+
+        var processedGroupBy = new HashSet<String>();
+
+        // set to hold the dotFieldName format of group by fields
+        var dotFieldNameGroupBy = aggregate.groupBy.stream()
+                .map(g -> FieldNameUtil.convertToDotFieldName(g)).collect(Collectors.toSet());
 
         if (StringUtils.isNotEmpty(aggregate.function)) {
 
@@ -310,17 +319,31 @@ public class PGConditionUtil {
                 var formattedKey = "";
                 if(StringUtils.equals(function, field)){
                     // c['address']['state'] as result
-                    // just a simple query without aggregate function
-                    // data->'address'->>'state'
-                    formattedKey = PGKeyUtil.getFormattedKey(dotFieldName);
+
+                    if(dotFieldNameGroupBy.contains(dotFieldName)){
+                        // the field is used in group by. because we will process it in group stage, set it to ""
+                        formattedKey = PGKeyUtil.getFormattedKey4JsonWithAlias(dotFieldName, TableUtil.DATA);
+                        processedGroupBy.add(dotFieldName);
+                    } else {
+                        // just a simple query without aggregate function
+                        // data->'address'->>'state'
+                        formattedKey = PGKeyUtil.getFormattedKey(dotFieldName);
+                    }
 
                 } else if(StringUtils.containsIgnoreCase(function, "array_length(")) {
                     // array_length works for a jsonb array
                     // data->'floor'->'rooms'  as a jsonb array
                     formattedKey = PGKeyUtil.getFormattedKey4JsonWithAlias(dotFieldName, TableUtil.DATA);
+                } else if(StringUtils.startsWithIgnoreCase(function, "MIN(") || StringUtils.startsWithIgnoreCase(function, "MAX(")) {
+                    // (data->'room'->>'area')::numeric
+                    // or (data->>'timeSeries')::text
+
+                    // because MIN/MAX can be used to both numeric and text, so we have to do a query to determine the type first.
+
+                    Object typeObject = getTypeObjectOfField(queryContext, dotFieldName);
+                    formattedKey = PGKeyUtil.getFormattedKeyWithAlias(dotFieldName, TableUtil.DATA, typeObject);
                 } else {
                     // (data->'room'->>'area')::numeric
-
                     formattedKey = PGKeyUtil.getFormattedKey4Aggregate(dotFieldName, function);
                 }
 
@@ -342,17 +365,17 @@ public class PGConditionUtil {
 
         }
 
-        if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
+        if (CollectionUtils.isNotEmpty(dotFieldNameGroupBy)) {
 
-            for(var groupBy : aggregate.groupBy){
-                if(StringUtils.isBlank(groupBy)){
+            for(var groupBy : dotFieldNameGroupBy){
+                if(StringUtils.isBlank(groupBy) || processedGroupBy.contains(groupBy)){
+                    // if already done this field in the aggregate function, skip
                     continue;
                 }
-                var dotFieldName = FieldNameUtil.convertToDotFieldName(groupBy);
+                var simpleName = PGAggregateUtil.getSimpleName(groupBy);
 
-                var simpleName = PGAggregateUtil.getSimpleName(dotFieldName);
-
-                var formattedKey = PGKeyUtil.getFormattedKey(dotFieldName);
+                // group by should use json. because you can do a groupBy on a jsonb field.
+                var formattedKey = PGKeyUtil.getFormattedKey4JsonWithAlias(groupBy, TableUtil.DATA);
                 select.add("%s AS \"%s\"".formatted(formattedKey, simpleName));
             }
 
@@ -363,6 +386,44 @@ public class PGConditionUtil {
         }
 
         return select.stream().collect(Collectors.joining(", "));
+    }
+
+    /**
+     * determine the type of field, and return 0 or "" to represent the type(0 for numeric, "" for text)
+     * @param queryContext
+     * @param dotFieldName data.room.area or data.timeSeries
+     * @return objectType (0 for numeric, "" for text)
+     */
+    static Object getTypeObjectOfField(QueryContext queryContext, String dotFieldName) {
+
+        var schemaName = queryContext.schemaName;
+        var tableName = queryContext.tableName;
+        var jsonFieldName = PGKeyUtil.getFormattedKey4JsonWithAlias(dotFieldName, TableUtil.DATA);
+        var textFieldName = PGKeyUtil.getFormattedKeyWithAlias(dotFieldName, TableUtil.DATA, "");
+
+        var jsonbType = "";
+
+        try(var conn = queryContext.databaseImpl.getDataSource().getConnection()){
+
+            var sql = """
+                    SELECT jsonb_typeof(%s) AS jsonb_type
+                    FROM %s.%s
+                    WHERE %s != ''
+                    LIMIT 1
+                    """.formatted(jsonFieldName, schemaName, tableName, textFieldName);
+            try (var stmt = conn.createStatement()) {
+                try(var rs = stmt.executeQuery(sql)){
+                    if (rs.next()) {
+                        jsonbType=rs.getString("jsonb_type");
+                    }
+                }
+            }
+
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to determine the type of field '%s'. %s.%s"
+                    .formatted(dotFieldName, schemaName, tableName), e);
+        }
+        return "string".equals(jsonbType) ? "" : 0;
     }
 
 
@@ -676,6 +737,17 @@ public class PGConditionUtil {
             } else {
                 return new PGSubQueryExpression4Join(joinKey, filterKey, value, operator, join, queryContext);
             }
+        }
+
+        // $ELEM_MATCH query
+        if(SubConditionType.ELEM_MATCH.equals(key)
+                && CollectionUtils.isNotEmpty(join)
+                && value instanceof Map<?, ?> mapValue
+                && !mapValue.isEmpty()) {
+
+            // using $ELEM_MATCH in join query
+            return new PGElemMatchExpression4Join(key, (Map<String, Object>)mapValue, join, queryContext);
+
         }
 
         //default key / value expression

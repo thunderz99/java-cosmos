@@ -30,7 +30,9 @@ public class NumberUtil {
                 return floatValue.intValue(); // Convert to Integer if within range and has no fractional part.
             }
         } else if (number instanceof BigDecimal bigDecimalValue) {
-            if(bigDecimalValue.compareTo(BigDecimal.valueOf(Integer.MIN_VALUE)) >= 0 && bigDecimalValue.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) <= 0) {
+            if(bigDecimalValue.stripTrailingZeros().scale() <= 0
+                    && bigDecimalValue.compareTo(BigDecimal.valueOf(Integer.MIN_VALUE)) >= 0
+                    && bigDecimalValue.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) <= 0) {
                 return bigDecimalValue.intValue();
             }
         }

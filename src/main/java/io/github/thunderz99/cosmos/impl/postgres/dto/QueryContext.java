@@ -4,8 +4,9 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.github.thunderz99.cosmos.dto.RecordData;
+import io.github.thunderz99.cosmos.impl.postgres.PostgresDatabaseImpl;
 
 /**
  * context info for query, especially when join and (returnAllSubArray=false) is used.
@@ -15,26 +16,6 @@ import io.github.thunderz99.cosmos.dto.RecordData;
  * </p>
  */
 public class QueryContext extends RecordData {
-
-
-    /**
-     * Deprecated. use filterQueryInfos4Join instead. which is better at returnAllSubArray=false
-     * Save the query key and params so that we can reuse these in the SELECT clause when join is used and returnAllSubArray = false.
-     *
-     * <p>
-     * {@code
-     *   {
-     *     "floors.rooms":[
-     *        "floor.rooms.name": {"name": "@param000_floors_rooms_name", "value": "$.floors[*].rooms[*] ? (@.name == \"r1\" || @.name == \"r2\")"},
-     *        "floors.rooms.no": {"name": "@param001_floors_rooms_no", "value": "$.floors[*].rooms[*] ? (@.no > 10)"}
-     *      ]
-     *   }
-     * }
-     * </p>
-     */
-    @Deprecated
-    public Map<String, List<Map<String, CosmosSqlParameter>>> subQueries = new LinkedHashMap<>();
-
 
     /**
      * {@code
@@ -84,6 +65,23 @@ public class QueryContext extends RecordData {
      */
     public boolean afterAggregation = false;
 
+    public String schemaName;
+
+    public String tableName;
+
+    /**
+     * databaseImpl to be set in the context
+     *
+     * <p>
+     *     when doing aggregate query, we need to use the databaseImpl to determine the type of the min/max target field
+     * </p>
+     * <p>
+     *     this field is not a simple data dto. so it should not be serialized
+     * </p>
+     */
+    @JsonIgnore
+    public PostgresDatabaseImpl databaseImpl;
+
     /**
      * Factory method
      * @return new FilterOptions
@@ -102,5 +100,17 @@ public class QueryContext extends RecordData {
         this.afterAggregation = afterAggregation;
         return this;
     }
+
+    /**
+     * set the databaseImpl context
+     * @param databaseImpl
+     * @return self
+     */
+    public QueryContext databaseImpl(PostgresDatabaseImpl databaseImpl){
+        this.databaseImpl = databaseImpl;
+        return this;
+    }
+
+
 
 }

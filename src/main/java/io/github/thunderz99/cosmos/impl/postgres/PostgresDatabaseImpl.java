@@ -1,27 +1,25 @@
 package io.github.thunderz99.cosmos.impl.postgres;
 
 import com.google.common.base.Preconditions;
-import com.mongodb.client.AggregateIterable;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGAggregateUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGConditionUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TTLUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
-import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.math.NumberUtils;
-import org.bson.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.sql.DataSource;
 
 import java.sql.SQLException;
 import java.util.*;
@@ -723,7 +721,10 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
             cond = new Condition();
         }
 
-        var querySpec = PGConditionUtil.toQuerySpec4Aggregate(coll, cond, aggregate, partition);
+        // because aggregate will do a peak to the db, to determine the type of field to aggregate,
+        // we need to pass the databaseImpl to the QueryContext
+        var queryContext = QueryContext.create().databaseImpl(this);
+        var querySpec = PGConditionUtil.toQuerySpec4Aggregate(coll, cond, aggregate, partition, queryContext);
 
         final var _coll = coll;
         List<Map<String, Object>> maps = RetryUtil.executeWithRetry(() -> {
@@ -732,6 +733,12 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
                 return records.stream().map(r -> r.data).toList();
             }
         });
+
+        // when doing a "group by" operation on a jsonb field, whose type is an array / a json object,
+        // the result contains PGobject type.
+        // we should convert it to java object (String/Integer/List/Map)
+        maps = PGAggregateUtil.convertPGObjectsToJavaObject(maps);
+
         // Process result of aggregate. convert Long value to Integer if possible.
         // Because "itemsCount: 1L" is not acceptable by some users. They prefer "itemsCount: 1" more.
         maps = PGAggregateUtil.convertAggregateResultsToInteger(maps);
@@ -1322,6 +1329,14 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
             }
             return schemaExists;
         }
+    }
+
+    /**
+     * Returns the data source which is used to connect to Postgres database.
+     * @return data source
+     */
+    public DataSource getDataSource() {
+        return this.dataSource;
     }
 
 }

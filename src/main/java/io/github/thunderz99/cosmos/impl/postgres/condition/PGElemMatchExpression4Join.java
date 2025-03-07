@@ -1,11 +1,11 @@
 package io.github.thunderz99.cosmos.impl.postgres.condition;
 
 import io.github.thunderz99.cosmos.condition.Condition;
-import io.github.thunderz99.cosmos.condition.Condition.OperatorType;
 import io.github.thunderz99.cosmos.condition.Expression;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
+import io.github.thunderz99.cosmos.impl.postgres.util.PGConditionUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGKeyUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGSelectUtil;
 import io.github.thunderz99.cosmos.util.Checker;
@@ -15,77 +15,52 @@ import org.apache.commons.lang3.StringUtils;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
- * A class representing simple expression in WHERE EXIST style, which is used in Condition.join query
+ * A class representing ElemMatch expression in WHERE EXIST style, which is used in Condition.join query
  * <p>
  * {@code
- *  // simple expression for join, using WHERE EXIST style
- *  // ==
+ *  // ElemMatch expression for join, using WHERE EXIST style, will AND multiple sub conditions
+ *  // Condition.filter("$ELEM_MATCH", Map.of("room.no", "001", "room.name", "room-01"))
  *  // EXISTS (
  *       SELECT 1
  *       FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS room
- *       WHERE room->>'no' = '001'
+ *       WHERE (room->>'no' = '001')
+ *         AND (room->>'name' = 'room-01')
  *     )
- *  // >
- *  // EXISTS (
- *       SELECT 1
- *       FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS room
- *       WHERE room->>'no' > '001'
- *     )
- *  // LIKE
- *  // EXISTS (
- *       SELECT 1
- *       FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS room
- *       WHERE room->>'no' LIKE '00%'
- *     )
- * }
+ *  //
+ *  }
  */
-public class PGSimpleExpression4Join implements Expression {
+public class PGElemMatchExpression4Join implements Expression {
 
-	public static final Pattern binaryOperatorPattern = Pattern.compile("^\\s*(IN|=|!=|<|<=|>|>=)\\s*$");
+    public static final Pattern binaryOperatorPattern = Pattern.compile("^\\s*(IN|=|!=|<|<=|>|>=)\\s*$");
 
-	public String key;
-	public Object value;
-	public OperatorType type = OperatorType.BINARY_OPERATOR;
+    public String key;
+    public Map<String, Object> subFilters = new LinkedHashMap<>();
+    public Condition.OperatorType type = Condition.OperatorType.BINARY_OPERATOR;
 
     public Set<String> join = new LinkedHashSet<>();
     public QueryContext queryContext = QueryContext.create();
 
-	/**
-	 * Default is empty, which means the default operator based on filter's key and value
-	 *
-	 *     The difference between "=" and the default operator "":
-	 *     <div>e.g.</div>
-	 *     <ul>
-	 *     	 <li>{@code {"status": ["A", "B"]} means status is either A or B } </li>
-	 *       <li>{@code {"status =": ["A", "B"]} means status equals ["A", "B"] } </li>
-	 *     </ul>
-	 */
+    /**
+     * Default is empty, which means the default operator based on filter's key and value
+     *
+     *     The difference between "=" and the default operator "":
+     *     <div>e.g.</div>
+     *     <ul>
+     *     	 <li>{@code {"status": ["A", "B"]} means status is either A or B } </li>
+     *       <li>{@code {"status =": ["A", "B"]} means status equals ["A", "B"] } </li>
+     *     </ul>
+     */
     public String operator = "";
 
-    public PGSimpleExpression4Join() {
+    public PGElemMatchExpression4Join() {
     }
 
-    public PGSimpleExpression4Join(String key, Object value, Set<String> join, QueryContext queryContext) {
+    public PGElemMatchExpression4Join(String key, Map<String, Object> subFilters, Set<String> join, QueryContext queryContext) {
         this.key = key;
-        this.value = value;
-
-        // for jsonPath expression, the join must not be empty
-        Checker.checkNotEmpty(join, "join");
-        this.join = join;
-
-        Checker.checkNotNull(queryContext, "queryContext");
-        this.queryContext = queryContext;
-
-    }
-
-    public PGSimpleExpression4Join(String key, Object value, String operator, Set<String> join, QueryContext queryContext) {
-        this.key = key;
-        this.value = value;
-        this.operator = operator;
-        this.type = binaryOperatorPattern.asPredicate().test(operator) ? OperatorType.BINARY_OPERATOR
-                : OperatorType.BINARY_FUNCTION;
+        this.subFilters = subFilters;
 
         // for jsonPath expression, the join must not be empty
         Checker.checkNotEmpty(join, "join");
@@ -99,63 +74,64 @@ public class PGSimpleExpression4Join implements Expression {
     @Override
     public CosmosSqlQuerySpec toQuerySpec(AtomicInteger paramIndex, String selectAlias) {
 
+        // get the base joinKey
         var joinKey = "";
         for(var subKey : this.join) {
             Checker.checkNotBlank(subKey, "key");
-            if(StringUtils.contains(this.key, subKey)){
-                joinKey = subKey;
+            for(var entry : this.subFilters.entrySet()){
+                if(StringUtils.contains(entry.getKey(), subKey)){
+                    joinKey = subKey;
+                }
             }
         }
 
+        // when using $ELEM_MATCH, the joinKey must not be empty
         if(StringUtils.isEmpty(joinKey)){
-            // joinKey not match, so this is a normal PGSimpleExpression
-            var exp = new PGSimpleExpression(this.key, this.value, this.operator);
-            return exp.toQuerySpec(paramIndex, selectAlias);
+            throw new IllegalArgumentException("joinKey cannot be empty when using $ELEM_MATCH, key: " + this.key + ", value: " + this.subFilters);
         }
 
+        // extract subExpressions(SimpleExpression) from subFilters(the value part of $ELEM_MATCH)
+        var subExpressions = new ArrayList<Expression>();
+        for(var entry : this.subFilters.entrySet()) {
 
-        /** pattern 1, "no" is a field directly under base joinKey "rooms"
-         *  // EXISTS (
-         *       SELECT 1
-         *       FROM jsonb_array_elements(data->'rooms') AS j1
-         *       WHERE j1->>'no' = '001'
-         *     )
-         */
+            var key = entry.getKey();
+            var value = entry.getValue();
 
-        /** pattern 2,  "rooms.name" is a nested field under base joinKey "floors"
-         *  // EXISTS (
-         *       SELECT 1
-         *       FROM jsonb_array_elements(data->'floors') AS j2
-         *       WHERE j2->'rooms'->>'name' = 'r1'
-         *     )
-         */
+            var filterKey = StringUtils.removeStart(key, joinKey + ".");
 
-        // we will support both of the above patterns
+            var exp = PGConditionUtil.parse(filterKey, value, Set.of(), this.queryContext);
+            subExpressions.add(exp);
+        }
 
-        var filterKey = StringUtils.removeStart(this.key, joinKey + ".");
-
-        var formattedJoinKey = PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias);
+        // let's generate the querySpec
         var ret = new CosmosSqlQuerySpec();
 
-        {
-            var existsAlias = "j" + paramIndex;
-            var subExp = new PGSimpleExpression(filterKey, this.value, this.operator);
-            var subQuery = subExp.toQuerySpec(paramIndex, existsAlias);
+        var formattedJoinKey = PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias);
+        var existsAlias = "j" + paramIndex;
 
-            var existsClause = """
+        // the WHERE part should contain multiple sub conditions
+        var existsClause = """
                      EXISTS (
                        SELECT 1
                        FROM jsonb_array_elements(%s) AS %s
                        WHERE %s
                      )
                     """;
+        existsClause = StringUtils.removeEnd(existsClause, "\n");
 
-            existsClause = StringUtils.removeEnd(existsClause, "\n");
-            var queryText = existsClause.formatted(formattedJoinKey, existsAlias, subQuery.getQueryText().trim());
+        // multiple sub queries joined by AND
+        var subQueries = subExpressions.stream().map(exp -> exp.toQuerySpec(paramIndex, existsAlias)).toList();
 
-            ret.setQueryText(queryText);
-            ret.setParameters(subQuery.getParameters());
-        }
+        // join sub query texts by AND
+        var queryText = subQueries.stream().map(q -> q.getQueryText().trim())
+                .collect(Collectors.joining(" AND ", "(", ")"));
+
+        ret.setQueryText(existsClause.formatted(formattedJoinKey, existsAlias, queryText));
+
+        // params all together from sub queries
+        var params = subQueries.stream().map(q -> q.getParameters()).flatMap(List::stream).collect(Collectors.toList());
+        ret.setParameters(params);
+
 
         // save for SELECT part when returnAllSubArray=false
         // see docs/postgres-find-with-join.md for details
@@ -164,13 +140,26 @@ public class PGSimpleExpression4Join implements Expression {
         var remainedJoinKey = "";
         // var filterKey = filterKey;
         // var paramIndex = paramIndex
-        var subExp = new PGSimpleExpression(filterKey, this.value, this.operator);
 
-        PGSelectUtil.saveQueryInfo4Join(queryContext, baseKey, paramIndex, subExp);
+        var subExp4Select = new ArrayList<Expression>();
+        for(var entry : this.subFilters.entrySet()) {
 
-		return ret;
+            var key = entry.getKey();
+            var value = entry.getValue();
 
-	}
+            var filterKey = StringUtils.removeStart(key, joinKey + ".");
+
+            var exp = PGConditionUtil.parse(filterKey, value, Set.of(), this.queryContext);
+            subExp4Select.add(exp);
+            PGSelectUtil.saveQueryInfo4Join(queryContext, baseKey, paramIndex, exp);
+
+        }
+
+
+
+        return ret;
+
+    }
 
     void buildBinaryFunctionDetails(CosmosSqlQuerySpec querySpec, String jsonbPath, String jsonbKey, String paramName, Object paramValue, List<CosmosSqlParameter> params, String selectAlias) {
 

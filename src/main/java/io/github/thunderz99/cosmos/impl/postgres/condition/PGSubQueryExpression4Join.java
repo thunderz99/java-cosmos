@@ -153,7 +153,7 @@ public class PGSubQueryExpression4Join implements Expression {
         // var filterKey = filterKey;
         // var paramIndex = paramIndex
         var subExp4Select = new PGSubQueryExpression(remainedJoinKey, this.filterKey, this.value, this.operator);
-        PGSelectUtil.saveQueryInfo4Join(queryContext, baseKey, remainedJoinKey, filterKey, paramIndex, subExp4Select);
+        PGSelectUtil.saveQueryInfo4Join(queryContext, baseKey, paramIndex, subExp4Select);
 
         return ret;
 
