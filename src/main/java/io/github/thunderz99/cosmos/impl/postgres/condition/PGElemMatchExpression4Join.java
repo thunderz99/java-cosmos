@@ -22,12 +22,12 @@ import java.util.stream.Collectors;
  * <p>
  * {@code
  *  // ElemMatch expression for join, using WHERE EXIST style, will AND multiple sub conditions
- *  // Condition.filter("$ELEM_MATCH", Map.of("room.no", "001", "room.name", "room-01"))
+ *  // Condition.filter("$ELEM_MATCH", Map.of("rooms.no", "001", "rooms.name", "room-01"))
  *  // EXISTS (
  *       SELECT 1
- *       FROM jsonb_array_elements(data->'area'->'city'->'street'->'rooms') AS room
- *       WHERE (room->>'no' = '001')
- *         AND (room->>'name' = 'room-01')
+ *       FROM jsonb_array_elements(data->'rooms') AS rooms
+ *       WHERE (rooms->>'no' = '001')
+ *         AND (rooms->>'name' = 'room-01')
  *     )
  *  //
  *  }
@@ -43,21 +43,16 @@ public class PGElemMatchExpression4Join implements Expression {
     public Set<String> join = new LinkedHashSet<>();
     public QueryContext queryContext = QueryContext.create();
 
-    /**
-     * Default is empty, which means the default operator based on filter's key and value
-     *
-     *     The difference between "=" and the default operator "":
-     *     <div>e.g.</div>
-     *     <ul>
-     *     	 <li>{@code {"status": ["A", "B"]} means status is either A or B } </li>
-     *       <li>{@code {"status =": ["A", "B"]} means status equals ["A", "B"] } </li>
-     *     </ul>
-     */
-    public String operator = "";
-
     public PGElemMatchExpression4Join() {
     }
 
+    /**
+     *
+     * @param key should be "$ELEM_MATCH"
+     * @param subFilters the subFilters for $ELEM_MATCH, e.g. Map.of("rooms.no", "001", "rooms.name", "room-01")
+     * @param join the join keys. e.g. Set.of("rooms")
+     * @param queryContext
+     */
     public PGElemMatchExpression4Join(String key, Map<String, Object> subFilters, Set<String> join, QueryContext queryContext) {
         this.key = key;
         this.subFilters = subFilters;
@@ -87,7 +82,7 @@ public class PGElemMatchExpression4Join implements Expression {
 
         // when using $ELEM_MATCH, the joinKey must not be empty
         if(StringUtils.isEmpty(joinKey)){
-            throw new IllegalArgumentException("joinKey cannot be empty when using $ELEM_MATCH, key: " + this.key + ", value: " + this.subFilters);
+            throw new IllegalArgumentException("joinKey cannot be empty when using $ELEM_MATCH, join: " + JsonUtil.toJson(this.join) + ", value: " + JsonUtil.toJson(this.subFilters));
         }
 
         // extract subExpressions(SimpleExpression) from subFilters(the value part of $ELEM_MATCH)
@@ -158,89 +153,6 @@ public class PGElemMatchExpression4Join implements Expression {
 
 
         return ret;
-
-    }
-
-    void buildBinaryFunctionDetails(CosmosSqlQuerySpec querySpec, String jsonbPath, String jsonbKey, String paramName, Object paramValue, List<CosmosSqlParameter> params, String selectAlias) {
-
-        var queryText = " %s @?? %s::jsonpath".formatted(selectAlias, paramName);
-
-        switch (this.operator.toUpperCase()) {
-            case "STARTSWITH"-> {
-                querySpec.setQueryText(queryText);
-
-                // in the json path expression, do not need to use ??, just use ? is ok
-                // in json path expression, "STARTSWITH" is "starts with"
-                // $.area.city.street.rooms[*] ? (@.no == "001")
-                var valuePart = (paramValue instanceof String strValue) ? "\"%s\"".formatted(strValue) : paramValue;
-
-                var value = " (%s ? (%s starts with %s))".formatted(jsonbPath, jsonbKey, valuePart);
-                var param = Condition.createSqlParameter(paramName, value);
-                params.add(param);
-
-            }
-            case "CONTAINS" -> {
-                // use like_regex
-                querySpec.setQueryText(queryText);
-
-                // in json path expression, we use "like_regex" for "CONTAINS"
-
-                var valuePart = ".*\s.*".formatted(paramValue);
-
-                var value = " (%s ? (%s like_regex \"%s\"))".formatted(jsonbPath, jsonbKey, valuePart);
-                var param = Condition.createSqlParameter(paramName, value);
-                params.add(param);
-            }
-            case "LIKE"-> {
-                // use like_regex
-                querySpec.setQueryText(queryText);
-
-                // in json path expression, we use "like_regex" for "LIKE"
-
-                var regexValue = paramValue.toString()
-                        .replace("%", ".*")  // % to match any number of characters
-                        .replace("_", ".");  // _ to match exactly one character
-
-                var value = " (%s ? (%s like_regex \"%s\"))".formatted(jsonbPath, jsonbKey, regexValue);
-                var param = Condition.createSqlParameter(paramName, value);
-                params.add(param);
-            }
-            case "REGEXMATCH" -> {
-                // use like_regex
-                querySpec.setQueryText(queryText);
-
-                // in json path expression, we use "like_regex" for "REGEXMATCH"
-
-                var value = " (%s ? (%s like_regex \"%s\"))".formatted(jsonbPath, jsonbKey, paramValue);
-                var param = Condition.createSqlParameter(paramName, value);
-                params.add(param);
-            }
-            case "ARRAY_CONTAINS" -> {
-                // use "@[*] == 2" or "@[*] == \"A\""
-
-                querySpec.setQueryText(queryText);
-
-                var jsonbKey4Array = jsonbKey + "[*]";
-
-                var valuePart =  (paramValue instanceof String strValue) ? "\"%s\"".formatted(strValue) : paramValue;
-
-                // use ==
-                var value = " (%s ? (%s == %s))".formatted(jsonbPath, jsonbKey, valuePart);
-
-                var param = Condition.createSqlParameter(paramName, value);
-                params.add(param);
-
-            }
-            default -> {
-                querySpec.setQueryText(queryText);
-
-                var valuePart =  (paramValue instanceof String strValue) ? "\"%s\"".formatted(strValue) : paramValue;
-                var value = " (%s ? (%s %s %s))".formatted(jsonbPath, jsonbKey, this.operator, valuePart);
-                var param = Condition.createSqlParameter(paramName, value);
-                params.add(param);
-            }
-        }
-
 
     }
 

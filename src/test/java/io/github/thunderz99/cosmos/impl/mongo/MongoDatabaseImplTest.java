@@ -1447,9 +1447,25 @@ class MongoDatabaseImplTest {
             });
         }
 
-        // test aggregate(group by "id" without count)
+        // test aggregate(aggregate using "c.id", group by "id")
         {
-            var aggregate = Aggregate.function("id AS userId").groupBy("id");
+            var aggregate = Aggregate.function("c.id AS userId").groupBy("id");
+            var cond = Condition.filter("id STARTSWITH", "id_find_filter");
+
+            var result = db.aggregate(host, aggregate, cond, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+            // we alias id as userId
+            assertThat(result.get(0).get("id")).isNull();
+
+            assertThat(result.get(0).get("userId")).isInstanceOfSatisfying(String.class, (id) ->{
+                assertThat(id).startsWith("id_find_filter");
+            });
+        }
+
+        // test aggregate(aggregate using c["id"], group by "id")
+        {
+            var aggregate = Aggregate.function("c[\"id\"] AS userId").groupBy("id");
             var cond = Condition.filter("id STARTSWITH", "id_find_filter");
 
             var result = db.aggregate(host, aggregate, cond, "Users").toMap();
