@@ -582,7 +582,7 @@ class CosmosDatabaseImplTest {
             var aggregate = Aggregate.function("COUNT(1) as facetCount")
                     .groupBy("_partition")
                     .conditionAfterAggregate(Condition.filter().sort("_partition", "ASC"));
-            var cond = Condition.filter("_partition", Set.of("Users", "Users2")).crossPartition(true);
+            var cond = Condition.filter("_partition", Set.of("Users", "Users2"), "id STARTSWITH", "id_find_filter").crossPartition(true);
             var result = db.aggregate(coll, aggregate, cond).toMap();
             assertThat(result).hasSize(2);
             assertThat(result.get(0).get("_partition")).isEqualTo("Users");
@@ -1441,6 +1441,7 @@ class CosmosDatabaseImplTest {
             db.delete(host, id1, partition);
             db.delete(host, id2, partition);
             db.delete(host, id3, partition);
+            db.delete(host, id4, partition);
         }
 
     }

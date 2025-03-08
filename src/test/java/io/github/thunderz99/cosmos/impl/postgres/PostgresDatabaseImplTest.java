@@ -2563,10 +2563,10 @@ class PostgresDatabaseImplTest {
                         .returnAllSubArray(true)
                 ;
                 // test find
-//                var result = db.find(host, cond, "Families").toMap();
-//                assertThat(result).hasSize(1);
-//                assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
-//                assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(3);
+                var result = db.find(host, cond, "Families").toMap();
+                assertThat(result).hasSize(1);
+                assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+                assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(3);
             }
             { // test returnAllSubArray(false)
                 var cond = new Condition();
