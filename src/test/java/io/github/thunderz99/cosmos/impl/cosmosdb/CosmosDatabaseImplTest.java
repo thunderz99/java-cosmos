@@ -2113,10 +2113,10 @@ class CosmosDatabaseImplTest {
 
             { // test returnAllSubArray(true)
                 var cond = new Condition();
-                cond = Condition.filter(
+                cond = Condition.filter(SubConditionType.ELEM_MATCH, Map.of(
                                 "children.gender", "male",
                                 "children.grade >=", 5
-                        )
+                        ))
                         .sort("lastName", "ASC") //
                         .limit(10) //
                         .offset(0)
@@ -2131,10 +2131,10 @@ class CosmosDatabaseImplTest {
             }
             { // test returnAllSubArray(false)
                 var cond = new Condition();
-                cond = Condition.filter(
+                cond = Condition.filter(SubConditionType.ELEM_MATCH,Map.of(
                                 "children.gender", "male",
                                 "children.grade >=", 5
-                        )
+                        ))
                         .sort("lastName", "ASC") //
                         .limit(10) //
                         .offset(0)
