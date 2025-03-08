@@ -166,7 +166,7 @@ public class PGSimpleExpression4Join implements Expression {
         // var paramIndex = paramIndex
         var subExp = new PGSimpleExpression(filterKey, this.value, this.operator);
 
-        PGSelectUtil.saveQueryInfo4Join(queryContext, baseKey, remainedJoinKey, filterKey, paramIndex, subExp);
+        PGSelectUtil.saveQueryInfo4Join(queryContext, baseKey, paramIndex, subExp);
 
 		return ret;
 

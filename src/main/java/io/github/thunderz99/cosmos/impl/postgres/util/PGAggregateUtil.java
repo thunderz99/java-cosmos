@@ -1,29 +1,26 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
 import java.util.*;
-import java.util.regex.Pattern;
 
-import com.mongodb.client.model.Accumulators;
-import com.mongodb.client.model.Aggregates;
-import com.mongodb.client.model.BsonField;
-import io.github.thunderz99.cosmos.condition.Aggregate;
-import io.github.thunderz99.cosmos.util.FieldNameUtil;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.NumberUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
-import org.apache.commons.lang3.tuple.Pair;
-import org.bson.Document;
-import org.bson.conversions.Bson;
-
-import static io.github.thunderz99.cosmos.util.AggregateUtil.extractFieldFromFunction;
-import static io.github.thunderz99.cosmos.util.AggregateUtil.extractFunctionAndAlias;
+import org.postgresql.util.PGobject;
 
 /**
  * A util class that contains util method for aggregate
  */
 public class PGAggregateUtil {
 
+
+    /**
+     * objectMapper used to convert PGobject to java object
+     */
+    static ObjectMapper objectMapper = JsonUtil.getObjectMapper();;
 
     /**
      * Process result of aggregate. convert Long value to Integer if possible.
@@ -77,5 +74,38 @@ public class PGAggregateUtil {
             return field;
         }
         return field.contains(".") ? field.substring(field.lastIndexOf(".") + 1) : field;
+    }
+
+    /**
+     * When doing a "group by" operation on a jsonb field, whose type is an array / a json object, the result contains PGobject type.
+     * we should convert it to java object (String/Integer/List/Map)
+     *
+     * @param maps
+     * @return
+     */
+    public static List<Map<String, Object>> convertPGObjectsToJavaObject(List<Map<String, Object>> maps) {
+        if (CollectionUtils.isEmpty(maps)) {
+            return maps;
+        }
+
+        for (var map : maps) {
+            map.replaceAll((key, value) -> {
+
+                // check if the value is a PGobject and convert it to java object, using JsonUtil
+                if (value instanceof PGobject obj) {
+                    var json = obj.getValue();
+                    try {
+                        return objectMapper.readValue(json, Object.class);
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException("cannot convert PGobject to java object.key = " + key + ", json = " + json, e);
+                    }
+
+                }
+
+                // Return the original value if no conversion is needed
+                return value;
+            });
+        }
+        return maps;
     }
 }

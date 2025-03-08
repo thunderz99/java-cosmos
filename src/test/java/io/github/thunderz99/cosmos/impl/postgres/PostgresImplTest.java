@@ -1,6 +1,7 @@
 package io.github.thunderz99.cosmos.impl.postgres;
 
 import io.github.thunderz99.cosmos.impl.mongo.MongoImpl;
+import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.Test;
@@ -105,6 +106,17 @@ public class PostgresImplTest {
             var db2 = (PostgresDatabaseImpl)cosmos.getDatabase(db);
             assertThat(db2.getAccount()).isNotEmpty();
             assertThat(db2.getDatabaseName()).isEqualTo(db);
+
+            {
+                //QueryContext toJson should work
+                var queryContext = QueryContext.create().databaseImpl(db2);
+                queryContext.schemaName = coll;
+                queryContext.tableName = "Users";
+
+                var json = queryContext.toString();
+                assertThat(json).isNotNull().contains(queryContext.schemaName, queryContext.tableName)
+                        .doesNotContain("databaseImpl");
+            }
 
         } finally {
             if(cosmos != null) {

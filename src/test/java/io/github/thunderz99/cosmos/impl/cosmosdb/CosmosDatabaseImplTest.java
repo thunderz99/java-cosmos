@@ -582,7 +582,7 @@ class CosmosDatabaseImplTest {
             var aggregate = Aggregate.function("COUNT(1) as facetCount")
                     .groupBy("_partition")
                     .conditionAfterAggregate(Condition.filter().sort("_partition", "ASC"));
-            var cond = Condition.filter("_partition", Set.of("Users", "Users2")).crossPartition(true);
+            var cond = Condition.filter("_partition", Set.of("Users", "Users2"), "id STARTSWITH", "id_find_filter").crossPartition(true);
             var result = db.aggregate(coll, aggregate, cond).toMap();
             assertThat(result).hasSize(2);
             assertThat(result.get(0).get("_partition")).isEqualTo("Users");
@@ -1370,6 +1370,80 @@ class CosmosDatabaseImplTest {
                 assertThat(id).startsWith("id_find_filter");
             });
         }
+
+        // test aggregate(aggregate using "c.id", group by "id")
+        {
+            var aggregate = Aggregate.function("c.id AS userId").groupBy("id");
+            var cond = Condition.filter("id STARTSWITH", "id_find_filter");
+
+            var result = db.aggregate(host, aggregate, cond, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+            assertThat(result.get(0).get("userId")).isInstanceOfSatisfying(String.class, (id) ->{
+                assertThat(id).startsWith("id_find_filter");
+            });
+        }
+
+        // test aggregate(aggregate using c["id"], group by "id")
+        {
+            var aggregate = Aggregate.function("c[\"id\"] AS userId").groupBy("id");
+            var cond = Condition.filter("id STARTSWITH", "id_find_filter");
+
+            var result = db.aggregate(host, aggregate, cond, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+            assertThat(result.get(0).get("userId")).isInstanceOfSatisfying(String.class, (id) ->{
+                assertThat(id).startsWith("id_find_filter");
+            });
+        }
+
+    }
+
+    @Test
+    void aggregate_should_work_grouping_by_array() throws Exception {
+
+        var partition = "Users2";
+        var id1 = "grouping_by_array1_" + RandomStringUtils.randomAlphanumeric(3);
+        var id2 = "grouping_by_array2_" + RandomStringUtils.randomAlphanumeric(3);
+        var id3 = "grouping_by_array3_" + RandomStringUtils.randomAlphanumeric(3);
+        var id4 = "grouping_by_array4_" + RandomStringUtils.randomAlphanumeric(3);
+
+        try {
+
+            var data1 = Map.of("id", id1, "orgIds", List.of("org1", "org2"));
+            var data2 = Map.of("id", id2, "orgIds", List.of("org1", "org2"));
+            var data3 = Map.of("id", id3, "orgIds", List.of("org1"));
+            var data4 = Map.of("id", id4, "orgIds", List.of());
+
+
+            db.upsert(host, data1, partition);
+            db.upsert(host, data2, partition);
+            db.upsert(host, data3, partition);
+            db.upsert(host, data4, partition);
+
+            {
+                // test aggregate(min for texts)
+                var aggregate = Aggregate.function("count(1) AS count").groupBy("orgIds");
+
+                // cosmosdb can not sort using aggregate value (like count)
+                var cond = Condition.filter("id STARTSWITH", "grouping_by_array").sort("orgIds", "DESC");
+
+                var result = db.aggregate(host, aggregate, cond, partition).toMap();
+                assertThat(result).hasSize(3);
+
+                assertThat(result).anyMatch(item -> item.get("count").equals(2)
+                        && item.get("orgIds").equals(List.of("org1", "org2")));
+
+            }
+
+
+        } finally {
+            db.delete(host, id1, partition);
+            db.delete(host, id2, partition);
+            db.delete(host, id3, partition);
+            db.delete(host, id4, partition);
+        }
+
     }
 
     @Test
@@ -2009,50 +2083,73 @@ class CosmosDatabaseImplTest {
         }
     }
 
-    @Disabled
     /**
      * TODO, This case is not implemented at present for CosmosDB
      */
+    @Disabled
     @Test
     void find_should_work_with_join_using_elem_match() throws Exception {
-        // condition on the same sub array should be both applied to the element(e.g. children.gender = "female" AND children.grade = 5)
-        // If we want to implement this, we can introduce a new SubConditionType like "$ELEM_MATCH" in mongodb
-        { // test returnAllSubArray(true)
-            var cond = new Condition();
-            cond = Condition.filter(SubConditionType.ELEM_MATCH,
-                            Map.of("children.gender", "male",
-                                    "children.grade >=", 5)
-                    )
-                    .sort("lastName", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("parents", "children"))
-                    .returnAllSubArray(true)
-            ;
-            // test find
-            var result = db.find(coll, cond, "Families").toMap();
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
-            assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(3);
-        }
-        { // test returnAllSubArray(false)
-            var cond = new Condition();
-            cond = Condition.filter(SubConditionType.ELEM_MATCH,
-                            Map.of("children.gender", "male",
-                                    "children.grade >=", 5)
-                    )
-                    .sort("lastName", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("parents", "children"))
-                    .returnAllSubArray(false)
-            ;
-            // test find
-            var result = db.find(coll, cond, "Families").toMap();
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
-            // only sub set of children is returned
-            assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(1);
+
+        var id3 = "Adams";
+        var family3 = Map.of(
+                "id", id3,
+                "children", List.of(
+                        Map.of(
+                                "gender", "male",
+                                "grade", 4
+                        ),
+                        Map.of(
+                                "gender", "female",
+                                "grade", 8
+                        )
+                ));
+
+
+        try {
+            db.upsert(coll, family3, "Families");
+
+            // condition on the same sub array should be both applied to the element(e.g. children.gender = "female" AND children.grade = 5)
+            // If we want to implement this, we can introduce a new SubConditionType like "$ELEM_MATCH" in mongodb
+
+            { // test returnAllSubArray(true)
+                var cond = new Condition();
+                cond = Condition.filter(SubConditionType.ELEM_MATCH, Map.of(
+                                "children.gender", "male",
+                                "children.grade >=", 5
+                        ))
+                        .sort("lastName", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("parents", "children"))
+                        .returnAllSubArray(true)
+                ;
+                // test find
+                var result = db.find(coll, cond, "Families").toMap();
+                assertThat(result).hasSize(1);
+                assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+                assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(3);
+            }
+            { // test returnAllSubArray(false)
+                var cond = new Condition();
+                cond = Condition.filter(SubConditionType.ELEM_MATCH,Map.of(
+                                "children.gender", "male",
+                                "children.grade >=", 5
+                        ))
+                        .sort("lastName", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("parents", "children"))
+                        .returnAllSubArray(false)
+                ;
+                // test find
+                var result = db.find(coll, cond, "Families").toMap();
+                assertThat(result).hasSize(1);
+                assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+                // only sub set of children is returned
+                assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(1);
+            }
+        }finally {
+            db.delete(coll, id3, "Families");
         }
     }
 

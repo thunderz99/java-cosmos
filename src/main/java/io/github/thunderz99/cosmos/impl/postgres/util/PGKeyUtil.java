@@ -160,7 +160,7 @@ public class PGKeyUtil {
             return getFormattedKeyWithAlias(key, TableUtil.DATA, "");
         }
 
-        // for others (SUM, MIN, MAX, AVG, etc.)
+        // for others (SUM, AVG, etc.)
         // return (data->>'key')::numeric
         return getFormattedKeyWithAlias(key, TableUtil.DATA, 0);
 

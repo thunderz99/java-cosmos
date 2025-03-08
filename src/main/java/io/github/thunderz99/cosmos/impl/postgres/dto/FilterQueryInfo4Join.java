@@ -23,10 +23,8 @@ public class FilterQueryInfo4Join {
     public FilterQueryInfo4Join(){
     }
 
-    public FilterQueryInfo4Join(String baseKey, String remainedJoinKey, String filterKey, AtomicInteger paramIndex, Expression subExp){
+    public FilterQueryInfo4Join(String baseKey, AtomicInteger paramIndex, Expression subExp){
         this.baseKey = baseKey;
-        this.remainedJoinKey = remainedJoinKey;
-        this.filterKey = filterKey;
         this.paramIndex = paramIndex;
         this.subExp = subExp;
     }
@@ -35,29 +33,6 @@ public class FilterQueryInfo4Join {
      * baseKey for join. e.g. "floors"
      */
     public String baseKey;
-
-
-    /**
-     * remainedJoinKey for join. e.g. "rooms"  ("floors.rooms" whose baseKey part is removed)
-     */
-    public String remainedJoinKey;
-
-    /**
-     * filterKey for ARRAY_CONTAINS_ANY or ARRAY_CONTAINS_ALL
-     * could be empty.
-     * e.g. "name".
-     *
-     * <p>
-     * {@code
-     *   // in this case
-     *   // baseKey = "floors"
-     *   // remainedJoinKey = "rooms"
-     *   // filterKey = "name"
-     *   Condition.filter"floors.rooms ARRAY_CONTAINS_ANY name", List.of("r1", "r2")).join(Set.of("floors"))
-     * }
-     * </p>
-     */
-    public String filterKey;
 
     /**
      * the numbering for param000, param001, param002 and so on.

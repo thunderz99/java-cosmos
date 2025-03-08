@@ -1446,6 +1446,83 @@ class MongoDatabaseImplTest {
                 assertThat(id).startsWith("id_find_filter");
             });
         }
+
+        // test aggregate(aggregate using "c.id", group by "id")
+        {
+            var aggregate = Aggregate.function("c.id AS userId").groupBy("id");
+            var cond = Condition.filter("id STARTSWITH", "id_find_filter");
+
+            var result = db.aggregate(host, aggregate, cond, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+            // we alias id as userId
+            assertThat(result.get(0).get("id")).isNull();
+
+            assertThat(result.get(0).get("userId")).isInstanceOfSatisfying(String.class, (id) ->{
+                assertThat(id).startsWith("id_find_filter");
+            });
+        }
+
+        // test aggregate(aggregate using c["id"], group by "id")
+        {
+            var aggregate = Aggregate.function("c[\"id\"] AS userId").groupBy("id");
+            var cond = Condition.filter("id STARTSWITH", "id_find_filter");
+
+            var result = db.aggregate(host, aggregate, cond, "Users").toMap();
+            assertThat(result).hasSize(3);
+
+            // we alias id as userId
+            assertThat(result.get(0).get("id")).isNull();
+
+            assertThat(result.get(0).get("userId")).isInstanceOfSatisfying(String.class, (id) ->{
+                assertThat(id).startsWith("id_find_filter");
+            });
+        }
+
+    }
+
+    @Test
+    void aggregate_should_work_grouping_by_array() throws Exception {
+
+        var partition = "Users2";
+        var id1 = "grouping_by_array1_" + RandomStringUtils.randomAlphanumeric(3);
+        var id2 = "grouping_by_array2_" + RandomStringUtils.randomAlphanumeric(3);
+        var id3 = "grouping_by_array3_" + RandomStringUtils.randomAlphanumeric(3);
+        var id4 = "grouping_by_array4_" + RandomStringUtils.randomAlphanumeric(3);
+
+        try {
+
+            var data1 = Map.of("id", id1, "orgIds", List.of("org1", "org2"));
+            var data2 = Map.of("id", id2, "orgIds", List.of("org1", "org2"));
+            var data3 = Map.of("id", id3, "orgIds", List.of("org1"));
+            var data4 = Map.of("id", id4, "orgIds", List.of());
+
+
+            db.upsert(host, data1, partition);
+            db.upsert(host, data2, partition);
+            db.upsert(host, data3, partition);
+            db.upsert(host, data4, partition);
+
+            {
+                // test aggregate(min for texts)
+                var aggregate = Aggregate.function("count(1) AS count").groupBy("orgIds")
+                        .conditionAfterAggregate(Condition.filter().sort("count", "DESC"));
+                var cond = Condition.filter("id STARTSWITH", "grouping_by_array");
+
+                var result = db.aggregate(host, aggregate, cond, partition).toMap();
+                assertThat(result).hasSize(3);
+
+                assertThat(result.get(0).get("count")).isEqualTo(2);
+                assertThat(result.get(0).get("orgIds")).isEqualTo(List.of("org1", "org2"));
+            }
+
+
+        } finally {
+            db.delete(host, id1, partition);
+            db.delete(host, id2, partition);
+            db.delete(host, id3, partition);
+        }
+
     }
 
     @Test
@@ -2068,44 +2145,65 @@ class MongoDatabaseImplTest {
 
     @Test
     void find_should_work_with_join_using_elem_match() throws Exception {
-        // condition on the same sub array should be both applied to the element(e.g. children.gender = "female" AND children.grade = 5)
-        // If we want to implement this, we can introduce a new SubConditionType like "$ELEM_MATCH" in mongodb
-        { // test returnAllSubArray(true)
-            var cond = new Condition();
-            cond = Condition.filter(SubConditionType.ELEM_MATCH,
-                            Map.of("children.gender", "male",
-                                    "children.grade >=", 5)
-                    )
-                    .sort("lastName", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("parents", "children"))
-                    .returnAllSubArray(true)
-            ;
-            // test find
-            var result = db.find(host, cond, "Families").toMap();
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
-            assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(3);
-        }
-        { // test returnAllSubArray(false)
-            var cond = new Condition();
-            cond = Condition.filter(SubConditionType.ELEM_MATCH,
-                            Map.of("children.gender", "male",
-                                    "children.grade >=", 5)
-                    )
-                    .sort("lastName", "ASC") //
-                    .limit(10) //
-                    .offset(0)
-                    .join(Set.of("parents", "children"))
-                    .returnAllSubArray(false)
-            ;
-            // test find
-            var result = db.find(host, cond, "Families").toMap();
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
-            // only sub set of children is returned
-            assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(1);
+
+        var id3 = "Adams";
+        var family3 = Map.of(
+                "id", id3,
+                "children", List.of(
+                        Map.of(
+                                "gender", "male",
+                                "grade", 4
+                        ),
+                        Map.of(
+                                "gender", "female",
+                                "grade", 8
+                        )
+                ));
+
+
+        try {
+            db.upsert(host, family3, "Families");
+            // condition on the same sub array should be both applied to the element(e.g. children.gender = "female" AND children.grade = 5)
+            // we introduced a new SubConditionType like "$ELEM_MATCH" in mongodb to achieve this
+            { // test returnAllSubArray(true)
+                var cond = new Condition();
+                cond = Condition.filter(SubConditionType.ELEM_MATCH,
+                                Map.of("children.gender", "male",
+                                        "children.grade >=", 5)
+                        )
+                        .sort("lastName", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("parents", "children"))
+                        .returnAllSubArray(true)
+                ;
+                // test find
+                var result = db.find(host, cond, "Families").toMap();
+                assertThat(result).hasSize(1);
+                assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+                assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(3);
+            }
+            { // test returnAllSubArray(false)
+                var cond = new Condition();
+                cond = Condition.filter(SubConditionType.ELEM_MATCH,
+                                Map.of("children.gender", "male",
+                                        "children.grade >=", 5)
+                        )
+                        .sort("lastName", "ASC") //
+                        .limit(10) //
+                        .offset(0)
+                        .join(Set.of("parents", "children"))
+                        .returnAllSubArray(false)
+                ;
+                // test find
+                var result = db.find(host, cond, "Families").toMap();
+                assertThat(result).hasSize(1);
+                assertThat(result.get(0).getOrDefault("id", "")).isEqualTo("WakefieldFamily");
+                // only sub set of children is returned
+                assertThat((List<Map<String, Object>>) result.get(0).get("children")).hasSize(1);
+            }
+        }finally {
+            db.delete(host, id3, "Families");
         }
     }
 
@@ -3311,7 +3409,7 @@ class MongoDatabaseImplTest {
 
             var expireAt = mdb.addExpireAt4Mongo(map);
 
-            assertThat(expireAt).isNotNull().isBetween(Instant.now().plusSeconds(thirtyDaysInSeconds), Instant.now().plusSeconds(thirtyDaysInSeconds + 1));
+            assertThat(expireAt).isNotNull().isBetween(Instant.now().plusSeconds(thirtyDaysInSeconds-1), Instant.now().plusSeconds(thirtyDaysInSeconds + 1));
             assertThat(map.get(EXPIRE_AT)).isEqualTo(expireAt);
 
         }

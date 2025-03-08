@@ -1469,7 +1469,7 @@ public class TableUtil {
         indexName = checkAndNormalizeValidEntityName(indexName);
 
         // postgres supports the "DROP INDEX IF EXISTS" syntax.
-        String sql = "DROP INDEX IF EXISTS " + schemaName + "." + indexName;
+        var sql = "DROP INDEX IF EXISTS " + schemaName + "." + indexName;
         try (var stmt = connection.createStatement()) {
             stmt.execute(sql);
             if (log.isInfoEnabled()) {

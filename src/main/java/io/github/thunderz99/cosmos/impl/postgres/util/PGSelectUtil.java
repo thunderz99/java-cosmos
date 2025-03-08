@@ -374,18 +374,16 @@ public class PGSelectUtil {
      *
      * @param queryContext the context to save the information
      * @param baseKey      the base key, e.g. "floors"
-     * @param remainedJoinKey the remained key, e.g. "rooms"
-     * @param filterKey   the filter key, e.g. "name"
      * @param paramIndex  the param index
      * @param subExp      the sub expression
      */
-    public static void saveQueryInfo4Join(QueryContext queryContext, String baseKey, String remainedJoinKey, String filterKey, AtomicInteger paramIndex, Expression subExp) {
+    public static void saveQueryInfo4Join(QueryContext queryContext, String baseKey, AtomicInteger paramIndex, Expression subExp) {
 
         var queryList = queryContext.filterQueryInfos4Join.get(baseKey);
         if (queryList == null) {
             queryList = new ArrayList<>();
         }
-        queryList.add(new FilterQueryInfo4Join(baseKey, remainedJoinKey, filterKey, paramIndex, subExp));
+        queryList.add(new FilterQueryInfo4Join(baseKey, paramIndex, subExp));
         queryContext.filterQueryInfos4Join.put(baseKey, queryList);
 
     }
