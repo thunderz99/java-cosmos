@@ -56,7 +56,7 @@ public class TTLUtil {
 
         var deleteSQL = String.format("""
                 DELETE FROM %s.%s
-                WHERE(%s ->> '/_expireAt')::timestamp < now();
+                WHERE (data->>'_expireAt')::bigint < extract(epoch from now())::bigint;
                 """, schemaName, tableName, TableUtil.DATA);
 
         var scheduleSQL = String.format("""
@@ -67,7 +67,7 @@ public class TTLUtil {
                      %s
                      $$
                 );
-                """, jobName, intervalInMinutes, intervalInMinutes, deleteSQL);
+                """, jobName, intervalInMinutes, deleteSQL);
 
         // the stmt will return the job id
         try (var stmt = conn.prepareStatement(scheduleSQL)) {
@@ -151,7 +151,35 @@ public class TTLUtil {
     public static String getJobName(String schemaName, String tableName) {
         Checker.checkNotBlank(schemaName, "schemaName");
         Checker.checkNotBlank(tableName, "tableName");
-        return String.format("%s_ttl_job_%s", schemaName, tableName).toLowerCase();
+
+        schemaName = TableUtil.removeQuotes(schemaName);
+        tableName = TableUtil.removeQuotes(tableName);
+
+        return String.format("%s_ttl_job_%s", schemaName, tableName);
     }
 
+    /**
+     * get the job command text for schemaName and tableName
+     * @param conn
+     * @param schemaName
+     * @param tableName
+     * @return
+     */
+    public static String getJobCommand(Connection conn, String schemaName, String tableName) throws SQLException {
+
+        schemaName = TableUtil.checkAndNormalizeValidEntityName(schemaName);
+        tableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+
+        var jobName = getJobName(schemaName, tableName);
+
+        try (var stmt = conn.prepareStatement("SELECT command FROM cron.job WHERE jobname = ?")) {
+            stmt.setString(1, jobName);
+            try (var rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString(1);
+                }
+            }
+        }
+        return null;
+    }
 }

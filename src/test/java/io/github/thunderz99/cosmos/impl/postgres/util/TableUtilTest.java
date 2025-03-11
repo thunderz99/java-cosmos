@@ -931,6 +931,63 @@ class TableUtilTest {
     }
 
     @Test
+    void createIndexIfNotExists_should_work_for_expireAt() throws Exception {
+
+        var tableName = "table1" + RandomStringUtils.randomAlphanumeric(3).toLowerCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+        var fieldName = "_expireAt";
+        var formattedIndexName = TableUtil.getIndexName(formattedTableName, fieldName);
+
+        try(var conn = cosmos.getDataSource().getConnection();) {
+            {
+                // create table
+                var createdTableName = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                assertThat(createdTableName).isEqualTo(formattedSchemaName + "." + formattedTableName);
+            }
+
+            {
+                // create index
+                var createdIndexName = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName,
+                        IndexOption.unique(false).fieldType("bigint"));
+                assertThat(createdIndexName).isEqualTo(formattedSchemaName + "." + formattedIndexName);
+
+
+                var indexNameWithoutQuotes = TableUtil.removeQuotes(formattedIndexName);
+                var queryIndexSQL = "SELECT indexdef FROM pg_indexes WHERE indexname = '%s'".formatted(indexNameWithoutQuotes);
+
+                try(var stmt = conn.createStatement();
+                     var rs = stmt.executeQuery(queryIndexSQL)) {
+
+                    // Check that the index exists.
+                    assertThat(rs.next()).isTrue();
+
+                    // Verify the index definition includes the bigint cast.
+                    var indexDefinition = rs.getString("indexdef");
+                    assertThat(indexDefinition).isNotNull();
+                    // postgres automatically add the ::text part, so finally the index looks like below:
+                    assertThat(indexDefinition).contains("((data ->> '_expireAt'::text))::bigint")
+                            .containsIgnoringCase("USING BTREE");
+
+                }
+            }
+
+            {
+                // create index the second time. and it should be no-op
+                var created2 = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(false));
+                assertThat(created2).isEmpty();
+            }
+
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropIndexIfExists(conn, schemaName, formattedIndexName);
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+
+    }
+
+
+    @Test
     void getShortenedEntityName_should_work() {
         {
             // normal case

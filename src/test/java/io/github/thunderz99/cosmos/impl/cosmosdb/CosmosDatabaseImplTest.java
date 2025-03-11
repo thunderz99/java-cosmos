@@ -2087,7 +2087,6 @@ class CosmosDatabaseImplTest {
      * TODO, This case is not implemented at present for CosmosDB
      */
     @Disabled
-    @Test
     void find_should_work_with_join_using_elem_match() throws Exception {
 
         var id3 = "Adams";
@@ -3490,6 +3489,36 @@ class CosmosDatabaseImplTest {
         assertThat(count).isEqualTo(0);
 
     }
+
+    @Test
+    void item_should_be_deleted_after_ttl() throws Exception {
+
+        var id = "item_should_be_deleted_after_ttl";
+        var data = Map.of("id", id, "ttl", 1);
+        var partition = "SheetContents";
+
+        try{
+
+            db.upsert(coll, data, partition);
+            var retryTimes = 12;
+            var deleted = false;
+
+            // auto deleted after about 1~10 seconds
+            for(var i = 0; i<retryTimes; i++){
+                Thread.sleep(1000);
+                var item = db.readSuppressing404(coll, id, partition);
+                if(item == null){
+                    deleted = true;
+                    break;
+                }
+            }
+            assertThat(deleted).withFailMessage("item should be deleted after ttl 1s").isTrue();
+
+        } finally {
+            db.delete(coll, id, partition);
+        }
+    }
+
 
 
     static void initFamiliesData() throws Exception {

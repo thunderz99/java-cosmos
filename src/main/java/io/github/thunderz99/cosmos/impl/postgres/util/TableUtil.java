@@ -46,6 +46,12 @@ public class TableUtil {
     public static final String ETAG = "_etag";
 
     /**
+     * when creating index, field type that can be specified.
+     * see <a href="https://www.postgresql.org/docs/current/datatype.html">https://www.postgresql.org/docs/current/datatype.html</a>
+     */
+    public static final Set<String> SUPPORTED_INDEX_FIELD_TYPE = Set.of("bigint", "integer", "numeric", "float8", "timestamp", "tsquery", "tsvector");
+
+    /**
      * Checks if a table exists in the specified schema.
      *
      * @param conn       the database connection
@@ -1558,7 +1564,12 @@ public class TableUtil {
 
         // Construct JSON path expression
         // data->'address'->'city'->>'street'
+
         var jsonPathExpression = PGKeyUtil.getFormattedKey(fieldName);
+
+        if(SUPPORTED_INDEX_FIELD_TYPE.contains(indexOption.fieldType)){
+            jsonPathExpression = "(%s)::%s".formatted(jsonPathExpression, indexOption.fieldType);
+        }
 
         var createIndexSQL = """
                 CREATE %s INDEX %s

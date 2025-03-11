@@ -184,10 +184,11 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         var ttl = (Integer) ttlObj;
 
-        // Current time + ttl in milliseconds. use long because this will be possibly larger than Integer.MAX_VALUE
+        // Current time + ttl in seconds. use long because this will be possibly larger than Integer.MAX_VALUE
+        // note postgres use timestamp in seconds
         var expireAt = new Date(System.currentTimeMillis() + 1000L * ttl);
 
-        objectMap.put(EXPIRE_AT, expireAt);
+        objectMap.put(EXPIRE_AT, expireAt.getTime() / 1000L);
 
         return expireAt;
     }

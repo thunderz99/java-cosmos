@@ -130,6 +130,12 @@ public class CosmosImpl implements Cosmos {
             if (CollectionUtils.isNotEmpty(keyList)) {
                 containerProperties.setUniqueKeyPolicy(UniqueKeyUtil.toCosmosUniqueKeyPolicy(uniqueKeyPolicy));
             }
+
+            // enable ttl feature for this container.
+            // -1 - indicates by default all items within the container never expire.
+            // This value can be overridden by individual items time-to-live value.
+            containerProperties.setDefaultTimeToLiveInSeconds(-1);
+
             cosmosDatabase.createContainerIfNotExists(containerProperties);
         }
 

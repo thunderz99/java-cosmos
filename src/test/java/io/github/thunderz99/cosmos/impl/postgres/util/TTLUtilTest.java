@@ -57,6 +57,15 @@ class TTLUtilTest {
                 // check whether the job exists
                 assertThat(TTLUtil.jobExists(conn, schemaName, tableName)).isTrue();
 
+                // check that the command(text) is correct
+                var expectedCmd = """                        
+                        DELETE FROM %s.%s
+                        WHERE (data->>'_expireAt')::bigint < extract(epoch from now())::bigint;
+                        """.trim().formatted(schemaName, formattedTableName);
+                var command = TTLUtil.getJobCommand(conn, schemaName, tableName);
+                assertThat(command).contains(schemaName).contains(tableName);
+                assertThat(command.trim()).isEqualTo(expectedCmd);
+
                 // un-schedule job
                 var unScheduled = TTLUtil.unScheduleJob(conn, schemaName, tableName);
                 assertThat(unScheduled).isTrue();
@@ -106,6 +115,12 @@ class TTLUtilTest {
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
             }
         }
+    }
+
+    @Test
+    void getJobName_should_work() throws Exception {
+        assertThat(TTLUtil.getJobName("Schema", "Tables")).isEqualTo("Schema_ttl_job_Tables");
+        assertThat(TTLUtil.getJobName("Data_Tom", "Users")).isEqualTo("Data_Tom_ttl_job_Users");
     }
 
 }
