@@ -3752,7 +3752,7 @@ class PostgresDatabaseImplTest {
 
             assertThat(expireAt).isNotNull().isBetween(Instant.now().plusSeconds(59), Instant.now().plusSeconds(61));
             assertThat(map).containsKey(PostgresDatabaseImpl.EXPIRE_AT);
-            assertThat(map.get(PostgresDatabaseImpl.EXPIRE_AT)).isEqualTo(expireAt);
+            assertThat(map.get(PostgresDatabaseImpl.EXPIRE_AT)).isEqualTo(expireAt.getTime() / 1000L);
 
         }
 
@@ -3775,7 +3775,7 @@ class PostgresDatabaseImplTest {
             var expireAt = mdb.addExpireAt(map);
 
             assertThat(expireAt).isNotNull().isBetween(Instant.now().plusSeconds(thirtyDaysInSeconds), Instant.now().plusSeconds(thirtyDaysInSeconds + 1));
-            assertThat(map.get(PostgresDatabaseImpl.EXPIRE_AT)).isEqualTo(expireAt);
+            assertThat(map.get(PostgresDatabaseImpl.EXPIRE_AT)).isEqualTo(expireAt.getTime()/1000L);
 
         }
 
@@ -3787,7 +3787,7 @@ class PostgresDatabaseImplTest {
             var expireAt = mdb.addExpireAt(map);
 
             assertThat(expireAt).isNotNull().isBetween(Instant.now().plusSeconds(longPeriod), Instant.now().plusSeconds(longPeriod + 1));
-            assertThat(map.get(PostgresDatabaseImpl.EXPIRE_AT)).isEqualTo(expireAt);
+            assertThat(map.get(PostgresDatabaseImpl.EXPIRE_AT)).isEqualTo(expireAt.getTime()/1000L);
 
         }
 
@@ -3818,7 +3818,8 @@ class PostgresDatabaseImplTest {
                 var result = db.create(host, data1, partition).toMap();
 
                 assertThat(result).containsKey("_expireAt");
-                assertThat((Date) result.get("_expireAt")).isBetween(Instant.now().minusSeconds(1), Instant.now().plusSeconds(1));
+                var expireAt = new Date(((Integer)result.get("_expireAt")).longValue() * 1000);
+                assertThat(expireAt).isBetween(Instant.now().minusSeconds(1), Instant.now().plusSeconds(1));
 
             }
 
@@ -3827,7 +3828,8 @@ class PostgresDatabaseImplTest {
                 var result = db.upsert(host, data1, partition).toMap();
 
                 assertThat(result).containsKey("_expireAt");
-                assertThat((Date) result.get("_expireAt")).isBetween(Instant.now().minusSeconds(1), Instant.now().plusSeconds(1));
+                var expireAt = new Date(((Integer)result.get("_expireAt")).longValue() * 1000);
+                assertThat(expireAt).isBetween(Instant.now().minusSeconds(1), Instant.now().plusSeconds(1));
             }
 
             { // update
@@ -3835,7 +3837,8 @@ class PostgresDatabaseImplTest {
                 var result = db.update(host, data1, partition).toMap();
 
                 assertThat(result).containsKey("_expireAt");
-                assertThat((Date) result.get("_expireAt")).isBetween(Instant.now().plusSeconds(59), Instant.now().plusSeconds(61));
+                var expireAt = new Date(((Integer)result.get("_expireAt")).longValue() * 1000);
+                assertThat(expireAt).isBetween(Instant.now().plusSeconds(59), Instant.now().plusSeconds(61));
 
             }
 
