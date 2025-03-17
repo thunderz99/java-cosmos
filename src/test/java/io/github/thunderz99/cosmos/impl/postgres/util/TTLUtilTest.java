@@ -62,9 +62,10 @@ class TTLUtilTest {
                         DELETE FROM %s.%s
                         WHERE (data->>'_expireAt')::bigint < extract(epoch from now())::bigint;
                         """.trim().formatted(schemaName, formattedTableName);
-                var command = TTLUtil.getJobCommand(conn, schemaName, tableName);
-                assertThat(command).contains(schemaName).contains(tableName);
-                assertThat(command.trim()).isEqualTo(expectedCmd);
+                var job = TTLUtil.findJobByName(conn, schemaName, tableName);
+                assertThat(job.command).contains(schemaName).contains(tableName);
+                assertThat(job.command.trim()).isEqualTo(expectedCmd);
+                assertThat(job.schedule.trim()).isEqualTo("*/1 * * * *");
 
                 // un-schedule job
                 var unScheduled = TTLUtil.unScheduleJob(conn, schemaName, tableName);
@@ -109,6 +110,49 @@ class TTLUtilTest {
 
             }
 
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TTLUtil.unScheduleJob(conn, schemaName, tableName);
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void scheduleJob_should_work_using_cron_expression() throws Exception {
+        var tableName = "schedule_job_exp_test" + RandomStringUtils.randomAlphanumeric(4);
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            // create table
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+            { // normal case
+                // schedule job
+                var jobId = TTLUtil.scheduleJob(conn, schemaName, tableName, "5 0 * * *");
+                assertThat(jobId).isGreaterThan(0);
+
+                // check whether the job exists
+                assertThat(TTLUtil.jobExists(conn, schemaName, tableName)).isTrue();
+
+                // check that the command(text) is correct
+                var expectedCmd = """                        
+                        DELETE FROM %s.%s
+                        WHERE (data->>'_expireAt')::bigint < extract(epoch from now())::bigint;
+                        """.trim().formatted(schemaName, formattedTableName);
+                var job = TTLUtil.findJobByName(conn, schemaName, tableName);
+                assertThat(job.command).contains(schemaName).contains(tableName);
+                assertThat(job.command.trim()).isEqualTo(expectedCmd);
+                assertThat(job.schedule.trim()).isEqualTo("5 0 * * *");
+
+                // un-schedule job
+                var unScheduled = TTLUtil.unScheduleJob(conn, schemaName, tableName);
+                assertThat(unScheduled).isTrue();
+
+                // check whether the job exists
+                assertThat(TTLUtil.jobExists(conn, schemaName, tableName)).isFalse();
+            }
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
                 TTLUtil.unScheduleJob(conn, schemaName, tableName);

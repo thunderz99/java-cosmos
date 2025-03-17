@@ -1030,6 +1030,61 @@ class PostgresDatabaseImplTest {
 
 
     @Test
+    void find_should_work_with_sort_stably_with_the_same_ts() throws Exception {
+
+        var count = 42;
+        var partition = "SheetContents";
+        var idPrefix = "stably_with_the_same_ts_";
+
+        var items = new ArrayList<Map<String, String>>();
+
+
+        try {
+
+            for(int i = 0; i < count; i++) {
+                var id = (idPrefix+"%03d").formatted(i);
+                var item = Map.of("id", id, "type", "Phone", "value", "iPhone");
+                items.add(item);
+            }
+
+            db.bulkCreate(host, items, partition);
+
+            // test sort ASC
+            {
+                var cond = Condition.filter("id STARTSWITH", idPrefix
+                        ).sort("_ts", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var docs = db.find(host, cond, partition).toMap();
+
+
+                var cond2 = Condition.filter("id STARTSWITH", idPrefix
+                        ).sort("_ts", "ASC") //
+                        .limit(10) //
+                        .offset(10);
+
+                var docs2 = db.find(host, cond2, partition).toMap();
+
+                docs.addAll(docs2);
+
+                docs.sort(Comparator.comparing(o -> o.get("id").toString()));
+
+                assertThat(docs.size()).isEqualTo(20);
+
+                for(int i = 0; i < 20; i++) {
+                    assertThat(docs.get(i).get("id")).isEqualTo( (idPrefix+"%03d").formatted(i) );
+                }
+            }
+
+
+        } finally {
+           db.bulkDelete(host, items, partition);
+        }
+    }
+
+
+    @Test
     void find_should_work_for_array_contains_any_all() throws Exception {
         var partition = "Families";
 

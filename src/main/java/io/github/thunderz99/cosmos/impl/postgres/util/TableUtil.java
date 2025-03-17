@@ -1561,27 +1561,92 @@ public class TableUtil {
         }
 
         // create index
+        var previousAutoCommit = conn.getAutoCommit();
 
-        // Construct JSON path expression
-        // data->'address'->'city'->>'street'
+        var qualifiedName = "%s.%s.%s".formatted(schemaName, tableName, indexName);
 
-        var jsonPathExpression = PGKeyUtil.getFormattedKey(fieldName);
+        // Generate the lock key by hashing the qualified name
+        long lockKey = qualifiedName.hashCode();
 
-        if(SUPPORTED_INDEX_FIELD_TYPE.contains(indexOption.fieldType)){
-            jsonPathExpression = "(%s)::%s".formatted(jsonPathExpression, indexOption.fieldType);
-        }
 
-        var createIndexSQL = """
-                CREATE %s INDEX %s
-                  ON %s.%s ((%s));
-                """
-                .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, jsonPathExpression);
+        try(var stmt = conn.createStatement()) {
 
-        try (var pstmt = conn.prepareStatement(createIndexSQL)) {
-            pstmt.executeUpdate();
+            // check namespace uniqueness and create index in one transaction
+            conn.setAutoCommit(false);
+
+            var lockAcquired = false;
+
+            // Acquire the advisory lock using the generated key
+            try (var rs = stmt.executeQuery("SELECT pg_try_advisory_lock(%d)".formatted(lockKey))) {
+                if (rs.next()) {
+                    lockAcquired = rs.getBoolean(1);
+                }
+            }
+
+            if (!lockAcquired) {
+                // lock not acquired. so do nothing and return
+                conn.commit();
+                return "";
+            }
+
+            // check type name uniqueness
+            var pgTypeSQL = """
+                    SELECT c.oid, c.relname, n.nspname
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE c.relname = '%s'
+                      AND n.nspname = '%s'
+                    """.formatted(removeQuotes(indexName), removeQuotes(schemaName));
+
+            var typeExists = false;
+            try(var rs = stmt.executeQuery(pgTypeSQL)){
+                if (rs.next()) {
+                    typeExists = true;
+                }
+            }
+
+            if(typeExists){
+                // type name already exists. do nothing and return
+                conn.commit();
+                return "";
+            }
+
+            // create index
+            // Construct JSON path expression
+            // data->'address'->'city'->>'street'
+
+            var jsonPathExpression = PGKeyUtil.getFormattedKey(fieldName);
+
+            if(SUPPORTED_INDEX_FIELD_TYPE.contains(indexOption.fieldType)){
+                jsonPathExpression = "(%s)::%s".formatted(jsonPathExpression, indexOption.fieldType);
+            }
+
+            var createIndexSQL = """
+                    CREATE %s INDEX %s
+                      ON %s.%s ((%s));
+                    """
+                    .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, jsonPathExpression);
+
+            stmt.execute(createIndexSQL);
             if (log.isInfoEnabled()) {
                 log.info("Index({}) on column '{}' with field '{}' of table '{}.{}' created successfully.", indexName, DATA, fieldName, schemaName, tableName);
             }
+
+            conn.commit();
+        } catch (SQLException e) {
+            // Roll back the transaction if an error occurs
+            if (conn != null) {
+                conn.rollback();
+            }
+            var message = e.getMessage();
+            if(StringUtils.contains(message, "pg_type_typname_nsp_index")
+                    && StringUtils.contains(message, "duplicate key value violates unique constraint") ) {
+                log.warn("index type name {}.{}.{} already exist. skip index creation. msg:{}", schemaName, tableName, indexName, e.getMessage());
+            } else {
+                throw e;
+            }
+        } finally {
+            conn.setAutoCommit(previousAutoCommit);
         }
 
         return "%s.%s".formatted(schemaName, indexName);

@@ -3,7 +3,9 @@ package io.github.thunderz99.cosmos.impl.postgres.util;
 import java.sql.Connection;
 import java.sql.SQLException;
 
+import io.github.thunderz99.cosmos.impl.postgres.dto.PGJob;
 import io.github.thunderz99.cosmos.util.Checker;
+import io.github.thunderz99.cosmos.util.CronUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,6 +70,72 @@ public class TTLUtil {
                      $$
                 );
                 """, jobName, intervalInMinutes, deleteSQL);
+
+        // the stmt will return the job id
+        try (var stmt = conn.prepareStatement(scheduleSQL)) {
+            try (var rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
+            }
+        }
+        return -1L;
+    }
+
+    /**
+     * schedule a job to delete expired records(using cronExpression, timezone is UTC)
+     *
+     * @param conn              the database connection
+     * @param schemaName        the schema name
+     * @param tableName         the table name
+     * @param cronExpression    the cron expression e.g. "*\/1 * * * *"
+     * @return jobId of the scheduled job. return -1 if job is not created.
+     * @throws IllegalArgumentException if intervalInMinutes is less than or equal to 0
+     * @throws SQLException if the table does not exist
+     * @throws SQLException if a database error occurs
+     *
+     */
+    public static long scheduleJob(Connection conn, String schemaName, String tableName, String cronExpression) throws SQLException {
+
+        Checker.check(CronUtil.isValidPgCronExpression(cronExpression), "cronExpression is not valid. %s, %s.%s".formatted(cronExpression, schemaName, tableName));
+
+        schemaName = TableUtil.checkAndNormalizeValidEntityName(schemaName);
+        tableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+
+
+        if(!TableUtil.tableExist(conn, schemaName, tableName)){
+            // SQLState 42P01 is for "relation not exist" in postgres
+            throw new SQLException(String.format("table %s.%s does not exist / relation does not exist", schemaName, tableName), "42P01", 404);
+        }
+
+        /**
+         * -- sample SQL
+         * SELECT cron.schedule(
+         *     'localhost_ttl_job_sessioninfoes',  -- Job name
+         *     '*\/1 * * * * ',          -- Run every 1 minutes
+         *     $$
+         *     DELETE FROM sessioninfoes -- table name
+         *     WHERE(data -> > '/_expireAt')::timestamp < now(); -- finding expired records
+         *     $$
+         *  );
+         */
+
+        var jobName = getJobName(schemaName, tableName);
+
+        var deleteSQL = String.format("""
+                DELETE FROM %s.%s
+                WHERE (data->>'_expireAt')::bigint < extract(epoch from now())::bigint;
+                """, schemaName, tableName, TableUtil.DATA);
+
+        var scheduleSQL = String.format("""
+                SELECT cron.schedule(
+                    '%s',
+                    '%s ',
+                     $$
+                     %s
+                     $$
+                );
+                """, jobName, cronExpression, deleteSQL);
 
         // the stmt will return the job id
         try (var stmt = conn.prepareStatement(scheduleSQL)) {
@@ -165,18 +233,23 @@ public class TTLUtil {
      * @param tableName
      * @return
      */
-    public static String getJobCommand(Connection conn, String schemaName, String tableName) throws SQLException {
+    public static PGJob findJobByName(Connection conn, String schemaName, String tableName) throws SQLException {
 
         schemaName = TableUtil.checkAndNormalizeValidEntityName(schemaName);
         tableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
 
         var jobName = getJobName(schemaName, tableName);
 
-        try (var stmt = conn.prepareStatement("SELECT command FROM cron.job WHERE jobname = ?")) {
+        var ret = new PGJob();
+        try (var stmt = conn.prepareStatement("SELECT jobid, jobname, schedule, command FROM cron.job WHERE jobname = ?")) {
             stmt.setString(1, jobName);
             try (var rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    return rs.getString(1);
+                    ret.id = rs.getString("jobid");
+                    ret.jobName = rs.getString("jobname");
+                    ret.schedule = rs.getString("schedule");
+                    ret.command = rs.getString("command");
+                    return ret;
                 }
             }
         }
