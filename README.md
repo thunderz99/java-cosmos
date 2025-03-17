@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.7.8</version>
+    <version>0.8.7</version>
 </dependency>
 ```
 
@@ -385,7 +385,8 @@ Using this iterator can reduce memory consumption compared to the normal find me
     var cond = Condition.filter().crossPartition(true);
     var result = db.aggregate("Collection1", aggregate, cond);
 
-    // !! not supported for mongodb !!
+    // only works for cosmosdb
+    // !! not supported for mongodb/postgres !!
 ```
 
 
@@ -426,7 +427,8 @@ Using this iterator can reduce memory consumption compared to the normal find me
 
     db.find("Collection1", cond, "Partition1");
                                 
-    // !! not supported for mongodb !!
+    // only works for cosmosdb
+    // !! not supported for mongodb/postgres !!
 ```
 
 
@@ -486,7 +488,22 @@ var cosmos = new CosmosBuilder().withDatabaseType("cosmosdb")
 
 ```
 
-### $ELEM_MATCH queries in mongo to match fields in  array type field
+### PostgreSQL support
+
+```
+// for postgres. pg_cron extension is a must because we use this to implement TTL(time to live) feature.
+
+var cosmos = new CosmosBuilder().withDatabaseType("postgres")
+ .withConnectionString("jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres"))
+                .build();
+var db = cosmos.getDatabase("Database1");
+
+// you can use db instance as the same way as you are using cosmosdb
+db.upsert("Database1", new User("id011","Tom","Banks"), "Collection1");
+                
+```
+
+### $ELEM_MATCH queries in mongo/postgres to match fields in  array type field
 
 For cosmosdb, we can do a query like this using rawSql to find a child whose grade greater than 5 and gender is "female".
 
@@ -557,16 +574,17 @@ db.Families.find({
 
 ```
 // Java code is:
-var cond = Condition.filter("$ELEM_MATCH", Map.of("grade >", 5, "gender =" "female"));
+var cond = Condition.filter("$ELEM_MATCH", Map.of("children.grade >", 5, "children.gender =" "female")).join(Set.of("children"));
 var result = db.find("Collection1", cond);
 ```
 
-At present, "$ELEM_MATCH" only works for mongodb. But we will consider support it for cosmosdb too, so that we do not need to use rawSql. And the same Java code will work for both database type.
+At present, "$ELEM_MATCH" only works for mongodb/postgres. But we will consider support it for cosmosdb too, so that we do not need to use rawSql. And the same Java code will work for both database type.
 
 
 ## Reference
 
-This library is built based on the official Azure Cosmos DB Java SDK v4, and the offical MongoDB Java SDK
+This library is built based on the official Azure Cosmos DB Java SDK v4, the offical MongoDB Java SDK, and the offical PostgreSQL JDBC Driver.
 
 * https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/sdk-java-v4
 * https://www.mongodb.com/docs/drivers/java/sync/current/
+* https://jdbc.postgresql.org/

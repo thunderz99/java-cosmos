@@ -1064,4 +1064,53 @@ class TableUtilTest {
 
     }
 
+
+    @Test
+    void createIndexIfNotExist_should_work_in_multi_thread() throws Exception {
+
+        var tableName = "table2_multi_thread_test";
+        var fieldName = "_expireAt";
+
+        try(var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+        }
+
+
+        try {
+            List<Future<String>> futures = new ArrayList<>();
+
+            int threadCount = 100;
+
+            for (int i = 0; i < threadCount; i++) {
+                futures.add(SINGLE_TASK_EXECUTOR.submit(() -> {
+
+                    try (var conn = cosmos.getDataSource().getConnection()) {
+                        return TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(false).fieldType("bigint"));
+                    } catch (SQLException e) {
+                        throw new RuntimeException(e);
+                    }
+
+                }));
+            }
+
+            List<String> results = new ArrayList<>();
+
+            for (int i = 0; i < threadCount; i++) {
+                results.add(futures.get(i).get());
+            }
+
+            assertThat(results).hasSize(threadCount);
+
+            results = results.stream().filter(StringUtils::isNotEmpty).toList();
+
+            // only few threads execute "CREATE INDEX"
+            assertThat(results).hasSize(1);
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+
+    }
+
 }

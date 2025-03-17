@@ -453,10 +453,15 @@ public class PGConditionUtil {
             }
         }
 
-
         if(!sortMap.keySet().contains("_ts")){
             // when sort does not include "_ts", we add a second sort of _ts, in order to get a more stable sort result for postgres
             sortMap.put("_ts", firstOrder);
+        }
+
+        if(!sortMap.keySet().contains("id")){
+            // when sort does not include "id", we add a second sort of id, in order to get a definite sort result for postgres
+            // because even using "_ts", multiple records may have the same _ts. like "1742189103.273"
+            sortMap.put("id", firstOrder);
         }
 
         var ret = sortMap.entrySet().stream()

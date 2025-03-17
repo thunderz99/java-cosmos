@@ -4,7 +4,7 @@
     <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
     <packaging>jar</packaging>
-    <version>0.8.6</version>
+    <version>0.8.7</version>
     <name>${project.groupId}:${project.artifactId}$</name>
     <description>A lightweight Azure CosmosDB client for Java</description>
     <url>https://github.com/thunderz99/java-cosmos</url>
@@ -128,6 +128,13 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>33.4.0-jre</version>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/com.cronutils/cron-utils -->
+        <dependency>
+            <groupId>com.cronutils</groupId>
+            <artifactId>cron-utils</artifactId>
+            <version>9.2.1</version>
         </dependency>
 
         <dependency>

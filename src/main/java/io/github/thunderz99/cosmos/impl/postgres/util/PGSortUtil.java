@@ -69,6 +69,10 @@ public class PGSortUtil {
 
         var collateStr = COLLATE_C.equals(collate) ? " COLLATE \"C\" " : " ";
 
+        if("id".equals(key)){
+            return "%s%s%s".formatted("id", collateStr, sortDirection);
+        }
+
         if(textSorts.contains(key)){
             // sort by string, using COLLATE "C" to deal with lower/upper case correctly
             return "%s%s%s".formatted(getFormattedKeyWithAlias(key, TableUtil.DATA, ""), collateStr, sortDirection);
