@@ -140,6 +140,22 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void read_invalid_id_should_work() throws Exception {
+        {
+            // readSuppressing404 should return null
+            assertThat(db.readSuppressing404(coll, "id_including_/_", "Users")).isNull();
+            assertThat(db.readSuppressing404(coll, "id_including_#_", "Users")).isNull();
+            assertThat(db.readSuppressing404(coll, "id_including_\\_", "Users")).isNull();
+            assertThat(db.readSuppressing404(coll, "id_including_?_", "Users")).isNull();
+        }
+        {
+            assertThatThrownBy(() -> db.read(coll, "id_including_/_", "Users"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("specified id does not exist");
+        }
+    }
+
+    @Test
     void getId_should_work() {
         String testId = "getId_should_work_id";
         var user = new User(testId, "firstName", "lastName");
