@@ -1308,6 +1308,46 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     }
 
     /**
+     * Enable TTL feature for a given collection and partition.
+     *
+     * @param coll         collection name
+     * @param partition    partition name
+     * @param cronExpression cron expression
+     * @return             job name
+     * @throws Exception   if the table does not exist or a database error occurs
+     */
+    public String enableTTL(String coll, String partition, String cronExpression) throws Exception {
+
+        try(var conn = this.dataSource.getConnection()){
+
+            try {
+                conn.setAutoCommit(false);
+
+                if (TTLUtil.jobExists(conn, coll, partition)) {
+                    return TTLUtil.getJobName(coll, partition);
+                }
+
+                TTLUtil.scheduleJob(conn, coll, partition, cronExpression);
+                conn.commit();
+                return TTLUtil.getJobName(coll, partition);
+
+            } catch (SQLException e){
+                log.warn("Error when enableTTL for partition '{}.{}'.", coll, partition, e);
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackEx) {
+                    log.error("Failed to rollback when enableTTL for partition '{}.{}'. id:{}.", coll, partition, rollbackEx);
+                }
+                throw e;
+            }
+            finally {
+                conn.setAutoCommit(true);
+            }
+        }
+
+    }
+
+    /**
      * Disable TTL feature for a given collection and partition.
      *
      * @param coll         collection name
