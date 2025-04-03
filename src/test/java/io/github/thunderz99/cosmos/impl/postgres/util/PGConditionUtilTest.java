@@ -81,7 +81,7 @@ class PGConditionUtilTest {
             var cond = Condition.filter("id", "001", "age >", 15);
             var filterQuery = PGConditionUtil.generateFilterQuery(cond, "", new ArrayList<>(), new AtomicInteger(), new AtomicInteger(), QueryContext.create());
 
-            var queryTextExpected = " WHERE (data->>'id' = @param000_id) AND (NULLIF(data->>'age','')::numeric > @param001_age)";
+            var queryTextExpected = " WHERE (id = @param000_id) AND (NULLIF(data->>'age','')::numeric > @param001_age)";
             assertThat(filterQuery.queryText.toString()).isEqualTo(queryTextExpected);
             assertThat(filterQuery.params).hasSize(2);
             assertThat(filterQuery.params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_id", "001").toJson());
@@ -324,7 +324,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE ((NULLIF(data->>'id','')::numeric = @param000_id)) OFFSET 0 LIMIT 100
+                     WHERE ((id = @param000_id)) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim())
                     .isEqualTo(expected.trim());
@@ -339,7 +339,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE (NULLIF(data->>'id','')::numeric = @param000_id) OFFSET 0 LIMIT 100
+                     WHERE (id = @param000_id) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim())
                     .isEqualTo(expected.trim());
@@ -368,7 +368,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE (NULLIF(data->>'id','')::numeric = @param000_id) OFFSET 0 LIMIT 100
+                     WHERE (id = @param000_id) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim())
                     .isEqualTo(expected.trim());
@@ -383,7 +383,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE (NULLIF(data->>'id','')::numeric = @param000_id) AND ((data->>'name' = @param001_name)) OFFSET 0 LIMIT 100
+                     WHERE (id = @param000_id) AND ((data->>'name' = @param001_name)) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(
                     expected.trim());

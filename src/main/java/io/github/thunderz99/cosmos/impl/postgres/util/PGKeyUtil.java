@@ -58,6 +58,12 @@ public class PGKeyUtil {
             return selectAlias;
         }
 
+        // If the key is "id", use "id" directly, instead of using data->>'id'
+        // Because "id" column has pk index, the performance will be fastest
+        if(TableUtil.ID.equals(key)) {
+            return "id";
+        }
+
         // Split on "." to handle nested fields
         var parts = key.split("\\.");
 
