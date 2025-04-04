@@ -1138,18 +1138,18 @@ class PGConditionUtilTest {
         }
         var queryContext = QueryContext.create().databaseImpl(PostgresDatabaseImplTest.db);
 
-//        {
-//            // normal count
-//            var aggregate = Aggregate.function("COUNT(1)");
-//            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext))
-//                    .isEqualTo("COUNT(1) AS \"$1\"");
-//        }
-//        {
-//            // count with group by
-//            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location.state");
-//            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext))
-//                    .isEqualTo("COUNT(1) AS \"facetCount\", data->'location'->'state' AS \"state\", data->'status' AS \"status\"");
-//        }
+        {
+            // normal count
+            var aggregate = Aggregate.function("COUNT(1)");
+            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext))
+                    .isEqualTo("COUNT(1) AS \"$1\"");
+        }
+        {
+            // count with group by
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location.state");
+            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext))
+                    .isEqualTo("COUNT(1) AS \"facetCount\", data->'location'->'state' AS \"state\", data->'status' AS \"status\"");
+        }
         {
             // count with group by formId
             var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("formId");
