@@ -41,12 +41,12 @@ import static io.github.thunderz99.cosmos.condition.SubConditionType.OR;
 import static org.assertj.core.api.Assertions.*;
 import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
 
-class PostgresDatabaseImplTest {
+public class PostgresDatabaseImplTest {
 
-    static Cosmos cosmos;
-    static PostgresDatabaseImpl db;
+    public static Cosmos cosmos;
+    public static PostgresDatabaseImpl db;
 
-    static String dbName = "java_cosmos";
+    public static String dbName = "java_cosmos";
 
     /**
      * Temporary schema name for unit test, which will be created and deleted on the fly

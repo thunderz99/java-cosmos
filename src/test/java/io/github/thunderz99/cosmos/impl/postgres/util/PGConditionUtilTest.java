@@ -1,10 +1,13 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
 import com.google.common.collect.Sets;
+import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
+import io.github.thunderz99.cosmos.impl.postgres.PostgresDatabaseImpl;
+import io.github.thunderz99.cosmos.impl.postgres.PostgresDatabaseImplTest;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.junit.jupiter.api.Test;
@@ -1124,6 +1127,46 @@ class PGConditionUtilTest {
 
         }
 
+
+    }
+
+    @Test
+    void generateAggregateSelect_should_work() throws Exception {
+
+        if(PostgresDatabaseImplTest.db == null) {
+            PostgresDatabaseImplTest.beforeAll();
+        }
+        var queryContext = QueryContext.create().databaseImpl(PostgresDatabaseImplTest.db);
+
+//        {
+//            // normal count
+//            var aggregate = Aggregate.function("COUNT(1)");
+//            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext))
+//                    .isEqualTo("COUNT(1) AS \"$1\"");
+//        }
+//        {
+//            // count with group by
+//            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location.state");
+//            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext))
+//                    .isEqualTo("COUNT(1) AS \"facetCount\", data->'location'->'state' AS \"state\", data->'status' AS \"status\"");
+//        }
+        {
+            // count with group by formId
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("formId");
+            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext))
+                    .isEqualTo("COUNT(1) AS \"facetCount\", data->>'formId' AS \"formId\"");
+
+            var querySpec = PGConditionUtil.toQuerySpec4Aggregate("schema1", Condition.filter("formId IN", List.of("id1", "id2")), aggregate, "table1", queryContext);
+            var expected = """
+                    SELECT COUNT(1) AS "facetCount", data->>'formId' AS "formId"
+                     FROM schema1.table1
+                     WHERE (data->>'formId' = ANY(@param000_formId))
+                     GROUP BY data->>'formId'
+                     OFFSET 0 LIMIT 100
+                    """;
+                    assertThat(querySpec.queryText.trim()).isEqualTo(expected.trim());
+
+        }
 
     }
 

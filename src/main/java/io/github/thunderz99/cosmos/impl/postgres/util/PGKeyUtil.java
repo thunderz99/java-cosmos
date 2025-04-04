@@ -14,6 +14,11 @@ import java.util.stream.Collectors;
 public class PGKeyUtil {
 
     /**
+     * keys which should be treated as text for sort / group by
+     */
+    static Set<String> textKeys = Set.of("id", "mail", "name", "kana", "title", "formId");
+
+    /**
      * Instead of data.key, return data->'key' or data->'address'->>'city' for query
      *
      * @param key filter's key
@@ -154,21 +159,20 @@ public class PGKeyUtil {
     }
 
     /**
-     * generate a formatted key for aggregate
+     * generate a formatted key for aggregate using text keys
      * @param key key in dot format (address.city.street)
-     * @param function function part. e.g. COUNT(address.city.street)
      * @return formatted key
      */
-    public static String getFormattedKey4Aggregate(String key, String function) {
+    public static String getFormattedKey4AggregateUsingTextKeys(String key, String selectAlias) {
 
-        if(StringUtils.startsWithIgnoreCase(function, "COUNT(")){
-            // COUNT will not need calculation in numeric, just use data->>'key'
-            return getFormattedKeyWithAlias(key, TableUtil.DATA, "");
+        if(textKeys.contains(key)){
+            // group by string, using data->>'key' (text format to utilize index)
+            return getFormattedKeyWithAlias(key, selectAlias, "");
         }
 
-        // for others (SUM, AVG, etc.)
-        // return (data->>'key')::numeric
-        return getFormattedKeyWithAlias(key, TableUtil.DATA, 0);
+        // default to json
+        // return data->'key'
+        return getFormattedKey4JsonWithAlias(key, selectAlias);
 
     }
 }
