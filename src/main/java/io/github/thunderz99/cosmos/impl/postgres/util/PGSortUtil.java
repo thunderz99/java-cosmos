@@ -1,14 +1,8 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
-import io.github.thunderz99.cosmos.util.Checker;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
 
 import static io.github.thunderz99.cosmos.impl.postgres.util.PGKeyUtil.*;
 
@@ -37,11 +31,6 @@ public class PGSortUtil {
      * Sort keys which is predefined with formatted value
      */
     static Set<String> preservedSorts = Set.of("_ts");
-
-    /**
-     * Sort keys which should be sorted by text
-     */
-    static Set<String> textSorts = Set.of("id", "mail", "name", "kana", "title");
 
     /**
      * Sort types that supported, other types should be sorted as jsonb
@@ -73,7 +62,7 @@ public class PGSortUtil {
             return "%s%s%s".formatted("id", collateStr, sortDirection);
         }
 
-        if(textSorts.contains(key)){
+        if(PGKeyUtil.textKeys.contains(key)){
             // sort by string, using COLLATE "C" to deal with lower/upper case correctly
             return "%s%s%s".formatted(getFormattedKeyWithAlias(key, TableUtil.DATA, ""), collateStr, sortDirection);
         }

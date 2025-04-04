@@ -12,7 +12,7 @@ import io.github.thunderz99.cosmos.v4.PatchOperations;
  * Class representing a nosql database interface.
  *
  * <p>
- * Can do document' CRUD and find. Supports cosmosdb and mongodb
+ * Can do document's CRUD and find. Supports cosmosdb and mongodb
  * </p>
  */
 public interface CosmosDatabase {

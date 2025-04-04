@@ -138,9 +138,18 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
     }
 
     static void checkValidId(String id) {
-        if (StringUtils.containsAny(id, "\t", "\n", "\r", "/")) {
+        if (!isValidId(id)) {
             throw new IllegalArgumentException("id cannot contain \\t or \\n or \\r or /. id:" + id);
         }
+    }
+
+    /**
+     * return true if id is valid
+     * @param id
+     * @return
+     */
+    static boolean isValidId(String id) {
+        return !StringUtils.containsAny(id, "\t", "\n", "\r", "/", "\\", "?", "#");
     }
 
     /**
@@ -207,6 +216,10 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      * @throws Exception Cosmos client exception
      */
     public CosmosDocument readSuppressing404(String coll, String id, String partition) throws Exception {
+
+        if(!isValidId(id)){
+            return null;
+        }
 
         try {
             return read(coll, id, partition);

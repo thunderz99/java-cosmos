@@ -133,7 +133,7 @@ public class PGConditionUtil {
 
         // group by
         if (CollectionUtils.isNotEmpty(aggregate.groupBy)) {
-            var groupBy = aggregate.groupBy.stream().map(g -> PGKeyUtil.getFormattedKey4JsonWithAlias(g, TableUtil.DATA)).collect(Collectors.joining(", "));
+            var groupBy = aggregate.groupBy.stream().map(g -> PGKeyUtil.getFormattedKey4AggregateUsingTextKeys(g, TableUtil.DATA)).collect(Collectors.joining(", "));
             queryText.append("\n GROUP BY ").append(groupBy);
         }
 
@@ -315,14 +315,14 @@ public class PGConditionUtil {
                     }
                 }
 
-
                 var formattedKey = "";
                 if(StringUtils.equals(function, field)){
+                    // function equals field(which means no aggregate function)
                     // c['address']['state'] as result
 
                     if(dotFieldNameGroupBy.contains(dotFieldName)){
-                        // the field is used in group by. because we will process it in group stage, set it to ""
-                        formattedKey = PGKeyUtil.getFormattedKey4JsonWithAlias(dotFieldName, TableUtil.DATA);
+                        // the field is used in group by. we record it, so we can skip it in the group by part
+                        formattedKey = PGKeyUtil.getFormattedKey4AggregateUsingTextKeys(dotFieldName, TableUtil.DATA);
                         processedGroupBy.add(dotFieldName);
                     } else {
                         // just a simple query without aggregate function
@@ -342,10 +342,16 @@ public class PGConditionUtil {
 
                     Object typeObject = getTypeObjectOfField(queryContext, dotFieldName);
                     formattedKey = PGKeyUtil.getFormattedKeyWithAlias(dotFieldName, TableUtil.DATA, typeObject);
+
+                } else if(StringUtils.startsWithIgnoreCase(function, "COUNT(")){
+                    // COUNT will not need calculation in numeric, just use data->>'key'
+                    formattedKey = PGKeyUtil.getFormattedKeyWithAlias(dotFieldName, TableUtil.DATA, "");
                 } else {
-                    // (data->'room'->>'area')::numeric
-                    formattedKey = PGKeyUtil.getFormattedKey4Aggregate(dotFieldName, function);
+                    // default for numeric (SUM, AVG, etc.)
+                    // return (data->>'key')::numeric
+                    formattedKey =  PGKeyUtil.getFormattedKeyWithAlias(dotFieldName, TableUtil.DATA, 0);
                 }
+
 
                 if(StringUtils.equalsAny(field, "1", "*")){
                     // do nothing, the COUNT(1) should not be changed
@@ -375,7 +381,7 @@ public class PGConditionUtil {
                 var simpleName = PGAggregateUtil.getSimpleName(groupBy);
 
                 // group by should use json. because you can do a groupBy on a jsonb field.
-                var formattedKey = PGKeyUtil.getFormattedKey4JsonWithAlias(groupBy, TableUtil.DATA);
+                var formattedKey = PGKeyUtil.getFormattedKey4AggregateUsingTextKeys(groupBy, TableUtil.DATA);
                 select.add("%s AS \"%s\"".formatted(formattedKey, simpleName));
             }
 
