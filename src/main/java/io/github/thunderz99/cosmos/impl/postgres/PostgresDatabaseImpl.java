@@ -1,5 +1,10 @@
 package io.github.thunderz99.cosmos.impl.postgres;
 
+import java.sql.SQLException;
+import java.util.*;
+
+import javax.sql.DataSource;
+
 import com.google.common.base.Preconditions;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.thunderz99.cosmos.*;
@@ -18,13 +23,6 @@ import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.sql.DataSource;
-
-import java.sql.SQLException;
-import java.util.*;
-
-import static com.mongodb.client.model.Filters.eq;
 
 /**
  * Class representing a postgres schema instance.
@@ -1214,6 +1212,13 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
             log.info("bulk deleted Document:{}/docs/, deleted count:{}, partition:{}, account:{}", collectionLink, ids.size(), partition, getAccount());
         }
         return ret;
+    }
+
+    @Override
+    public CosmosBulkResult bulkDeleteSuppressing404(String coll, List<?> data, String partition) throws Exception {
+        // In PostgreSQL, if you execute a DELETE operation targeting a non-existent id, no error will occur.
+        // ids not found in the database will still be added to the successList.
+        return bulkDelete(coll, data, partition);
     }
 
 

@@ -8,7 +8,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
@@ -3420,6 +3419,33 @@ class CosmosDatabaseImplTest {
             db.bulkCreate(coll, userList, "Users");
             var deleteResult = db.bulkDelete(coll, idList, "Users");
             assertThat(deleteResult.fatalList).hasSize(0);
+            assertThat(deleteResult.retryList).hasSize(0);
+            assertThat(deleteResult.successList).hasSize(size);
+        } finally {
+            db.bulkDelete(coll, userList, "Users");
+        }
+    }
+
+    @Test
+    void bulkDeleteSuppressing404_should_work() throws Exception {
+        int size = 120;
+        var userList = new ArrayList<User>(size);
+        for (int i = 0; i < size; i++) {
+            userList.add(new User("bulkDeleteSuppressing404_should_work_" + i, "testFirstName" + i, "testLastName" + i));
+        }
+
+        // idList can be used to do bulkDelete
+        var idList = userList.stream().map(u -> u.id).collect(Collectors.toList());
+
+        var fatalSize = 10;
+        for (int i = 0; i < fatalSize; i++) {
+            idList.add("bulkDeleteSuppressing404_should_work_not_exist" + i);
+        }
+
+        try {
+            db.bulkCreate(coll, userList, "Users");
+            var deleteResult = db.bulkDeleteSuppressing404(coll, idList, "Users");
+            assertThat(deleteResult.fatalList).hasSize(fatalSize);
             assertThat(deleteResult.retryList).hasSize(0);
             assertThat(deleteResult.successList).hasSize(size);
         } finally {

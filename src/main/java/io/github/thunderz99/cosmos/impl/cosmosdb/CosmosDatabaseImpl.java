@@ -1248,6 +1248,10 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      * @return CosmosBulkResult
      */
     public CosmosBulkResult bulkDelete(String coll, List<?> data, String partition) throws Exception {
+        return bulkDelete(coll, data, partition, false);
+    }
+
+    private CosmosBulkResult bulkDelete(String coll, List<?> data, String partition, boolean suppressing404) throws Exception {
         doCheckBeforeBulk(coll, data, partition);
 
         var ids = new ArrayList<String>();
@@ -1266,15 +1270,45 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
         log.info("begin bulkDelete coll:{}, partition:{}, account:{}", coll, partition, getAccount());
 
+        List<CosmosException> fatalList = new ArrayList<>();
+
         var result = RetryUtil.executeBulkWithRetry(coll, operations,
-                (ops) -> container.executeBulkOperations(ops));
+                (ops) -> {
+                    var cosmosBulkOperationResponses = container.executeBulkOperations(ops);
+                    if (!suppressing404) {
+                        return cosmosBulkOperationResponses;
+                    } else {
+                        var it = cosmosBulkOperationResponses.iterator();
+                        while (it.hasNext()) {
+                            var bulkOperationResponse = it.next();
+                            if (!bulkOperationResponse.getResponse().isSuccessStatusCode()
+                                    && CosmosImpl.isResourceNotFoundException(bulkOperationResponse.getResponse())) {
+                                fatalList.add(new CosmosException(bulkOperationResponse.getResponse().getStatusCode(), "UNKNOWN", "UNKNOWN"));
+                                it.remove();
+                                ids.remove(bulkOperationResponse.getOperation().getId());
+                            }
+                        }
+                        return cosmosBulkOperationResponses;
+                    }
+                });
 
         result.successList = ids.stream().map(it ->
                 new CosmosDocument(Map.of("id", it))
         ).collect(Collectors.toList());
 
+        result.fatalList.addAll(fatalList);
+
         log.info("end bulkDelete coll:{}, partition:{}, account:{}", coll, partition, getAccount());
         return result;
+    }
+
+    @Override
+    public CosmosBulkResult bulkDeleteSuppressing404(String coll, List<?> data, String partition) throws Exception {
+        if(CollectionUtils.isEmpty(data)){
+            return new CosmosBulkResult();
+        }
+
+        return bulkDelete(coll, data, partition, true);
     }
 
     @Override
