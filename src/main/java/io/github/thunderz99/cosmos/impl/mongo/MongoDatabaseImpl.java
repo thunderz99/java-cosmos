@@ -4,7 +4,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import com.azure.cosmos.implementation.guava25.collect.Lists;
-import com.azure.cosmos.models.CosmosQueryRequestOptions;
 import com.google.common.base.Preconditions;
 import com.mongodb.MongoException;
 import com.mongodb.client.AggregateIterable;
@@ -15,13 +14,11 @@ import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
-import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.FilterOptions;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 import org.bson.BsonObjectId;
 import org.bson.Document;
@@ -1453,6 +1450,11 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         }
 
         return ret;
+    }
+
+    @Override
+    public CosmosBulkResult bulkDeleteSuppressing404(String coll, List<?> data, String partition) throws Exception {
+        throw new UnsupportedOperationException("the operation is unsupported in MongoDatabaseImpl.");
     }
 
     @Override
