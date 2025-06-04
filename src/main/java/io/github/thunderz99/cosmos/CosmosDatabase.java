@@ -513,6 +513,17 @@ public interface CosmosDatabase {
     public CosmosBulkResult bulkDelete(String coll, List<?> data, String partition) throws Exception;
 
     /**
+     * Bulk delete documents
+     * Note: Non-transaction. Have no number limit in theoretically. It will be skipped if the object does not exist.
+     *
+     * @param coll      collection name
+     * @param data      data object
+     * @param partition partition name
+     * @return CosmosBulkResult
+     */
+    CosmosBulkResult bulkDeleteSuppressing404(String coll, List<?> data, String partition) throws Exception;
+
+    /**
      * Ping a collection to test whether it is accessible.
      *
      * @param coll      collection name

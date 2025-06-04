@@ -1,5 +1,12 @@
 package io.github.thunderz99.cosmos.impl.postgres;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.google.common.collect.Maps;
 import com.microsoft.azure.documentdb.SqlParameter;
@@ -13,14 +20,12 @@ import io.github.thunderz99.cosmos.dto.EvalSkip;
 import io.github.thunderz99.cosmos.dto.FullNameUser;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosImpl;
-import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.impl.postgres.util.TTLUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.data.Percentage;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -28,13 +33,6 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import static io.github.thunderz99.cosmos.condition.SubConditionType.AND;
 import static io.github.thunderz99.cosmos.condition.SubConditionType.OR;
@@ -3691,6 +3689,33 @@ public class PostgresDatabaseImplTest {
             assertThat(deleteResult.fatalList).hasSize(0);
             assertThat(deleteResult.retryList).hasSize(0);
             assertThat(deleteResult.successList).hasSize(size);
+        } finally {
+            db.bulkDelete(host, userList, "Users");
+        }
+    }
+
+    @Test
+    void bulkDeleteSuppressing404_should_work() throws Exception {
+        int size = 120;
+        var userList = new ArrayList<User>(size);
+        for (int i = 0; i < size; i++) {
+            userList.add(new User("bulkDelete_should_work_" + i, "testFirstName" + i, "testLastName" + i));
+        }
+
+        var idList = userList.stream().map(u -> u.id).collect(Collectors.toList());
+
+        var notExistIdSize = 10;
+        for (int i = 0; i < notExistIdSize; i++) {
+            idList.add("bulkDeleteSuppressing404_should_work_not_exist" + i);
+        }
+
+        try {
+            db.bulkCreate(host, userList, "Users");
+            // idList can be used to do bulkDelete
+            var deleteResult = db.bulkDelete(host, idList, "Users");
+            assertThat(deleteResult.fatalList).hasSize(0);
+            assertThat(deleteResult.retryList).hasSize(0);
+            assertThat(deleteResult.successList).hasSize(size + notExistIdSize);
         } finally {
             db.bulkDelete(host, userList, "Users");
         }

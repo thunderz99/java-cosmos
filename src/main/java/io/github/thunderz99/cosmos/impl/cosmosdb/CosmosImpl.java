@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosClientBuilder;
+import com.azure.cosmos.models.CosmosBulkItemResponse;
 import com.azure.cosmos.models.CosmosContainerProperties;
 import io.github.thunderz99.cosmos.Cosmos;
 import io.github.thunderz99.cosmos.CosmosBuilder;
@@ -72,6 +73,10 @@ public class CosmosImpl implements Cosmos {
             this.closeClient();
         }));
 
+    }
+
+    public static boolean isResourceNotFoundException(CosmosBulkItemResponse response) {
+        return response.getStatusCode() == 404;
     }
 
 
