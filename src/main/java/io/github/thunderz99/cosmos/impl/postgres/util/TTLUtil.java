@@ -36,6 +36,10 @@ public class TTLUtil {
         schemaName = TableUtil.checkAndNormalizeValidEntityName(schemaName);
         tableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
 
+        if(!TableUtil.schemaExists(conn, schemaName)){
+            // SQLState 42P01 is for "relation not exist" in postgres
+            throw new SQLException(String.format("schema %s does not exist / relation does not exist", schemaName), "42P01", 404);
+        }
 
         if(!TableUtil.tableExist(conn, schemaName, tableName)){
             // we allow the job to be scheduled even if the table does not exist,
@@ -107,6 +111,10 @@ public class TTLUtil {
         schemaName = TableUtil.checkAndNormalizeValidEntityName(schemaName);
         tableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
 
+        if(!TableUtil.schemaExists(conn, schemaName)){
+            // SQLState 42P01 is for "relation not exist" in postgres
+            throw new SQLException(String.format("schema %s does not exist / relation does not exist", schemaName), "42P01", 404);
+        }
 
         if(!TableUtil.tableExist(conn, schemaName, tableName)){
             // we allow the job to be scheduled even if the table does not exist,

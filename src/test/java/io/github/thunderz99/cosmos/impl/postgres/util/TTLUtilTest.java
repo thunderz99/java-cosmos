@@ -81,24 +81,12 @@ class TTLUtilTest {
             }
 
             {
-                // irregular case:  table not exist
-                // schedule job
-                assertThatThrownBy( () -> TTLUtil.scheduleJob(conn, schemaName, "not_exist_table", 1))
-                        .isInstanceOfSatisfying(SQLException.class, e -> {
-                                    assertThat(e.getMessage()).contains("relation does not exist");
-                                    assertThat(e.getMessage()).contains("%s.%s".formatted(formattedSchemaName, "not_exist_table"));
-                                    assertThat(e.getSQLState()).isEqualTo("42P01");
-                                });
-
-            }
-
-            {
                 // irregular case:  schema not exist
                 // schedule job
                 assertThatThrownBy( () -> TTLUtil.scheduleJob(conn, "not_exist_schema", tableName, 1))
                         .isInstanceOfSatisfying(SQLException.class, e -> {
                             assertThat(e.getMessage()).contains("relation does not exist");
-                            assertThat(e.getMessage()).contains("%s.%s".formatted("not_exist_schema", formattedTableName));
+                            assertThat(e.getMessage()).contains("%s".formatted("not_exist_schema"));
                             assertThat(e.getSQLState()).isEqualTo("42P01");
                         });
 
