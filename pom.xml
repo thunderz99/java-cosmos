@@ -17,13 +17,17 @@
     </licenses>
 
     <scm>
-        <url>https://github.com/thunderz99/java-cosmos</url>
+        <connection>scm:git:git://github.com/thunderz99/java-cosmos.git</connection>
+        <developerConnection>scm:git:ssh://github.com/thunderz99/java-cosmos.git</developerConnection>
+        <url>https://github.com/thunderz99/java-cosmos/tree/master</url>
     </scm>
 
     <developers>
         <developer>
             <name>Zhang Lei</name>
             <email>thunderz99@gmail.com</email>
+            <organization>Personal</organization>
+            <organizationUrl>https://github.com/thunderz99/</organizationUrl>
         </developer>
     </developers>
 
@@ -33,17 +37,6 @@
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
-
-    <distributionManagement>
-        <snapshotRepository>
-            <id>ossrh</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-        </snapshotRepository>
-        <repository>
-            <id>ossrh</id>
-            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </repository>
-    </distributionManagement>
 
     <dependencies>
 
@@ -171,17 +164,15 @@
     <build>
         <plugins>
             <!--
-             see https://central.sonatype.org/pages/apache-maven.html
+             see https://central.sonatype.org/publish/publish-portal-maven/
             -->
             <plugin>
-                <groupId>org.sonatype.plugins</groupId>
-                <artifactId>nexus-staging-maven-plugin</artifactId>
-                <version>1.6.14</version>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>0.8.0</version>
                 <extensions>true</extensions>
                 <configuration>
-                    <serverId>ossrh</serverId>
-                    <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-                    <autoReleaseAfterClose>true</autoReleaseAfterClose>
+                    <publishingServerId>central</publishingServerId>
                 </configuration>
             </plugin>
             <plugin>
