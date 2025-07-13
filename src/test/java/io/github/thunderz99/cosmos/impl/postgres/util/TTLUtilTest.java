@@ -167,73 +167,29 @@ class TTLUtilTest {
     }
 
     @Test
-    void getJobName_should_work() throws Exception {
-        assertThat(TTLUtil.getJobName("Schema", "Tables")).isEqualTo("Schema_ttl_job_Tables");
-        assertThat(TTLUtil.getJobName("Data_Tom", "Users")).isEqualTo("Data_Tom_ttl_job_Users");
-    }
+    void scheduleJob_should_work_for_not_exist_table() throws Exception {
+        var tableName = "not_exist_table_" + RandomStringUtils.randomAlphanumeric(4);
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
 
-
-    @Test
-    void scheduleJob_should_work_when_immediately_after_table_created_multi_thread() throws Exception {
-
-        var tableNamePrefix = "schedule_job_multi_thread_test";
-        int threadCount = 100;
-        List<String> results = new ArrayList<>();
-
-        try {
-            List<Future<String>> futures = new ArrayList<>();
-
-            for (int i = 0; i < threadCount; i++) {
-                final int idx = i;
-                futures.add(SINGLE_TASK_EXECUTOR.submit(() -> {
-                    try {
-                        var tableName = tableNamePrefix + idx;
-                        create_and_test_schedule_job_in_single_connection(tableName);
-                        return tableName;
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-
-                }));
-            }
-
-
-            for (int i = 0; i < threadCount; i++) {
-                results.add(futures.get(i).get());
-            }
-
-            assertThat(results).hasSize(threadCount);
-
-        } finally {
-            try (var conn = cosmos.getDataSource().getConnection()) {
-                for (int i = 0; i < threadCount; i++) {
-                    var tableName = tableNamePrefix + i;
-                    TTLUtil.unScheduleJob(conn, schemaName, tableName);
-                    TableUtil.dropTableIfExists(conn, schemaName, tableName);
-                }
-            }
-        }
-    }
-
-    /**
-     * create table, schedule job, un-schedule job using single connection
-     * @param tableName
-     * @return
-     * @throws Exception
-     */
-    long create_and_test_schedule_job_in_single_connection(String tableName) throws Exception {
 
         try (var conn = cosmos.getDataSource().getConnection()) {
-            // create table
-            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
-
             { // normal case
                 // schedule job
-                var jobId = TTLUtil.scheduleJob(conn, schemaName, tableName, 1);
+                var jobId = TTLUtil.scheduleJob(conn, schemaName, tableName, "5 0 * * *");
                 assertThat(jobId).isGreaterThan(0);
 
                 // check whether the job exists
                 assertThat(TTLUtil.jobExists(conn, schemaName, tableName)).isTrue();
+
+                // check that the command(text) is correct
+                var expectedCmd = """                        
+                        DELETE FROM %s.%s
+                        WHERE (data->>'_expireAt')::bigint < extract(epoch from now())::bigint;
+                        """.trim().formatted(schemaName, formattedTableName);
+                var job = TTLUtil.findJobByName(conn, schemaName, tableName);
+                assertThat(job.command).contains(schemaName).contains(tableName);
+                assertThat(job.command.trim()).isEqualTo(expectedCmd);
+                assertThat(job.schedule.trim()).isEqualTo("5 0 * * *");
 
                 // un-schedule job
                 var unScheduled = TTLUtil.unScheduleJob(conn, schemaName, tableName);
@@ -241,96 +197,18 @@ class TTLUtilTest {
 
                 // check whether the job exists
                 assertThat(TTLUtil.jobExists(conn, schemaName, tableName)).isFalse();
-
-                return jobId;
             }
-
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
                 TTLUtil.unScheduleJob(conn, schemaName, tableName);
-                TableUtil.dropTableIfExists(conn, schemaName, tableName);
             }
         }
     }
 
     @Test
-    void scheduleJob_should_work_when_immediately_after_table_created_multi_thread_multi_connection() throws Exception {
-
-        var tableNamePrefix = "schedule_job_multi_thread_multi_conn_test";
-        int threadCount = 100;
-        List<String> results = new ArrayList<>();
-
-        try {
-            List<Future<String>> futures = new ArrayList<>();
-
-            for (int i = 0; i < threadCount; i++) {
-                final int idx = i;
-                futures.add(SINGLE_TASK_EXECUTOR.submit(() -> {
-                    try {
-                        var tableName = tableNamePrefix + idx;
-                        create_and_test_schedule_job_in_multi_connection(tableName);
-                        return tableName;
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                }));
-            }
-
-            for (int i = 0; i < threadCount; i++) {
-                results.add(futures.get(i).get());
-            }
-
-            assertThat(results).hasSize(threadCount);
-
-        } finally {
-            try (var conn = cosmos.getDataSource().getConnection()) {
-                for (int i = 0; i < threadCount; i++) {
-                    var tableName = tableNamePrefix + i;
-                    TTLUtil.unScheduleJob(conn, schemaName, tableName);
-                    TableUtil.dropTableIfExists(conn, schemaName, tableName);
-                }
-            }
-        }
+    void getJobName_should_work() throws Exception {
+        assertThat(TTLUtil.getJobName("Schema", "Tables")).isEqualTo("Schema_ttl_job_Tables");
+        assertThat(TTLUtil.getJobName("Data_Tom", "Users")).isEqualTo("Data_Tom_ttl_job_Users");
     }
 
-    /**
-     * create table, schedule job, un-schedule job using different connection
-     * @param tableName
-     * @return
-     * @throws Exception
-     */
-    String create_and_test_schedule_job_in_multi_connection(String tableName) throws Exception {
-
-        var db =  (PostgresDatabaseImpl) cosmos.getDatabase(dbName);
-
-        try (var conn = cosmos.getDataSource().getConnection()) {
-            // create table
-            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
-        }
-
-        // schedule job
-        var jobName= db.enableTTL(schemaName, tableName);
-        assertThat(jobName).isNotEmpty();
-
-        try (var conn = cosmos.getDataSource().getConnection()) {
-
-            // check whether the job exists
-            assertThat(TTLUtil.jobExists(conn, schemaName, tableName)).isTrue();
-
-            // un-schedule job
-            var unScheduled = TTLUtil.unScheduleJob(conn, schemaName, tableName);
-            assertThat(unScheduled).isTrue();
-
-            // check whether the job exists
-            assertThat(TTLUtil.jobExists(conn, schemaName, tableName)).isFalse();
-
-            return jobName;
-
-        } finally {
-            try (var conn = cosmos.getDataSource().getConnection()) {
-                TTLUtil.unScheduleJob(conn, schemaName, tableName);
-                TableUtil.dropTableIfExists(conn, schemaName, tableName);
-            }
-        }
-    }
 }

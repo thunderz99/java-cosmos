@@ -33,11 +33,13 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static io.github.thunderz99.cosmos.condition.SubConditionType.AND;
 import static io.github.thunderz99.cosmos.condition.SubConditionType.OR;
+import static io.github.thunderz99.cosmos.impl.postgres.util.TableUtilTest.SINGLE_TASK_EXECUTOR;
 import static org.assertj.core.api.Assertions.*;
 import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
 
@@ -3991,6 +3993,108 @@ public class PostgresDatabaseImplTest {
         } finally {
             try(var conn = db.dataSource.getConnection()){
                 TTLUtil.unScheduleJob(conn, host, partition);
+            }
+        }
+    }
+
+    @Test
+    void enableTTL_should_work_for_not_exist_table() throws Exception {
+        var partition = "TableNotExist" + RandomStringUtils.randomAlphanumeric(8);
+
+        try {
+            var jobName = db.enableTTL(host, partition);
+            assertThat(jobName).isEqualTo(TTLUtil.getJobName(host, partition));
+
+            var disableResult = db.disableTTL(host, partition);
+            assertThat(disableResult).isEqualTo(true);
+
+        } finally {
+            try(var conn = db.dataSource.getConnection()){
+                TTLUtil.unScheduleJob(conn, host, partition);
+            }
+        }
+    }
+
+
+    /**
+     * test enableTTL when immediately after table created, which is possible in a production environment
+     * @throws Exception
+     */
+    @Test
+    void enableTTL_should_work_when_immediately_after_table_created_multi_thread_multi_connection() throws Exception {
+
+        var tableNamePrefix = "schedule_job_multi_thread_multi_conn_test";
+        int threadCount = 100;
+        List<String> results = new ArrayList<>();
+
+        try {
+            List<Future<String>> futures = new ArrayList<>();
+
+            for (int i = 0; i < threadCount; i++) {
+                final int idx = i;
+                futures.add(SINGLE_TASK_EXECUTOR.submit(() -> {
+                    try {
+                        var tableName = tableNamePrefix + idx;
+                        create_and_test_enableTTL(tableName);
+                        return tableName;
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }));
+            }
+
+            for (int i = 0; i < threadCount; i++) {
+                results.add(futures.get(i).get());
+            }
+
+            assertThat(results).hasSize(threadCount);
+
+        } finally {
+            try (var conn = db.getDataSource().getConnection()) {
+                for (int i = 0; i < threadCount; i++) {
+                    var tableName = tableNamePrefix + i;
+                    TTLUtil.unScheduleJob(conn, host, tableName);
+                    TableUtil.dropTableIfExists(conn, host, tableName);
+                }
+            }
+        }
+    }
+
+    /**
+     * test helper method. create table, schedule job, un-schedule job using different connection
+     * @param tableName
+     * @return
+     * @throws Exception
+     */
+    String create_and_test_enableTTL(String tableName) throws Exception {
+
+        try (var conn = db.getDataSource().getConnection()) {
+            // create table
+            TableUtil.createTableIfNotExists(conn, host, tableName);
+        }
+
+        // schedule job
+        var jobName= db.enableTTL(host, tableName);
+        assertThat(jobName).isNotEmpty();
+
+        try (var conn = db.getDataSource().getConnection()) {
+
+            // check whether the job exists
+            assertThat(TTLUtil.jobExists(conn, host, tableName)).isTrue();
+
+            // un-schedule job
+            var unScheduled = TTLUtil.unScheduleJob(conn, host, tableName);
+            assertThat(unScheduled).isTrue();
+
+            // check whether the job exists
+            assertThat(TTLUtil.jobExists(conn, host, tableName)).isFalse();
+
+            return jobName;
+
+        } finally {
+            try (var conn = db.getDataSource().getConnection()) {
+                TTLUtil.unScheduleJob(conn, host, tableName);
+                TableUtil.dropTableIfExists(conn, host, tableName);
             }
         }
     }

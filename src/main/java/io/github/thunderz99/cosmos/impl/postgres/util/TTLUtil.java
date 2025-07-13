@@ -38,8 +38,10 @@ public class TTLUtil {
 
 
         if(!TableUtil.tableExist(conn, schemaName, tableName)){
-            // SQLState 42P01 is for "relation not exist" in postgres
-            throw new SQLException(String.format("table %s.%s does not exist / relation does not exist", schemaName, tableName), "42P01", 404);
+            // we allow the job to be scheduled even if the table does not exist,
+            // because there is chance that the table will be created later.
+            // or the table is created immediately before the job is scheduled, but tableExist returns false
+            log.warn("table {}.{} does not exist. but the job is still scheduled.", schemaName, tableName);
         }
 
         /**
@@ -75,6 +77,9 @@ public class TTLUtil {
         try (var stmt = conn.prepareStatement(scheduleSQL)) {
             try (var rs = stmt.executeQuery()) {
                 if (rs.next()) {
+                    if (log.isInfoEnabled()) {
+                        log.info("scheduleJob for '{}.{}' successfully. intervalInMinutes: {}", schemaName, tableName, intervalInMinutes);
+                    }
                     return rs.getLong(1);
                 }
             }
@@ -104,8 +109,10 @@ public class TTLUtil {
 
 
         if(!TableUtil.tableExist(conn, schemaName, tableName)){
-            // SQLState 42P01 is for "relation not exist" in postgres
-            throw new SQLException(String.format("table %s.%s does not exist / relation does not exist", schemaName, tableName), "42P01", 404);
+            // we allow the job to be scheduled even if the table does not exist,
+            // because there is chance that the table will be created later.
+            // or the table is created immediately before the job is scheduled, but tableExist returns false
+            log.warn("table {}.{} does not exist. but the job is still scheduled, using cronExpression: {}.", schemaName, tableName, cronExpression);
         }
 
         /**
@@ -141,6 +148,9 @@ public class TTLUtil {
         try (var stmt = conn.prepareStatement(scheduleSQL)) {
             try (var rs = stmt.executeQuery()) {
                 if (rs.next()) {
+                    if (log.isInfoEnabled()) {
+                        log.info("scheduleJob for '{}.{}' successfully. cronExpression: {}", schemaName, tableName, cronExpression);
+                    }
                     return rs.getLong(1);
                 }
             }
@@ -168,6 +178,9 @@ public class TTLUtil {
         try (var stmt = conn.prepareStatement(String.format("SELECT cron.unschedule('%s');", jobName))) {
             try (var rs = stmt.executeQuery()) {
                 if (rs.next()) {
+                    if (log.isInfoEnabled()) {
+                        log.info("unScheduleJob for '{}.{}' successfully.", schemaName, tableName);
+                    }
                     return rs.getBoolean(1);
                 }
             }

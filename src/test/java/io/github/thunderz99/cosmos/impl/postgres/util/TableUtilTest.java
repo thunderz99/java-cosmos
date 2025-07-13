@@ -32,7 +32,7 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class TableUtilTest {
+public class TableUtilTest {
 
     static PostgresImpl cosmos;
 
@@ -1020,7 +1020,10 @@ class TableUtilTest {
     }
 
     static final BasicThreadFactory threadFactory = new BasicThreadFactory.Builder().namingPattern("java-cosmos"+"-%s").build();
-    static final ThreadPoolExecutor SINGLE_TASK_EXECUTOR = (ThreadPoolExecutor) Executors.newFixedThreadPool(100, threadFactory);
+    /**
+     * let other test classes share the executor
+     */
+    public static final ThreadPoolExecutor SINGLE_TASK_EXECUTOR = (ThreadPoolExecutor) Executors.newFixedThreadPool(100, threadFactory);
 
 
     @Test
