@@ -108,6 +108,7 @@ public class RetryUtil {
 
             if (shouldRetry(cosmosException)) {
                 if (i > maxRetries) {
+                    log.warn("RetryUtil exceeded max retries. statusCode:{}, code:{}, retryAfter:{} ms, maxRetries:{}, message:{}", cosmosException.getStatusCode(), cosmosException.getCode(), cosmosException.getRetryAfterInMilliseconds(), maxRetries, cosmosException.getMessage());
                     throw cosmosException;
                 }
                 var wait = cosmosException.getRetryAfterInMilliseconds();
@@ -118,9 +119,10 @@ public class RetryUtil {
                         log.warn("retryAfterInMilliseconds < 0. Will retry by time({} ms)", wait, cosmosException);
                     }
                 }
-                log.warn("RetryUtil 429 occurred. Code:{}, Wait:{} ms, Message:{}", cosmosException.getStatusCode(), wait, cosmosException.getMessage());
+                log.warn("RetryUtil 429 occurred. statusCode:{}, wait:{} ms, message:{}", cosmosException.getStatusCode(), wait, cosmosException.getMessage());
                 Thread.sleep(wait);
             } else {
+                log.warn("Exception should not retry occurred. statusCode:{}, code:{}, retryAfter:{} ms, message:{}", cosmosException.getStatusCode(), cosmosException.getCode(), cosmosException.getRetryAfterInMilliseconds(), cosmosException.getMessage());
                 throw cosmosException;
             }
         }
@@ -171,6 +173,7 @@ public class RetryUtil {
         return executeWithRetry(() -> {
             var response = func.call();
             if (!response.isSuccessStatusCode()) {
+                log.warn("executeBatchWithRetry response not success. statusCode:{}, subStatusCode:{}, message:{}", response.getStatusCode(), response.getSubStatusCode(), response.getErrorMessage());
                 throw new CosmosException(response.getStatusCode(), String.valueOf(response.getSubStatusCode()),
                         response.getErrorMessage(), response.getRetryAfterDuration().toMillis());
             }

@@ -8,7 +8,7 @@ import com.azure.cosmos.models.CosmosBatchResponse;
  * A dto class representing the batch result of CosmosDB.
  *
  * <p>
- *     We use this wrapper object to overcame the problem that we cannot new an original CosmosBatchReponse to test
+ *     We use this wrapper object to overcome the problem that we cannot new an original CosmosBatchReponse to test
  * </p>
  */
 public class CosmosBatchResponseWrapper {
@@ -18,6 +18,10 @@ public class CosmosBatchResponseWrapper {
 
     public CosmosBatchResponseWrapper(CosmosBatchResponse response){
         this.cosmosBatchReponse = response;
+        this.statusCode = response.getStatusCode();
+        this.subStatusCode = response.getSubStatusCode();
+        this.errorMessage = response.getErrorMessage();
+        this.duration = response.getRetryAfterDuration();
     }
 
     public CosmosBatchResponseWrapper(int statusCode, int subStatusCode, String errorMessage){

@@ -71,7 +71,7 @@ class RetryUtilTest {
 
             // assert that the WARN level log is logged
             assertThat(tracker.getEvents()).anyMatch(e -> e.getLevel() == Level.WARN
-                    && e.getFormattedMessage().contains("RetryUtil 429 occurred. Code:429, Wait:10 ms"));
+                    && e.getFormattedMessage().contains("RetryUtil 429 occurred. statusCode:429, wait:10 ms"));
             assertThat(ret).isEqualTo("OK");
         }
 
@@ -107,7 +107,7 @@ class RetryUtilTest {
             );
 
             assertThat(tracker.getEvents()).anyMatch(e -> e.getLevel() == Level.WARN
-                    && e.getFormattedMessage().contains("RetryUtil 429 occurred. Code:408, Wait:5 ms"));
+                    && e.getFormattedMessage().contains("RetryUtil 429 occurred. statusCode:408, wait:5 ms"));
             assertThat(ret).isEqualTo("OK");
 
         }
@@ -120,6 +120,8 @@ class RetryUtilTest {
         // throw exception after 10 retries
         final var i = new AtomicInteger(0);
 
+        var tracker = LogTracker.getInstance(RetryUtil.class);
+
         assertThatThrownBy(() ->
                 RetryUtil.executeWithRetry(() -> {
                     if (i.incrementAndGet() < 12) {
@@ -131,6 +133,9 @@ class RetryUtilTest {
         ).isInstanceOfSatisfying(CosmosException.class, e -> {
             assertThat(e.getStatusCode()).isEqualTo(429);
         });
+
+        assertThat(tracker.getEvents()).anyMatch(e -> e.getLevel() == Level.WARN
+                && e.getFormattedMessage().contains("RetryUtil exceeded max retries. statusCode:429"));
 
     }
 
@@ -158,6 +163,7 @@ class RetryUtilTest {
     void executeBatchWithRetry_should_not_retry_401() throws Exception {
 
         { // should not retry 401 for status in return value
+            var tracker = LogTracker.getInstance(RetryUtil.class);
             assertThatThrownBy(() ->
                     RetryUtil.executeBatchWithRetry(() -> {
                         return new CosmosBatchResponseWrapper(401, 10, "Unauthenticated");
@@ -167,9 +173,16 @@ class RetryUtilTest {
                 assertThat(e.getCode()).isEqualTo("10");
                 assertThat(e.getMessage()).isEqualTo("Unauthenticated");
             });
+            assertThat(tracker.getEvents()).anyMatch(e -> e.getLevel() == Level.WARN
+                    && e.getFormattedMessage().contains("Exception should not retry occurred. statusCode:401"));
+            assertThat(tracker.getEvents()).anyMatch(e -> e.getLevel() == Level.WARN
+                    && e.getFormattedMessage().contains("executeBatchWithRetry response not success. statusCode:401"));
+
         }
 
+
         { // should not retry 401 for CosmosException
+            var tracker = LogTracker.getInstance(RetryUtil.class);
             assertThatThrownBy(() ->
                     RetryUtil.executeBatchWithRetry(() -> {
                         throw new com.azure.cosmos.CosmosException(401, new CosmosError("{}"), Map.of(RETRY_AFTER_IN_MILLISECONDS, "10")) {
@@ -178,7 +191,11 @@ class RetryUtilTest {
             ).isInstanceOfSatisfying(CosmosException.class, (e) -> {
                 assertThat(e.getStatusCode()).isEqualTo(401);
             });
+            assertThat(tracker.getEvents()).anyMatch(e -> e.getLevel() == Level.WARN
+                    && e.getFormattedMessage().contains("Exception should not retry occurred. statusCode:401"));
         }
+
+
     }
 
     @Test
