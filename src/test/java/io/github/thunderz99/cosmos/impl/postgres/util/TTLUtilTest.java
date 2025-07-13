@@ -1,5 +1,6 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
+import io.github.thunderz99.cosmos.impl.postgres.PostgresDatabaseImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImplTest;
 import io.github.thunderz99.cosmos.util.EnvUtil;
@@ -10,7 +11,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Future;
 
+import static io.github.thunderz99.cosmos.impl.postgres.util.TableUtilTest.SINGLE_TASK_EXECUTOR;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -76,24 +81,12 @@ class TTLUtilTest {
             }
 
             {
-                // irregular case:  table not exist
-                // schedule job
-                assertThatThrownBy( () -> TTLUtil.scheduleJob(conn, schemaName, "not_exist_table", 1))
-                        .isInstanceOfSatisfying(SQLException.class, e -> {
-                                    assertThat(e.getMessage()).contains("relation does not exist");
-                                    assertThat(e.getMessage()).contains("%s.%s".formatted(formattedSchemaName, "not_exist_table"));
-                                    assertThat(e.getSQLState()).isEqualTo("42P01");
-                                });
-
-            }
-
-            {
                 // irregular case:  schema not exist
                 // schedule job
                 assertThatThrownBy( () -> TTLUtil.scheduleJob(conn, "not_exist_schema", tableName, 1))
                         .isInstanceOfSatisfying(SQLException.class, e -> {
                             assertThat(e.getMessage()).contains("relation does not exist");
-                            assertThat(e.getMessage()).contains("%s.%s".formatted("not_exist_schema", formattedTableName));
+                            assertThat(e.getMessage()).contains("%s".formatted("not_exist_schema"));
                             assertThat(e.getSQLState()).isEqualTo("42P01");
                         });
 
@@ -157,6 +150,45 @@ class TTLUtilTest {
             try (var conn = cosmos.getDataSource().getConnection()) {
                 TTLUtil.unScheduleJob(conn, schemaName, tableName);
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void scheduleJob_should_work_for_not_exist_table() throws Exception {
+        var tableName = "not_exist_table_" + RandomStringUtils.randomAlphanumeric(4);
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            { // normal case
+                // schedule job
+                var jobId = TTLUtil.scheduleJob(conn, schemaName, tableName, "5 0 * * *");
+                assertThat(jobId).isGreaterThan(0);
+
+                // check whether the job exists
+                assertThat(TTLUtil.jobExists(conn, schemaName, tableName)).isTrue();
+
+                // check that the command(text) is correct
+                var expectedCmd = """                        
+                        DELETE FROM %s.%s
+                        WHERE (data->>'_expireAt')::bigint < extract(epoch from now())::bigint;
+                        """.trim().formatted(schemaName, formattedTableName);
+                var job = TTLUtil.findJobByName(conn, schemaName, tableName);
+                assertThat(job.command).contains(schemaName).contains(tableName);
+                assertThat(job.command.trim()).isEqualTo(expectedCmd);
+                assertThat(job.schedule.trim()).isEqualTo("5 0 * * *");
+
+                // un-schedule job
+                var unScheduled = TTLUtil.unScheduleJob(conn, schemaName, tableName);
+                assertThat(unScheduled).isTrue();
+
+                // check whether the job exists
+                assertThat(TTLUtil.jobExists(conn, schemaName, tableName)).isFalse();
+            }
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TTLUtil.unScheduleJob(conn, schemaName, tableName);
             }
         }
     }
