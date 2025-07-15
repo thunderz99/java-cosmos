@@ -122,7 +122,10 @@ public class RetryUtil {
                 log.warn("RetryUtil 429 occurred. statusCode:{}, wait:{} ms, message:{}", cosmosException.getStatusCode(), wait, cosmosException.getMessage());
                 Thread.sleep(wait);
             } else {
-                log.warn("Exception should not retry occurred. statusCode:{}, code:{}, retryAfter:{} ms, message:{}", cosmosException.getStatusCode(), cosmosException.getCode(), cosmosException.getRetryAfterInMilliseconds(), cosmosException.getMessage());
+                if(cosmosException.getStatusCode() != 404) {
+                    // only warn if not 404, because 404 occurred is normal and too frequent
+                    log.warn("Exception should not retry occurred. statusCode:{}, code:{}, retryAfter:{} ms, message:{}", cosmosException.getStatusCode(), cosmosException.getCode(), cosmosException.getRetryAfterInMilliseconds(), cosmosException.getMessage());
+                }
                 throw cosmosException;
             }
         }
@@ -173,7 +176,10 @@ public class RetryUtil {
         return executeWithRetry(() -> {
             var response = func.call();
             if (!response.isSuccessStatusCode()) {
-                log.warn("executeBatchWithRetry response not success. statusCode:{}, subStatusCode:{}, message:{}", response.getStatusCode(), response.getSubStatusCode(), response.getErrorMessage());
+                if(response.getStatusCode() != 404) {
+                    // only warn if not 404, because 404 occurred is normal and too frequent
+                    log.warn("executeBatchWithRetry response not success. statusCode:{}, subStatusCode:{}, message:{}", response.getStatusCode(), response.getSubStatusCode(), response.getErrorMessage());
+                }
                 throw new CosmosException(response.getStatusCode(), String.valueOf(response.getSubStatusCode()),
                         response.getErrorMessage(), response.getRetryAfterDuration().toMillis());
             }
