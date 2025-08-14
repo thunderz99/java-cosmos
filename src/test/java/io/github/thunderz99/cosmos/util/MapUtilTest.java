@@ -99,6 +99,9 @@ public class MapUtilTest {
             // irregular
             assertThat(MapUtil.toFlatMapWithPeriod(null)).isNull();
             assertThat(MapUtil.toFlatMapWithPeriod(Map.of())).isEmpty();
+
+            // does not support empty key yet. which is a mongodb constraint, which cannot update empty key for a document
+            assertThat(MapUtil.toFlatMapWithPeriod(Map.of("", "empty"))).hasSize(0);
         }
         {
             // primitives
@@ -179,4 +182,25 @@ public class MapUtilTest {
         assertThat(MapUtil.isImmutableMap(Collections.unmodifiableMap(Map.of("a", "b")))).isTrue();
     }
 
+    @Test
+    void containsEmptyKeyDeep_should_work() {
+        // Null map
+        assertThat(MapUtil.containsEmptyKeyDeep(null)).isFalse();
+        // Empty map
+        assertThat(MapUtil.containsEmptyKeyDeep(Map.of())).isFalse();
+        // Map with no empty key
+        assertThat(MapUtil.containsEmptyKeyDeep(Map.of("a", 1, "b", 2))).isFalse();
+        // Map with empty key at top level
+        assertThat(MapUtil.containsEmptyKeyDeep(Map.of("", 1, "b", 2))).isTrue();
+        // Map with empty key at nested level
+        Map<String, Object> nested = new HashMap<>();
+        nested.put("", 42);
+        Map<String, Object> map = new HashMap<>();
+        map.put("x", nested);
+        assertThat(MapUtil.containsEmptyKeyDeep(map)).isTrue();
+        // Map with null key
+        Map<String, Object> nullKeyMap = new HashMap<>();
+        nullKeyMap.put(null, 123);
+        assertThat(MapUtil.containsEmptyKeyDeep(nullKeyMap)).isTrue();
+    }
 }

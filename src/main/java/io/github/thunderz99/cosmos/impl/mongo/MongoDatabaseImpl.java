@@ -381,58 +381,101 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         checkValidId(id);
 
+        // 1) materialize patch as Map (mutable)
         var patchData = JsonUtil.toMap(data);
 
         addTimestamp(patchData);
-
-        // add _expireAt if ttl is set
         addExpireAt4Mongo(patchData);
 
-        var etag = patchData.getOrDefault(ETAG, "").toString();
-        // add etag for optimistic lock if enabled
-        addEtag4Mongo(patchData);
+        var incomingEtag = patchData.getOrDefault(ETAG, "").toString();
+        addEtag4Mongo(patchData); // generate the NEW etag to be stored after update
 
-        // Remove partition key from patchData, because it is not needed for a patch action.
+        // partition key is not part of the patch
         patchData.remove(Cosmos.getDefaultPartitionKey());
 
-        // flatten the map to "address.country.street" format to be used in mongo update method.
-        var flatMap = MapUtil.toFlatMapWithPeriod(patchData);
-
-        var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
+        // 2) decide path: fast $set OR safe replace if any empty keys exist
+        boolean hasEmptyKey = MapUtil.containsEmptyKeyDeep(patchData);
 
         var container = this.client.getDatabase(coll).getCollection(partition);
-
         Document document = null;
 
-        if (option.checkETag && StringUtils.isNotEmpty(etag)) {
-            // update with etag check. if etag not match, throw 412 Precondition failed Exception
-            document = RetryUtil.executeWithRetry(() -> container.findOneAndUpdate(
-                    Filters.and(
-                            eq("_id", id),
-                            eq(ETAG, etag)
-                    ),
-                    new Document("$set", new Document(flatMap)),
-                    new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER))
-            );
+        if (!hasEmptyKey) {
+            // ---------- fast path: normal $set with flattened keys ----------
+            var flatMap = MapUtil.toFlatMapWithPeriod(patchData);
 
-            if (document == null) {
-                // make sure whether the id not match, or the etag not match
-                var confirmDoc = RetryUtil.executeWithRetry(() -> container.find(eq("_id", id)).first());
+            if (option.checkETag && StringUtils.isNotEmpty(incomingEtag)) {
+                document = RetryUtil.executeWithRetry(() -> container.findOneAndUpdate(
+                        com.mongodb.client.model.Filters.and(
+                                eq("_id", id),
+                                eq(ETAG, incomingEtag)
+                        ),
+                        new Document("$set", new Document(flatMap)),
+                        new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER))
+                );
 
-                if (confirmDoc != null) {
-                    // etag not match, throw 412 pre-condition not met Exception
-                    throw new CosmosException(412, "412 Precondition Failed", "failed to updatePartial because etag not match. coll:%s, partition:%s, id:%s, etag:%s".formatted(coll, partition, id, etag));
+                if (document == null) {
+                    var confirmDoc = RetryUtil.executeWithRetry(() -> container.find(eq("_id", id)).first());
+                    if (confirmDoc != null) {
+                        throw new CosmosException(412, "412 Precondition Failed",
+                                "failed to updatePartial because etag not match. coll:%s, partition:%s, id:%s, etag:%s"
+                                        .formatted(coll, partition, id, incomingEtag));
+                    }
                 }
+            } else {
+                document = RetryUtil.executeWithRetry(() -> container.findOneAndUpdate(
+                        eq("_id", id),
+                        new Document("$set", new Document(flatMap)),
+                        new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER))
+                );
+            }
+        } else {
+            // ---------- safe path: handle empty keys by read–merge–replace ----------
+            // Load current doc
+            var current = RetryUtil.executeWithRetry(() -> container.find(eq("_id", id)).first());
+            if (current == null) {
+                // keep same behavior as before (not found handled later by checkAndGetCosmosDocument)
+                return checkAndGetCosmosDocument(null);
             }
 
-        } else {
-            // a normal update without etag check
-            document = RetryUtil.executeWithRetry(() -> container.findOneAndUpdate(eq("_id", id),
-                    new Document("$set", new Document(flatMap)),
-                    new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER))
-            );
+            // Merge: existing <- patch (deep for maps), preserving fields we don't touch
+            // Make a mutable copy to avoid mutating the original Document instance unexpectedly
+            Map<String, Object> merged = new LinkedHashMap<>(current);
+            // NEVER allow replacing _id
+            merged.put("_id", current.get("_id"));
+
+            merged = MapUtil.merge(merged, patchData);
+
+            var replacement = new Document(merged);
+
+            if (option.checkETag && StringUtils.isNotEmpty(incomingEtag)) {
+                document = RetryUtil.executeWithRetry(() -> container.findOneAndReplace(
+                        com.mongodb.client.model.Filters.and(
+                                eq("_id", id),
+                                eq(ETAG, incomingEtag)
+                        ),
+                        replacement,
+                        new FindOneAndReplaceOptions().returnDocument(ReturnDocument.AFTER))
+                );
+
+                if (document == null) {
+                    var confirmDoc = RetryUtil.executeWithRetry(() -> container.find(eq("_id", id)).first());
+                    if (confirmDoc != null) {
+                        // etag mismatch
+                        throw new CosmosException(412, "412 Precondition Failed",
+                                "failed to updatePartial because etag not match. coll:%s, partition:%s, id:%s, etag:%s"
+                                        .formatted(coll, partition, id, incomingEtag));
+                    }
+                }
+            } else {
+                document = RetryUtil.executeWithRetry(() -> container.findOneAndReplace(
+                        eq("_id", id),
+                        replacement,
+                        new FindOneAndReplaceOptions().returnDocument(ReturnDocument.AFTER))
+                );
+            }
         }
 
+        var documentLink = LinkFormatUtil.getDocumentLink(coll, partition, id);
         log.info("updated Document:{}, id:{}, partition:{}, account:{}", documentLink, id, partition, getAccount());
 
         return checkAndGetCosmosDocument(document);
