@@ -93,6 +93,7 @@ public class MapUtil {
 
             if (StringUtils.isEmpty(key)) {
                 // we do not support empty key at present
+                // this is a mongodb constraint, which cannot update empty key for a document
                 continue;
             }
 
@@ -179,6 +180,25 @@ public class MapUtil {
         }
         var className = map.getClass().getName();
         return className.contains("Immutable") || className.contains("Unmodifiable") || className.contains("SingletonMap");
+    }
+
+    /**
+     * Returns true if map contains any empty key "" at any depth.
+     *
+     * @param map map to check
+     * @return true/false
+     */
+    public static boolean containsEmptyKeyDeep(Map<String, ?> map) {
+        if (map == null) return false;
+        for (var e : map.entrySet()) {
+            var k = e.getKey();
+            if (k == null || k.isEmpty()) return true;
+            var v = e.getValue();
+            if (v instanceof Map<?, ?> sub && containsEmptyKeyDeep((Map<String, ?>) sub)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

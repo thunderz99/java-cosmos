@@ -4,7 +4,7 @@
     <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
     <packaging>jar</packaging>
-    <version>0.8.12</version>
+    <version>0.8.13.RC1</version>
     <name>${project.groupId}:${project.artifactId}$</name>
     <description>A lightweight Azure CosmosDB client for Java</description>
     <url>https://github.com/thunderz99/java-cosmos</url>

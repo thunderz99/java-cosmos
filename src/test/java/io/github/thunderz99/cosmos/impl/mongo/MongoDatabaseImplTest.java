@@ -290,6 +290,24 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void upsert_should_work_for_empty_key() throws Exception {
+        var id1 = "empty_key_01" + UUID.randomUUID();
+
+        // empty key "" should be allowed to save to db
+        var doc1 = Map.of("id", id1, "name", "first01", "", "emptyValue");
+
+        try {
+            var upserted = db.upsert(host, doc1, "Users").toMap();
+            assertThat(upserted.get("id")).isEqualTo(id1);
+            assertThat(upserted.get("name")).isEqualTo("first01");
+            assertThat(upserted.get("")).isEqualTo("emptyValue");
+
+        } finally {
+            db.delete(host, id1, "Users");
+        }
+    }
+
+    @Test
     void get_database_name_should_work() throws Exception {
         assertThat(db.getDatabaseName()).isEqualTo(host);
     }
@@ -445,6 +463,50 @@ class MongoDatabaseImplTest {
             db.delete(host, id, partition);
         }
 
+    }
+
+    @Test
+    void updatePartial_should_work_for_empty_key() throws Exception {
+        var id1 = "empty_key_updatePartial_01" + UUID.randomUUID();
+
+        // empty key "" should be allowed to save to db
+        var doc1 = Map.of("id", id1, "name", "first01", "", "emptyValue", "sheet-2", Map.of("", "emptyValue"));
+
+        try {
+
+            {
+                // case 1, empty key at root level
+                var upserted = db.upsert(host, doc1, "Users").toMap();
+                assertThat(upserted.get("id")).isEqualTo(id1);
+                assertThat(upserted.get("name")).isEqualTo("first01");
+                assertThat(upserted.get("")).isEqualTo("emptyValue");
+
+                // update partial should work for empty key
+                var partialMap = Map.of("name", "Jane", "", "emptyValue2");
+                var patched = db.updatePartial(host, id1, partialMap, "Users").toMap();
+                assertThat(patched).containsEntry("name", "Jane")
+                        .containsEntry("", "emptyValue2")
+                        .containsEntry("id", id1);
+            }
+
+            {
+                // case 2, empty key at nested level
+                var upserted = db.upsert(host, doc1, "Users").toMap();
+                assertThat(upserted.get("id")).isEqualTo(id1);
+                assertThat(upserted.get("name")).isEqualTo("first01");
+                assertThat(upserted.get("")).isEqualTo("emptyValue");
+
+                // update partial should work for empty key
+                var partialMap = Map.of("name", "John", "sheet-2", Map.of("", "emptyValue2"));
+                var patched = db.updatePartial(host, id1, partialMap, "Users").toMap();
+                assertThat(patched).containsEntry("name", "John")
+                        .containsEntry("id", id1);
+                assertThat((Map<String, Object>) patched.get("sheet-2")).containsEntry("", "emptyValue2");
+            }
+
+        } finally {
+            db.delete(host, id1, "Users");
+        }
     }
 
     @Test
