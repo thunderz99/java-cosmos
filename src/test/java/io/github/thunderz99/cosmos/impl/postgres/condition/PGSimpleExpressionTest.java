@@ -119,4 +119,51 @@ class PGSimpleExpressionTest {
             assertThat(PGSimpleExpression.getTypicalValue(null)).isEqualTo("");
         }
     }
+
+    @Test
+    void buildEqualNull_should_work() {
+        var expr = new PGSimpleExpression();
+        
+        {
+            // Test with default operator (empty string) - should generate IS NULL
+            var actual = expr.buildEqualNull("name", "", "data");
+            var expected = " (data->'name' IS NULL)";
+            assertThat(actual).isEqualTo(expected);
+        }
+        
+        {
+            // Test with != operator - should generate IS NOT NULL
+            var actual = expr.buildEqualNull("name", "!=", "data");
+            var expected = " (data->'name' IS NOT NULL)";
+            assertThat(actual).isEqualTo(expected);
+        }
+        
+        {
+            // Test with = operator - should generate IS NULL
+            var actual = expr.buildEqualNull("status", "=", "data");
+            var expected = " (data->'status' IS NULL)";
+            assertThat(actual).isEqualTo(expected);
+        }
+        
+        {
+            // Test with nested field
+            var actual = expr.buildEqualNull("address.city", "", "data");
+            var expected = " (data->'address'->'city' IS NULL)";
+            assertThat(actual).isEqualTo(expected);
+        }
+        
+        {
+            // Test with different alias
+            var actual = expr.buildEqualNull("name", "!=", "j1");
+            var expected = " (j1->'name' IS NOT NULL)";
+            assertThat(actual).isEqualTo(expected);
+        }
+        
+        {
+            // Test with deeply nested field and != operator
+            var actual = expr.buildEqualNull("user.profile.settings.theme", "!=", "s1");
+            var expected = " (s1->'user'->'profile'->'settings'->'theme' IS NOT NULL)";
+            assertThat(actual).isEqualTo(expected);
+        }
+    }
 }

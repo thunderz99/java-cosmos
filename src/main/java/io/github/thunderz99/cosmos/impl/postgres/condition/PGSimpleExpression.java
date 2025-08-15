@@ -115,7 +115,7 @@ public class PGSimpleExpression implements Expression {
 				}
 			}
 
-		} else  if (paramValue == null && Set.of("=", "!=").contains(this.operator)) {
+		} else  if (paramValue == null && Set.of("", "=", "!=").contains(this.operator)) {
             // compares to null value
             // e.g ( c.parentId != null )
             ret.setQueryText(buildEqualNull(this.key, this.operator, selectAlias));
@@ -372,7 +372,7 @@ public class PGSimpleExpression implements Expression {
      */
     String buildEqualNull(String key, String operator, String selectAlias) {
         return String.format(" (%s IS %s)", PGKeyUtil.getFormattedKey4JsonWithAlias(key, selectAlias),
-                "=".equals(operator) ? "NULL" : "NOT NULL");
+                "!=".equals(operator) ? "NOT NULL" : "NULL");
     }
 
     /**
