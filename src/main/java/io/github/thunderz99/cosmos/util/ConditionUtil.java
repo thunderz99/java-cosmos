@@ -4,6 +4,7 @@ import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import com.google.common.collect.Maps;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
 import io.github.thunderz99.cosmos.condition.Condition;
@@ -635,7 +636,10 @@ public class ConditionUtil {
             }
 
             singleKey = (singleKey + " " + operator).trim();
-            subFilters.add(Map.of(singleKey, value));
+            Map<String, Object> map = Maps.newLinkedHashMap();
+            // value maybe null, so we can not use Map.of()
+            map.put(singleKey, value);
+            subFilters.add(map);
         }
 
         return toBsonFilter(Map.of("$OR", subFilters), filterOptions);

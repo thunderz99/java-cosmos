@@ -374,7 +374,7 @@ class CosmosDatabaseImplTest {
 
     @Test
     void update_should_work_for_empty_key() throws Exception {
-        var id1 = "empty_key_update_01" + UUID.randomUUID();
+        var id1 = "empty_key_update_01" + RandomStringUtils.randomAlphanumeric(6);
 
         // empty key "" should be allowed to save to db
         var doc1 = Map.of("id", id1, "name", "first01", "", "emptyValue", "sheet-2", Map.of("", "emptyValue"));
@@ -443,7 +443,7 @@ class CosmosDatabaseImplTest {
 
     @Test
     void upsert_should_work_for_empty_key() throws Exception {
-        var id1 = "empty_key_01" + UUID.randomUUID();
+        var id1 = "empty_key_01" + RandomStringUtils.randomAlphanumeric(6);
 
         // empty key "" should be allowed to save to db
         var doc1 = Map.of("id", id1, "name", "first01", "", "emptyValue");
@@ -728,7 +728,7 @@ class CosmosDatabaseImplTest {
                         .limit(10) //
                         .offset(0);
 
-                var users = db.find(coll, cond, partition).toMap();
+                var users = db.find(host, cond, partition).toMap();
 
                 assertThat(users.size()).isEqualTo(1);
                 assertThat(users.get(0).get("id")).isEqualTo(data2.get("id"));
@@ -741,16 +741,90 @@ class CosmosDatabaseImplTest {
                         .limit(10) //
                         .offset(0);
 
-                var users = db.find(coll, cond, partition).toMap();
+                var users = db.find(host, cond, partition).toMap();
 
                 assertThat(users.size()).isEqualTo(1);
                 assertThat(users.get(0).get("id")).isEqualTo(data1.get("id"));
             }
 
+            // id OR accountId = null, this grammer should be supported
+            {
+                var cond = Condition.filter("id OR accountId", null,
+                            "id STARTSWITH", "comparing_null2"
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var users = db.find(host, cond, partition).toMap();
+
+                assertThat(users).isEmpty();
+            }
+
 
         } finally {
-            db.delete(coll, id1, partition);
-            db.delete(coll, id2, partition);
+            db.delete(host, id1, partition);
+            db.delete(host, id2, partition);
+        }
+    }
+
+    @Test
+    void find_should_work_comparing_decimal_to_string() throws Exception {
+
+        var partition = "SearchViews";
+        var id1 = "comparing_decimal" + RandomStringUtils.randomAlphanumeric(6);
+        var id2 = "comparing_decimal" + RandomStringUtils.randomAlphanumeric(6);
+
+        try {
+
+            var data1 = Map.of("id", id1, "decimalValue", 1);
+            var data2 = Map.of("id", id2, "decimalValue", 2.5);
+
+            db.upsert(host, data1, partition);
+            db.upsert(host, data2, partition);
+
+            // test >= 0
+            {
+                var cond = Condition.filter("decimalValue >=", 0,
+                                "id STARTSWITH", "comparing_decimal"
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var docs = db.find(host, cond, partition).toMap();
+
+                assertThat(docs.size()).isEqualTo(2);
+            }
+
+
+            // test <= ""
+            {
+                var cond = Condition.filter("decimalValue <=", "",
+                                "id STARTSWITH", "comparing_decimal"
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var docs = db.find(host, cond, partition).toMap();
+
+                assertThat(docs).isEmpty();
+            }
+
+            // test >= ""
+            {
+                var cond = Condition.filter("decimalValue >=", "",
+                                "id STARTSWITH", "comparing_decimal"
+                        ).sort("id", "ASC") //
+                        .limit(10) //
+                        .offset(0);
+
+                var docs = db.find(host, cond, partition).toMap();
+
+                assertThat(docs).isEmpty();
+            }
+
+        } finally {
+            db.delete(host, id1, partition);
+            db.delete(host, id2, partition);
         }
     }
 
@@ -2879,7 +2953,7 @@ class CosmosDatabaseImplTest {
 
     @Test
     void updatePartial_should_work_for_empty_key() throws Exception {
-        var id1 = "empty_key_updatePartial_01" + UUID.randomUUID();
+        var id1 = "empty_key_updatePartial_01" + RandomStringUtils.randomAlphanumeric(6);
 
         // empty key "" should be allowed to save to db
         var doc1 = Map.of("id", id1, "name", "first01", "", "emptyValue", "sheet-2", Map.of("", "emptyValue"));
