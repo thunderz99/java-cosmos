@@ -52,8 +52,8 @@ public class AggregateUtil {
         for (var functionPart : functionParts) {
             var function = extractFunctionAndAlias(functionPart).getLeft();
 
-            if (StringUtils.startsWithIgnoreCase(function, "COUNT(")) {
-                //count do not need a field "COUNT(1)"
+            if (StringUtils.startsWithIgnoreCase(function, "COUNT(1)") || StringUtils.startsWithIgnoreCase(function, "COUNT(*)")) {
+                //count do not need a field for "COUNT(1)" or "COUNT(*)"
                 continue;
             }
 
@@ -120,8 +120,20 @@ public class AggregateUtil {
             var function = functionAndAlias.getLeft();
             var alias = functionAndAlias.getRight();
 
-            if (StringUtils.startsWithIgnoreCase(function, "COUNT(")) {
+            if (StringUtils.startsWithIgnoreCase(function, "COUNT(1)") || StringUtils.startsWithIgnoreCase(function, "COUNT(*)")) {
+                // COUNT(1) is the same as COUNT(*)
                 accumulators.add(Accumulators.sum(alias, 1));
+            } else if (StringUtils.startsWithIgnoreCase(function, "COUNT(")) {
+                // COUNT(field), if field not exist, accumulate as 0
+                var field = extractFieldFromFunction(function);
+
+                var dotFieldName = FieldNameUtil.convertToDotFieldName(field);
+                var fieldInPipeline = convertFieldNameIncludingDot(dotFieldName);
+
+                var cond = new Document("$cond",
+                        new Document("if", new Document("$ifNull", List.of("$" + fieldInPipeline, false))).append("then", 1).append("else", 0));
+
+                accumulators.add(Accumulators.sum(alias, cond));
             } else if (StringUtils.startsWithIgnoreCase(function, "SUM(ARRAY_LENGTH(")) {
 
                 var field = extractFieldFromFunction(function);
