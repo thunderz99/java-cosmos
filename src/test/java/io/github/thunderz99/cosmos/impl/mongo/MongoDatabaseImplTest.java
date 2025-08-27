@@ -1967,6 +1967,26 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void aggregate_should_work_for_non_existing_field() throws Exception {
+
+        // test (c.nonExistingField)
+        {
+            var aggregate = Aggregate.function("COUNT(c.nonExistingField) as facetCount").groupBy("id");
+
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter(), "Families").toMap();
+
+            // we can get the result of non-existing field
+            assertThat(result).hasSize(2);
+
+            // but the count should be 0
+            assertThat(result.get(0).get("facetCount")).isEqualTo(0);
+            assertThat(result.get(1).get("facetCount")).isEqualTo(0);
+
+        }
+    }
+
+    @Test
     void find_should_work_when_reading_double_type() throws Exception {
 
         var id = "find_should_work_when_reading_double_type";
