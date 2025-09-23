@@ -29,6 +29,8 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -4262,6 +4264,30 @@ public class PostgresDatabaseImplTest {
             }
         }
     }
+
+    @Test
+    void stacktrace_should_be_correct_shown_in_exception() throws Exception {
+
+        assertThatThrownBy( () -> {
+            // a wrong query which will throw a db exception
+            db.find(host, Condition.filter("$EXPRESSION exp1", "c[\"age\"] < ARRAY_LENGTH(c.$skills) * 10"), "UsersNotFound");
+        }).isInstanceOfSatisfying(Exception.class, e -> {
+
+            // convert stack trace to String
+            var sw = new StringWriter();
+            e.printStackTrace(new PrintWriter(sw));
+            var stackTrace = sw.toString();
+
+            // assert that the stacktrace should be correct and meaningful
+            // contain the current method name
+            assertThat(stackTrace).contains("stacktrace_should_be_correct_shown_in_exception");
+
+            // contain the class name
+            assertThat(stackTrace).contains(this.getClass().getSimpleName());
+        });
+
+    }
+
 
     /**
      * test helper method. create table, schedule job, un-schedule job using different connection
