@@ -104,6 +104,13 @@ public class RetryUtil {
             } catch (CosmosException ce) {
                 // deal with java-cosmos's CosmosException
                 cosmosException = ce;
+            } catch (Exception e) {
+                if (e.getCause() instanceof com.azure.cosmos.CosmosException) {
+                    cosmosException = new CosmosException((com.azure.cosmos.CosmosException) e.getCause());
+                } else {
+                    log.warn("RetryUtil: unexpected exception occurred", e);
+                    throw e;
+                }
             }
 
             if (shouldRetry(cosmosException)) {

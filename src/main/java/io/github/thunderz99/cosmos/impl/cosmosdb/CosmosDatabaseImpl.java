@@ -610,9 +610,12 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
     public CosmosDocumentList find(String coll, Condition cond, String partition) throws Exception {
         var collectionLink = LinkFormatUtil.getCollectionLink(db, coll);
 
-        var iterator = _findToIterator(coll, cond, partition);
-
-        var maps = iterator.stream().collect(Collectors.toList());
+        // we should wrap the retry here, because the iterator method is a lazy method.
+        // the real db access and db exception will be thrown when we call the iterator method.
+        var maps = RetryUtil.executeWithRetry(() -> {
+            var iterator = _findToIterator(coll, cond, partition);
+            return iterator.stream().collect(Collectors.toList());
+        });
 
         if(log.isInfoEnabled()){
             log.info("find Document:{}, cond:{}, partition:{}, account:{}", collectionLink, cond, cond.crossPartition ? "crossPartition" : partition, getAccount());
@@ -690,8 +693,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
             ret = new CosmosDocumentIteratorImpl(iterableAndKeyMap.iterable, iterableAndKeyMap.keyMap);
         } else {
             // process query without join
-            var docs = RetryUtil.executeWithRetry(() ->
-                    container.queryItems(querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass()));
+            var docs = container.queryItems(querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass());
             ret = new CosmosDocumentIteratorImpl(docs);
         }
 

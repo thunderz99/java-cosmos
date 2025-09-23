@@ -1,5 +1,7 @@
 package io.github.thunderz99.cosmos.impl.cosmosdb;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -3738,6 +3740,28 @@ class CosmosDatabaseImplTest {
         }
     }
 
+    @Test
+    void stacktrace_should_be_correct_shown_in_exception() throws Exception {
+
+        assertThatThrownBy( () -> {
+            // a wrong query which will throw a db exception
+            db.find(host, Condition.filter("$EXPRESSION exp1", "c[\"age\"] < ARRAY_LENGTH(c.$skills) * 10"), "UsersNotFound");
+        }).isInstanceOfSatisfying(Exception.class, e -> {
+
+            // convert stack trace to String
+            var sw = new StringWriter();
+            e.printStackTrace(new PrintWriter(sw));
+            var stackTrace = sw.toString();
+
+            // assert that the stacktrace should be correct and meaningful
+            // contain the current method name
+            assertThat(stackTrace).contains("stacktrace_should_be_correct_shown_in_exception");
+
+            // contain the class name
+            assertThat(stackTrace).contains(this.getClass().getSimpleName());
+        });
+
+    }
 
 
     static void initFamiliesData() throws Exception {
