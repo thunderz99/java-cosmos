@@ -16,6 +16,7 @@ import io.github.thunderz99.cosmos.util.FieldNameUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -363,7 +364,26 @@ public class PGConditionUtil {
                 // for array_length
                 // array_length not work in postgres JSONB column, use jsonb_array_length instead
                 if(StringUtils.containsIgnoreCase(function, "array_length(")){
-                    function = StringUtils.replaceIgnoreCase(function, "array_length(", "jsonb_array_length(");
+
+                    // replace array_length with jsonb_array_length
+                    // and add a CASE statement to handle non-array values for robustness ( e.g. empty string "")
+
+                    // remove formattedKey from function
+                    function = Strings.CS.replace(function, formattedKey, "");
+
+                    // replace array_length with a complicated CASE jsonb_array_length
+                    var replacementSQL = """
+                            jsonb_array_length(
+                              CASE
+                                WHEN jsonb_typeof(%s) = 'array'
+                                  THEN %s
+                                ELSE '[]'::jsonb
+                              END
+                            """;
+
+                    replacementSQL = String.format(replacementSQL, formattedKey, formattedKey);
+
+                    function = StringUtils.replaceIgnoreCase(function, "array_length(", replacementSQL);
                 }
 
                 select.add("%s AS \"%s\"".formatted(function, alias));
