@@ -12,6 +12,7 @@ import com.mongodb.client.model.BsonField;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -214,7 +215,7 @@ public class AggregateUtil {
 
         if (StringUtils.startsWithIgnoreCase(function, "SUM(ARRAY_LENGTH(")) {
             // this a special case at present. TODO: generalize this
-            return function.substring(function.indexOf("ARRAY_LENGTH(") + 13, function.lastIndexOf("))")).trim();
+            return function.substring(Strings.CI.indexOf(function, "ARRAY_LENGTH(") + 13, function.lastIndexOf("))")).trim();
         }
 
         var matcher = FUNCTION_PATTERN.matcher(function);

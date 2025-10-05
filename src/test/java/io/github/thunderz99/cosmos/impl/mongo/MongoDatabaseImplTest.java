@@ -1937,6 +1937,34 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    @Disabled // not supported yet
+    void aggregate_should_work_with_array_length_for_empty_str_field() throws Exception {
+
+        // prepare
+        var testUser = new FullNameUser("id_find_filter_empty_str_field", "Jane", "Doe", 60,  "test_empty_str_field@example.com", "2020-12-01", "");
+        var testMap = JsonUtil.toMap(testUser);
+
+        // irregular data: set skills to empty string
+        testMap.put("skills", "");
+
+
+        // test SUM(ARRAY_LENGTH(c.skills))
+        try {
+            db.upsert(host, testMap, "Users");
+
+            var aggregate = Aggregate.function("SUM(ARRAY_LENGTH(c.skills)) as skillLength");
+
+            // test find
+            var result = db.aggregate(host, aggregate,
+                    Condition.filter("id LIKE","id_find_filter%"), "Users").toMap();
+            assertThat(result).hasSize(1);
+
+        } finally {
+            db.delete(host, testUser.id, "Users");
+        }
+    }
+
+    @Test
     void aggregate_should_work_with_nested_functions() throws Exception {
 
         // test ARRAY_LENGTH(c.area.city.street.rooms)
