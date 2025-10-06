@@ -354,16 +354,16 @@ public class PGConditionUtil {
                 }
 
 
-                if(StringUtils.equalsAny(field, "1", "*")){
+                if(Strings.CS.equalsAny(field, "1", "*")){
                     // do nothing, the COUNT(1) should not be changed
                 } else {
                     // SUM(rooms.area) -> SUM(data->'room'->>'area')
-                    function = StringUtils.replace(function, field, formattedKey);
+                    function = Strings.CS.replace(function, field, formattedKey);
                 }
 
                 // for array_length
                 // array_length not work in postgres JSONB column, use jsonb_array_length instead
-                if(StringUtils.containsIgnoreCase(function, "array_length(")){
+                if(Strings.CI.contains(function, "array_length(")){
 
                     // replace array_length with jsonb_array_length
                     // and add a CASE statement to handle non-array values for robustness ( e.g. empty string "")
@@ -383,7 +383,7 @@ public class PGConditionUtil {
 
                     replacementSQL = String.format(replacementSQL, formattedKey, formattedKey);
 
-                    function = StringUtils.replaceIgnoreCase(function, "array_length(", replacementSQL);
+                    function = Strings.CI.replace(function, "array_length(", replacementSQL);
                 }
 
                 select.add("%s AS \"%s\"".formatted(function, alias));

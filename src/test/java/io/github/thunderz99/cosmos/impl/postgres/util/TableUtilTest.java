@@ -8,6 +8,8 @@ import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImplTest;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresRecord;
+import io.github.thunderz99.cosmos.impl.postgres.dto.PGIndexField;
+import io.github.thunderz99.cosmos.impl.postgres.dto.PGFieldType;
 import io.github.thunderz99.cosmos.impl.postgres.dto.IndexOption;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
@@ -86,9 +89,9 @@ public class TableUtilTest {
             }
 
             {
-                //drop table
+                // drop table
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
-                //table does not exist
+                // table does not exist
                 var tableExist = TableUtil.tableExist(conn, schemaName, tableName);
 
                 assertThat(tableExist).isFalse();
@@ -102,10 +105,8 @@ public class TableUtilTest {
 
     }
 
-
     @Test
     void createTableIfNotExist_should_work_4_uuid() throws Exception {
-
 
         var tableName = "create_table_if_not_exist_" + UUID.randomUUID().toString();
 
@@ -136,9 +137,9 @@ public class TableUtilTest {
             }
 
             {
-                //drop table
+                // drop table
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
-                //table does not exist
+                // table does not exist
                 var tableExist = TableUtil.tableExist(conn, schemaName, tableName);
 
                 assertThat(tableExist).isFalse();
@@ -152,7 +153,6 @@ public class TableUtilTest {
 
     }
 
-
     @Test
     void crud_should_work() throws Exception {
 
@@ -161,10 +161,10 @@ public class TableUtilTest {
         try (var conn = cosmos.getDataSource().getConnection()) {
             {
 
-                //create table
+                // create table
                 TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
-                //insert record
+                // insert record
                 var id = RandomStringUtils.randomAlphanumeric(6);
                 Map<String, Object> data = Maps.newHashMap(Map.of("id", id, "name", "John Doe"));
                 var inserted = TableUtil.insertRecord(conn, schemaName, tableName, new PostgresRecord(id, data));
@@ -173,15 +173,14 @@ public class TableUtilTest {
                 assertThat(inserted.data.get("id")).isEqualTo(id);
                 assertThat(inserted.data.get("name")).isEqualTo("John Doe");
 
-
-                //read record
+                // read record
                 var read = TableUtil.readRecord(conn, schemaName, tableName, id);
                 assertThat(read).isNotNull();
                 assertThat(read.id).isEqualTo(id);
                 assertThat(read.data.get("id")).isEqualTo(id);
                 assertThat(read.data.get("name")).isEqualTo("John Doe");
 
-                //update record
+                // update record
                 Map<String, Object> updatedData = Maps.newHashMap(Map.of("name", "Jane Doe"));
                 var updated = TableUtil.updateRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData));
                 assertThat(updated).isNotNull();
@@ -189,22 +188,20 @@ public class TableUtilTest {
                 assertThat(updated.data.get("id")).isEqualTo(id);
                 assertThat(updated.data.get("name")).isEqualTo("Jane Doe");
 
-
-                //read record
+                // read record
                 read = TableUtil.readRecord(conn, schemaName, tableName, id);
                 assertThat(read).isNotNull();
                 assertThat(read.id).isEqualTo(id);
                 assertThat(read.data.get("id")).isEqualTo(id);
                 assertThat(read.data.get("name")).isEqualTo("Jane Doe");
 
-                //delete record
+                // delete record
                 TableUtil.deleteRecord(conn, schemaName, tableName, id);
 
-                //read record
+                // read record
                 read = TableUtil.readRecord(conn, schemaName, tableName, id);
                 assertThat(read).isNull();
             }
-
 
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
@@ -217,16 +214,16 @@ public class TableUtilTest {
     @Test
     void crud_should_work_4_long_table_names() throws Exception {
 
-        //long table name (> 63 chars)
+        // long table name (> 63 chars)
         var tableName = "crud_test_" + RandomStringUtils.randomAlphanumeric(64);
 
         try (var conn = cosmos.getDataSource().getConnection()) {
             {
 
-                //create table
+                // create table
                 TableUtil.createTableIfNotExists(conn, schemaName, tableName);
 
-                //insert record
+                // insert record
                 var id = RandomStringUtils.randomAlphanumeric(6);
                 Map<String, Object> data = Maps.newHashMap(Map.of("id", id, "name", "John Doe"));
                 var inserted = TableUtil.insertRecord(conn, schemaName, tableName, new PostgresRecord(id, data));
@@ -235,15 +232,14 @@ public class TableUtilTest {
                 assertThat(inserted.data.get("id")).isEqualTo(id);
                 assertThat(inserted.data.get("name")).isEqualTo("John Doe");
 
-
-                //read record
+                // read record
                 var read = TableUtil.readRecord(conn, schemaName, tableName, id);
                 assertThat(read).isNotNull();
                 assertThat(read.id).isEqualTo(id);
                 assertThat(read.data.get("id")).isEqualTo(id);
                 assertThat(read.data.get("name")).isEqualTo("John Doe");
 
-                //update record
+                // update record
                 Map<String, Object> updatedData = Maps.newHashMap(Map.of("name", "Jane Doe"));
                 var updated = TableUtil.updateRecord(conn, schemaName, tableName, new PostgresRecord(id, updatedData));
                 assertThat(updated).isNotNull();
@@ -251,22 +247,20 @@ public class TableUtilTest {
                 assertThat(updated.data.get("id")).isEqualTo(id);
                 assertThat(updated.data.get("name")).isEqualTo("Jane Doe");
 
-
-                //read record
+                // read record
                 read = TableUtil.readRecord(conn, schemaName, tableName, id);
                 assertThat(read).isNotNull();
                 assertThat(read.id).isEqualTo(id);
                 assertThat(read.data.get("id")).isEqualTo(id);
                 assertThat(read.data.get("name")).isEqualTo("Jane Doe");
 
-                //delete record
+                // delete record
                 TableUtil.deleteRecord(conn, schemaName, tableName, id);
 
-                //read record
+                // read record
                 read = TableUtil.readRecord(conn, schemaName, tableName, id);
                 assertThat(read).isNull();
             }
-
 
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
@@ -275,7 +269,6 @@ public class TableUtilTest {
         }
 
     }
-
 
     @Test
     void upsert_should_work() throws Exception {
@@ -325,7 +318,6 @@ public class TableUtilTest {
                             .hasMessageContaining("record.id should be non-empty")
                     ;
                 }
-
                 {
                     // missing data
                     assertThatThrownBy(() -> TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, null)))
@@ -339,7 +331,7 @@ public class TableUtilTest {
                     var upserted = TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, Maps.newHashMap()));
                     assertThat(upserted.id).isEqualTo(id);
 
-                    // even if data is empty, at lease the "id" field will be added to the data map
+                    // even if data is empty, at least the "id" field will be added to the data map
                     assertThat(upserted.data).hasSize(1).containsKey("id");
                 }
             }
@@ -351,7 +343,6 @@ public class TableUtilTest {
         }
 
     }
-
 
     @Test
     void updatePartial_should_work() throws Exception {
@@ -406,7 +397,6 @@ public class TableUtilTest {
                             .hasMessage("data should not be null");
                 }
 
-
                 {
                     // with option.checkEtag = true, and with normal etag
                     var record = TableUtil.readRecord(conn, schemaName, tableName, id);
@@ -456,9 +446,7 @@ public class TableUtilTest {
                             });
                 }
 
-
             }
-
 
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
@@ -466,7 +454,6 @@ public class TableUtilTest {
             }
         }
     }
-
 
     @Test
     void patchRecord_should_work() throws Exception {
@@ -564,7 +551,6 @@ public class TableUtilTest {
         }
     }
 
-
     @Test
     void batchDeleteRecords_should_work() throws Exception {
         var tableName = "batchDeleteRecords_test_" + RandomStringUtils.randomAlphanumeric(6);
@@ -618,7 +604,6 @@ public class TableUtilTest {
             assertThat(TableUtil.schemaExists(conn, "not_exist_schema")).isFalse();
         }
     }
-
 
     @Test
     void batchUpsertRecords_should_work() throws Exception {
@@ -802,14 +787,12 @@ public class TableUtilTest {
                         .hasMessage("querySpec.queryText should be non-blank");
             }
 
-
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
             }
         }
     }
-
 
     @Test
     void getIndexName_should_work() {
@@ -823,10 +806,6 @@ public class TableUtilTest {
             assertThat(TableUtil.getIndexName("table1", "contents.77993598-a9d2-4862-ae77-73005d274697.v--alue")).isEqualTo("idx_table1_contents_77993598_a9d_34a61b2575d6dae1___alue_1").hasSizeLessThan(64);
             assertThat(TableUtil.getIndexName("mastersheets_standardremunerationmonthlyamountgrademaster", "_uniqueKey1")).isEqualTo("\"idx_mastersheets_standardremuner_c602b16a8373b1aa_ueKey1_1\"").hasSizeLessThan(64);
             assertThat(TableUtil.getIndexName("mastersheets_standardremunerationmonthlyamountgrademaster_recycle", "_uniqueKey1")).isEqualTo("\"idx_mastersheets_standardremuner_e93ec18d49c213d8_ueKey1_1\"").hasSizeLessThan(64);
-
-
-
-
         }
 
         {
@@ -843,8 +822,8 @@ public class TableUtilTest {
         }
     }
 
-
     @Test
+    @SuppressWarnings("removal")
     void createIndexIfNotExists_should_work() throws Exception {
 
         var tableName = "table1" + RandomStringUtils.randomAlphanumeric(3).toLowerCase();
@@ -881,6 +860,7 @@ public class TableUtilTest {
     }
 
     @Test
+    @SuppressWarnings("removal")
     void createIndexIfNotExists_should_work_for_unique() throws Exception {
 
         var tableName = "table1" + RandomStringUtils.randomAlphanumeric(3).toLowerCase();
@@ -931,6 +911,7 @@ public class TableUtilTest {
     }
 
     @Test
+    @SuppressWarnings("removal")
     void createIndexIfNotExists_should_work_for_expireAt() throws Exception {
 
         var tableName = "table1" + RandomStringUtils.randomAlphanumeric(3).toLowerCase();
@@ -950,7 +931,6 @@ public class TableUtilTest {
                 var createdIndexName = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName,
                         IndexOption.unique(false).fieldType("bigint"));
                 assertThat(createdIndexName).isEqualTo(formattedSchemaName + "." + formattedIndexName);
-
 
                 var indexNameWithoutQuotes = TableUtil.removeQuotes(formattedIndexName);
                 var queryIndexSQL = "SELECT indexdef FROM pg_indexes WHERE indexname = '%s'".formatted(indexNameWithoutQuotes);
@@ -1019,12 +999,11 @@ public class TableUtilTest {
         }
     }
 
-    static final BasicThreadFactory threadFactory = new BasicThreadFactory.Builder().namingPattern("java-cosmos"+"-%s").build();
+    static final BasicThreadFactory threadFactory = new BasicThreadFactory.Builder().namingPattern("java-cosmos" + "-%s").build();
     /**
      * let other test classes share the executor
      */
     public static final ThreadPoolExecutor SINGLE_TASK_EXECUTOR = (ThreadPoolExecutor) Executors.newFixedThreadPool(100, threadFactory);
-
 
     @Test
     void createTableIfNotExist_should_work_in_multi_thread() throws Exception {
@@ -1067,8 +1046,8 @@ public class TableUtilTest {
 
     }
 
-
     @Test
+    @SuppressWarnings("removal")
     void createIndexIfNotExist_should_work_in_multi_thread() throws Exception {
 
         var tableName = "table2_multi_thread_test";
@@ -1077,7 +1056,6 @@ public class TableUtilTest {
         try(var conn = cosmos.getDataSource().getConnection()) {
             TableUtil.createTableIfNotExists(conn, schemaName, tableName);
         }
-
 
         try {
             List<Future<String>> futures = new ArrayList<>();
@@ -1116,4 +1094,282 @@ public class TableUtilTest {
 
     }
 
+    @Test
+    void createIndexIfNotExistRawSQL_should_work() throws Exception {
+
+        var tableName = "create_index_raw_sql_test_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+            // 1. Test simple index creation
+            {
+                var indexName = "idx_raw_email_1";
+                var formattedIndexName = TableUtil.checkAndNormalizeValidEntityName(indexName);
+                var rawSQL = String.format("CREATE INDEX %s ON %s.%s ((data->>'email'))", formattedIndexName, formattedSchemaName, formattedTableName);
+
+                // Index should not exist initially
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, indexName)).isFalse();
+
+                // Create index
+                var created = TableUtil.createIndexIfNotExistRawSQL(conn, schemaName, rawSQL);
+                assertThat(created).isEqualTo(formattedSchemaName + "." + formattedIndexName);
+
+                // Verify index now exists
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, indexName)).isTrue();
+
+                // Create again, should be no-op
+                var createdAgain = TableUtil.createIndexIfNotExistRawSQL(conn, schemaName, rawSQL);
+                assertThat(createdAgain).isEmpty();
+            }
+
+            // 2. Test UNIQUE index creation
+            {
+                var uniqueIndexName = "idx_raw_unique_username_1";
+                var formattedUniqueIndexName = TableUtil.checkAndNormalizeValidEntityName(uniqueIndexName);
+                var rawUniqueSQL = String.format("CREATE UNIQUE INDEX %s ON %s.%s ((data->>'username'))", formattedUniqueIndexName, formattedSchemaName, formattedTableName);
+
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, uniqueIndexName)).isFalse();
+
+                var created = TableUtil.createIndexIfNotExistRawSQL(conn, schemaName, rawUniqueSQL);
+                assertThat(created).isEqualTo(formattedSchemaName + "." + formattedUniqueIndexName);
+
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, uniqueIndexName)).isTrue();
+            }
+
+            // 3. Test invalid SQL (malformed)
+            {
+                var malformedSQL = "CREATE TABLE my_table (id INT)"; // Not a CREATE INDEX statement
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExistRawSQL(conn, schemaName, malformedSQL))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("Failed to parse index name from raw SQL");
+            }
+
+            // 4. Test invalid input (null/blank SQL)
+            {
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExistRawSQL(conn, schemaName, null))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("rawSQL should be non-blank");
+
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExistRawSQL(conn, schemaName, "  "))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("rawSQL should be non-blank");
+            }
+
+            // 5. Test index name too long
+            {
+                var longIndexName = RandomStringUtils.randomAlphanumeric(64);
+                var rawSQL = String.format("CREATE INDEX %s ON %s.%s ((data->>'long_name'))", longIndexName, formattedSchemaName, formattedTableName);
+
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExistRawSQL(conn, schemaName, rawSQL))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("indexName length must be less than 63");
+            }
+
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void createIndexIfNotExist4SingleField_should_work() throws Exception {
+        var tableName = "create_index_single_field_test_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+        var fieldName = "age";
+        var field = new PGIndexField(fieldName, PGFieldType.INTEGER);
+        var indexName = TableUtil.getIndexName(tableName, fieldName);
+        var formattedIndexName = TableUtil.checkAndNormalizeValidEntityName(indexName);
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            // Create test table using TableUtil
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+            // 1. Test basic index creation
+            {
+                // Verify index doesn't exist yet
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, indexName)).isFalse();
+
+                // Create index
+                var created = TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName, field, new IndexOption());
+                assertThat(created).isEqualTo(formattedSchemaName + "." + formattedIndexName);
+
+                // Verify index now exists
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, indexName)).isTrue();
+
+                // Create again, should be no-op
+                var createdAgain = TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName, field, new IndexOption());
+                assertThat(createdAgain).isEmpty();
+            }
+
+            // 2. Test unique index
+            {
+                var uniqueField = new PGIndexField("email", PGFieldType.TEXT);
+                var uniqueIndexName = TableUtil.getIndexName(tableName, uniqueField.fieldName);
+                
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, uniqueIndexName)).isFalse();
+
+                var created = TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName, uniqueField, IndexOption.unique(true));
+                assertThat(created).isEqualTo(formattedSchemaName + "." + TableUtil.checkAndNormalizeValidEntityName(uniqueIndexName));
+
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, uniqueIndexName)).isTrue();
+            }
+
+            // 3. Test invalid input (null field)
+            {
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName, null, new IndexOption()))
+                        .isInstanceOf(NullPointerException.class);
+            }
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void createIndexIfNotExist4MultiFields_should_work() throws Exception {
+
+        var tableName = "create_index_multi_field_test_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+            // 1. Test composite index creation with mixed types
+            {
+                var fields = List.of(new PGIndexField("lastName", PGFieldType.TEXT), new PGIndexField("age", PGFieldType.NUMERIC));
+                var joinedFieldNames = fields.stream().map(f -> f.fieldName).collect(Collectors.joining("_"));
+                var indexName = TableUtil.getIndexName(tableName, joinedFieldNames);
+                var formattedIndexName = TableUtil.checkAndNormalizeValidEntityName(indexName);
+
+                // Index should not exist initially
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, indexName)).isFalse();
+
+                // Create index
+                var created = TableUtil.createIndexIfNotExist4MultiFields(conn, schemaName, tableName, fields, new IndexOption());
+                assertThat(created).isEqualTo(formattedSchemaName + "." + formattedIndexName);
+
+                // Verify index now exists
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, indexName)).isTrue();
+
+                // Verify the index definition is correct
+                var indexMap = findIndexes(conn, schemaName, tableName);
+                var indexNameFound = TableUtil.removeQuotes(formattedIndexName);
+                var indexDef = indexMap.get(indexNameFound);
+                assertThat(indexDef).isNotNull().doesNotContain("UNIQUE INDEX");
+                assertThat(indexDef).contains("::text").contains(")::numeric");
+
+
+                // Create again, should be no-op
+                var createdAgain = TableUtil.createIndexIfNotExist4MultiFields(conn, schemaName, tableName, fields, new IndexOption());
+                assertThat(createdAgain).isEmpty();
+            }
+
+            // 2. Test UNIQUE composite index creation
+            {
+                var fields = List.of(new PGIndexField("email"), new PGIndexField("username")); // Default to text
+                var joinedFieldNames = fields.stream().map(f -> f.fieldName).collect(Collectors.joining("_"));
+                var indexName = TableUtil.getIndexName(tableName, joinedFieldNames);
+                var formattedIndexName = TableUtil.checkAndNormalizeValidEntityName(indexName);
+
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, indexName)).isFalse();
+
+                var created = TableUtil.createIndexIfNotExist4MultiFields(conn, schemaName, tableName, fields, IndexOption.unique(true));
+                assertThat(created).isEqualTo(formattedSchemaName + "." + formattedIndexName);
+
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, indexName)).isTrue();
+
+                var indexMap = findIndexes(conn, schemaName, tableName);
+                var indexNameFound = TableUtil.removeQuotes(formattedIndexName);
+                var indexDef = indexMap.get(indexNameFound);
+                assertThat(indexDef).isNotNull().contains("UNIQUE INDEX");
+                assertThat(indexDef).contains("data ->> 'email'::text").contains("data ->> 'username'::text");
+
+            }
+
+            // 3. Test invalid input (empty/null field list)
+            {
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4MultiFields(conn, schemaName, tableName, new ArrayList<>(), new IndexOption()))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("fields cannot be empty");
+
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4MultiFields(conn, schemaName, tableName, null, new IndexOption()))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("fields cannot be empty");
+            }
+
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    /**
+     * Finds all indexes of the specified table.
+     *
+     * @param conn the database connection
+     * @param schemaName the schema name
+     * @param tableName the table name
+     * @return a map of index name to index definition if found, or empty map if not found
+     * @throws SQLException if a database error occurs
+     */
+    static Map<String, String> findIndexes(Connection conn, String schemaName, String tableName) throws SQLException {
+
+        schemaName = TableUtil.checkAndNormalizeValidEntityName(schemaName);
+        tableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+
+        schemaName = TableUtil.removeQuotes(schemaName);
+        tableName = TableUtil.removeQuotes(tableName);
+
+        Map<String, String> ret = Maps.newHashMap();
+        // Query pg_indexes to check for the index existence.
+        var query = "SELECT * FROM pg_indexes WHERE schemaname = ? AND tablename = ?";
+        try (var pstmt = conn.prepareStatement(query)) {
+            pstmt.setString(1, schemaName);
+            pstmt.setString(2, tableName);
+            try (var rs = pstmt.executeQuery()) {
+                while(rs.next()) {
+                    ret.put(rs.getString("indexname"), rs.getString("indexdef"));
+                }
+            }
+        }
+        return ret;
+    }
+
+    @Test
+    void dropIndexIfExists_shouldDropExistingIndex() throws Exception {
+        var tableName = "test_drop_index" + RandomStringUtils.randomAlphanumeric(4).toUpperCase();
+        var fieldName = "test_field";
+        var indexOption = new IndexOption();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+        var formattedIndexName = TableUtil.getIndexName(formattedTableName, fieldName);
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            // Create a table and an index first
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+            TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName, PGIndexField.of(fieldName, PGFieldType.TEXT), indexOption);
+            
+            // Verify index exists
+            assertThat(TableUtil.indexExists(conn, schemaName, tableName, fieldName)).isTrue();
+            assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, formattedIndexName)).isTrue();
+
+            // Drop the index
+            TableUtil.dropIndexIfExists(conn, schemaName, formattedIndexName);
+            
+            // Verify index no longer exists
+            assertThat(TableUtil.indexExists(conn, schemaName, tableName, fieldName)).isFalse();
+            assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, formattedIndexName)).isFalse();
+
+            // Verify dropping non-existent index doesn't throw
+            TableUtil.dropIndexIfExists(conn, schemaName, "non_existent_index");
+            
+        } finally {
+            // Cleanup
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
 }
