@@ -519,6 +519,15 @@ public class Condition {
                     }
                 }
 
+            } else if (entry.getKey().startsWith(SubConditionType.ELEM_MATCH)) {
+                if (CollectionUtils.isNotEmpty(join)
+                        && entry.getValue() instanceof Map<?, ?> mapValue
+                        && !mapValue.isEmpty()) {
+                    var elemMatchExpression = new ElemMatchExpression((Map<String, Object>) entry.getValue(), this);
+                    var spec = elemMatchExpression.toQuerySpec(paramIndex, selectAlias);
+                    subFilterQueryToAdd = spec.getQueryText();
+                    params.addAll(spec.getParameters());
+                }
             } else {
                 // normal "key = value" expression
                 var exp = parse(entry.getKey(), entry.getValue());
@@ -536,7 +545,7 @@ public class Condition {
 				conditionIndex.getAndIncrement();
 			}
 		}
-		var queryText = String.join(" AND", queryTexts);
+        var queryText = String.join(" AND", queryTexts);
 
 		queryText = processNegativeQuery(queryText, this.negative);
 
@@ -578,7 +587,7 @@ public class Condition {
      * Save the conditions of the join part to map.
      * @param originJoinConditionText condition text
      */
-    private void saveOriginJoinCondition(String originJoinConditionText){
+    void saveOriginJoinCondition(String originJoinConditionText){
         for (String joinPart : this.join) {
             if(originJoinConditionText.contains(getFormattedKey(joinPart))){
                 var joinCondTextList= joinCondText.getOrDefault(joinPart,new ArrayList<>());

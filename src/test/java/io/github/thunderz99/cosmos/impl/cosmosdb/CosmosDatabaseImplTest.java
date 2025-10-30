@@ -2287,10 +2287,7 @@ class CosmosDatabaseImplTest {
         }
     }
 
-    /**
-     * TODO, This case is not implemented at present for CosmosDB
-     */
-    @Disabled
+    @Test
     void find_should_work_with_join_using_elem_match() throws Exception {
 
         var id3 = "Adams";
