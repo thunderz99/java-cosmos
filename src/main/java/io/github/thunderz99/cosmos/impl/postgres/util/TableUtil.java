@@ -9,6 +9,8 @@ import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.AggregateRecord;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresRecord;
+import io.github.thunderz99.cosmos.impl.postgres.dto.PGIndexField;
+import io.github.thunderz99.cosmos.impl.postgres.dto.PGFieldType;
 import io.github.thunderz99.cosmos.impl.postgres.dto.IndexOption;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -23,6 +25,9 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Utility class that provides methods to create and check the existence of a table in a postgres database.
@@ -49,7 +54,7 @@ public class TableUtil {
      * when creating index, field type that can be specified.
      * see <a href="https://www.postgresql.org/docs/current/datatype.html">https://www.postgresql.org/docs/current/datatype.html</a>
      */
-    public static final Set<String> SUPPORTED_INDEX_FIELD_TYPE = Set.of("bigint", "integer", "numeric", "float8", "timestamp", "tsquery", "tsvector");
+    public static final Set<String> SUPPORTED_INDEX_FIELD_TYPE = Set.of("bigint", "integer", "numeric", "float8", "timestamp", "text");
 
     /**
      * Checks if a table exists in the specified schema.
@@ -1469,7 +1474,7 @@ public class TableUtil {
      * @param indexName  the index name to drop
      * @throws SQLException if a database access error occurs
      */
-    static void dropIndexIfExists(Connection connection, String schemaName, String indexName) throws SQLException {
+    public static void dropIndexIfExists(Connection connection, String schemaName, String indexName) throws SQLException {
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         indexName = checkAndNormalizeValidEntityName(indexName);
@@ -1543,10 +1548,12 @@ public class TableUtil {
      * @return schema.indexName if created, or "" if index already exists
      * @throws SQLException if a database error occurs
      */
+    @Deprecated(since = "0.8.18", forRemoval = true)
     public static String createIndexIfNotExists(Connection conn, String schemaName, String tableName, String fieldName, IndexOption indexOption) throws SQLException {
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
+
         // fieldName only checked. no need to normalize.
         // because we will need to use the origin fieldName in index creation SQL
         checkValidEntityName(fieldName);
@@ -1622,7 +1629,7 @@ public class TableUtil {
             }
 
             var createIndexSQL = """
-                    CREATE %s INDEX %s
+                    CREATE %s INDEX IF NOT EXISTS %s
                       ON %s.%s ((%s));
                     """
                     .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, jsonPathExpression);
@@ -1630,6 +1637,272 @@ public class TableUtil {
             stmt.execute(createIndexSQL);
             if (log.isInfoEnabled()) {
                 log.info("Index({}) on column '{}' with field '{}' of table '{}.{}' created successfully.", indexName, DATA, fieldName, schemaName, tableName);
+            }
+
+            conn.commit();
+        } catch (SQLException e) {
+            // Roll back the transaction if an error occurs
+            if (conn != null) {
+                conn.rollback();
+            }
+            var message = e.getMessage();
+            if(StringUtils.contains(message, "pg_type_typname_nsp_index")
+                    && StringUtils.contains(message, "duplicate key value violates unique constraint") ) {
+                log.warn("index type name {}.{}.{} already exist. skip index creation. msg:{}", schemaName, tableName, indexName, e.getMessage());
+                // return "" if already exists
+                return "";
+            } else {
+                throw e;
+            }
+        } finally {
+            conn.setAutoCommit(previousAutoCommit);
+        }
+
+        return "%s.%s".formatted(schemaName, indexName);
+    }
+
+    /**
+     * Creates an index using the provided raw CREATE INDEX SQL if it does not already exist.
+     *
+     * Expectations for rawSQL:
+     * - Must be a CREATE INDEX statement, e.g. "CREATE [UNIQUE] INDEX [IF NOT EXISTS] idx_name ON schema.table (...);"
+     * - The statement should target the given schema via the table reference (ON schema.table ...).
+     *
+     * @param conn       JDBC connection
+     * @param schemaName schema name where the index will live (typically the table's schema)
+     * @param rawSQL     full CREATE INDEX statement
+     * @return schema.indexName if created, or "" if already exists
+     * @throws SQLException on DB error or if SQL is invalid
+     */
+    public static String createIndexIfNotExistRawSQL(Connection conn, String schemaName, String rawSQL) throws SQLException {
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        Checker.checkNotBlank(rawSQL, "rawSQL");
+
+        // Extract index name from the raw CREATE INDEX SQL
+        // Pattern explanation:
+        //   CREATE [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] <indexName> ON
+        var pattern = Pattern.compile("(?i)CREATE\\s+(UNIQUE\\s+)?INDEX\\s+(CONCURRENTLY\\s+)?(IF\\s+NOT\\s+EXISTS\\s+)?(\"[^\"]+\"|[a-zA-Z0-9_\\-\\.]+)\\s+ON");
+        Matcher matcher = pattern.matcher(rawSQL);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("Failed to parse index name from raw SQL. Expected 'CREATE INDEX <name> ON ...'. sql=" + rawSQL);
+        }
+
+        var indexName = matcher.group(4);
+        Checker.checkNotBlank(indexName, "indexName");
+
+        Checker.check(StringUtils.length(indexName) < 63, "indexName length must be less than 63");
+
+        // Normalize index name for internal checks and quoting consistency
+        indexName = checkAndNormalizeValidEntityName(indexName);
+
+        // If already exists (by type name in schema), return early
+        var previousAutoCommit = conn.getAutoCommit();
+
+        var qualifiedName = "%s.%s".formatted(schemaName, indexName);
+        long lockKey = qualifiedName.hashCode();
+
+        try (var stmt = conn.createStatement()) {
+            conn.setAutoCommit(false);
+
+            var lockAcquired = false;
+            // Acquire the advisory lock using the generated key
+            try (var rs = stmt.executeQuery("SELECT pg_try_advisory_lock(" + lockKey + ")")) {
+                if (rs.next()) {
+                    lockAcquired = rs.getBoolean(1);
+                }
+            }
+
+            if (!lockAcquired) {
+                conn.commit();
+                return "";
+            }
+
+            // Ensure type (name) uniqueness in the target schema
+            var pgTypeSQL = """
+                    SELECT c.oid, c.relname, n.nspname
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE c.relname = '%s'
+                      AND n.nspname = '%s'
+                    """.formatted(removeQuotes(indexName), removeQuotes(schemaName));
+
+            var typeExists = false;
+            try (var rs = stmt.executeQuery(pgTypeSQL)) {
+                if (rs.next()) {
+                    typeExists = true;
+                }
+            }
+            if (typeExists) {
+                conn.commit();
+                return "";
+            }
+
+            // Execute the provided raw SQL to create the index
+            stmt.execute(rawSQL);
+            if (log.isInfoEnabled()) {
+                log.info("Index({}) created successfully via raw SQL.", indexName);
+            }
+
+            conn.commit();
+        } catch (SQLException e) {
+            if (conn != null) {
+                conn.rollback();
+            }
+            var message = e.getMessage();
+            if (StringUtils.contains(message, "pg_type_typname_nsp_index")
+                    && StringUtils.contains(message, "duplicate key value violates unique constraint")) {
+                log.warn("index type name {}.{} already exist. skip index creation. msg:{}", schemaName, indexName, e.getMessage());
+                // return "" if already exists
+                return "";
+            } else {
+                throw e;
+            }
+        } finally {
+            conn.setAutoCommit(previousAutoCommit);
+        }
+
+        return "%s.%s".formatted(schemaName, indexName);
+    }
+
+    /**
+     * Generate indexName from table name and field name
+     * @param tableName
+     * @param fieldName
+     * @return indexName e.g. table1_address_city_street_1
+     */
+    public static String getIndexName(String tableName, String fieldName) {
+
+        fieldName = fieldName
+                .replace(".", "_")
+                .replace("-", "_")
+        ;
+
+        checkValidEntityName(tableName);
+        checkValidEntityName(fieldName);
+
+        tableName = removeQuotes(tableName);
+
+        var indexName =  String.format("idx_%s_%s_1", tableName, fieldName);
+
+        return checkAndNormalizeValidEntityName(indexName);
+
+    }
+
+    /**
+     * Creates an index on a single field with the specified schemaName, tableName and field if it does not already exist.
+     *
+     * @param conn       the database connection
+     * @param schemaName the schema name
+     * @param tableName  the table name
+     * @param field      the field to be indexed, with a name and type. e.g. new IndexField("lastName", "text")
+     * @param indexOption the index options
+     * @return schema.indexName if created, or "" if index already exists
+     * @throws SQLException if a database error occurs
+     */
+    public static String createIndexIfNotExist4SingleField(Connection conn, String schemaName, String tableName, PGIndexField field, IndexOption indexOption) throws SQLException {
+        return createIndexIfNotExist4MultiFields(conn, schemaName, tableName, List.of(field), indexOption);
+    }
+
+    /**
+     * Creates a composite index with the specified schemaName, tableName and fields if it does not already exist.
+     *
+     * @param conn       the database connection
+     * @param schemaName the schema name
+     * @param tableName  the table name
+     * @param fields     the list of fields to be indexed, each with a name and type. e.g. [new IndexField("lastName", "text"), new IndexField("age", "integer")]
+     * @param indexOption     the index options
+     * @return schema.indexName if created, or "" if index already exists
+     * @throws SQLException if a database error occurs
+     */
+    public static String createIndexIfNotExist4MultiFields(Connection conn, String schemaName, String tableName, List<PGIndexField> fields, IndexOption indexOption) throws SQLException {
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+
+        Checker.check(CollectionUtils.isNotEmpty(fields), "fields cannot be empty");
+        fields.forEach(field -> checkValidEntityName(field.fieldName));
+
+        // Generate index name from table name and joined field names
+        var joinedFieldNames = fields.stream().map(f -> f.fieldName).collect(Collectors.joining("_"));
+        var indexName = getIndexName(tableName, joinedFieldNames);
+
+        if (indexExistsByName(conn, schemaName, tableName, indexName)) {
+            // already exists
+            return "";
+        }
+
+        // create index
+        var previousAutoCommit = conn.getAutoCommit();
+
+        var qualifiedName = "%s.%s.%s".formatted(schemaName, tableName, indexName);
+
+        // Generate the lock key by hashing the qualified name
+        long lockKey = qualifiedName.hashCode();
+
+        try(var stmt = conn.createStatement()) {
+
+            conn.setAutoCommit(false);
+
+            var lockAcquired = false;
+
+            // Acquire the advisory lock using the generated key
+            try (var rs = stmt.executeQuery("SELECT pg_try_advisory_lock(%d)".formatted(lockKey))) {
+                if (rs.next()) {
+                    lockAcquired = rs.getBoolean(1);
+                }
+            }
+
+            if (!lockAcquired) {
+                // lock not acquired. so do nothing and return
+                conn.commit();
+                return "";
+            }
+
+            // check type name uniqueness
+            var pgTypeSQL = """
+                    SELECT c.oid, c.relname, n.nspname
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE c.relname = '%s'
+                      AND n.nspname = '%s'
+                    """.formatted(removeQuotes(indexName), removeQuotes(schemaName));
+
+            var typeExists = false;
+            try(var rs = stmt.executeQuery(pgTypeSQL)){
+                if (rs.next()) {
+                    typeExists = true;
+                }
+            }
+
+            if(typeExists){
+                // type name already exists. do nothing and return
+                conn.commit();
+                return "";
+            }
+
+            // Construct composite JSON path expression e.g. ( ((data->>'lastName')), (((data->>'age')::integer)) )
+            var jsonPathExpression = fields.stream()
+                    .map(field -> {
+                        var path = PGKeyUtil.getFormattedKey(field.fieldName);
+                        if (SUPPORTED_INDEX_FIELD_TYPE.contains(field.fieldType.toString())) {
+                            return "((%s)::%s)".formatted(path, field.fieldType);
+                        } else {
+                            // default to text if not a supported castable type
+                            return "(%s)".formatted(path);
+                        }
+                    })
+                    .collect(Collectors.joining(", "));
+
+            var createIndexSQL = """
+                    CREATE %s INDEX IF NOT EXISTS %s
+                      ON %s.%s (%s);
+                    """
+                    .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, jsonPathExpression);
+
+            stmt.execute(createIndexSQL);
+            if (log.isInfoEnabled()) {
+                log.info("Index({}) on column '{}' with fields '{}' of table '{}.{}' created successfully.", indexName, DATA, joinedFieldNames, schemaName, tableName);
             }
 
             conn.commit();
@@ -1650,30 +1923,6 @@ public class TableUtil {
         }
 
         return "%s.%s".formatted(schemaName, indexName);
-    }
-
-    /**
-     * Generate indexName from table name and field name
-     * @param tableName
-     * @param fieldName
-     * @return indexName e.g. table1_address_city_street_1
-     */
-    static String getIndexName(String tableName, String fieldName) {
-
-        fieldName = fieldName
-                .replace(".", "_")
-                .replace("-", "_")
-        ;
-
-        checkValidEntityName(tableName);
-        checkValidEntityName(fieldName);
-
-        tableName = removeQuotes(tableName);
-
-        var indexName =  String.format("idx_%s_%s_1", tableName, fieldName);
-
-        return checkAndNormalizeValidEntityName(indexName);
-
     }
 
     /**
@@ -1767,6 +2016,4 @@ public class TableUtil {
                 (c >= '0' && c <= '9') || // digits
                 (c == '_');              // underscore
     }
-
-
 }
