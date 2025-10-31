@@ -741,7 +741,7 @@ public class TableUtil {
      * Delete records in a batch(Transaction is managed in this method).
      *
      * <p>
-     * This method will call commit automatically. If you want to manage transaction by yourself, please use batchDeleteRecords
+     * This method will call commit automatically. If you want to manage transaction by yourself, please use bulkDeleteRecords
      * </p>
      *
      * @param conn       the database connection
