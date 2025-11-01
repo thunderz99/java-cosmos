@@ -520,6 +520,8 @@ public class Condition {
                 }
 
             } else if (entry.getKey().startsWith(SubConditionType.ELEM_MATCH)) {
+                // support $ELEM_MATCH query
+                // e.g.: Condition.filter("$ELEM_MATCH", Map.of("children.grade >", 5, "children.gender =" "female")).join(Set.of("children"));
                 if (CollectionUtils.isNotEmpty(join)
                         && entry.getValue() instanceof Map<?, ?> mapValue
                         && !mapValue.isEmpty()) {
