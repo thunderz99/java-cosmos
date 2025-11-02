@@ -93,7 +93,7 @@ class Parent{
 ```java
 // Save user into Coll:Collection1, partition:Users.
 // If you do not specify the partition. It will default to coll name.
-var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1");
+var db = cosmosAccount.getDatabase("Database1");
 db.upsert("Collection1", new User("id011", "Tom", "Banks",List.of(new Parent("Tom","John"),new Parent("Jerry":"Jones"))), "Users");
 
 // The default partition key is "_partition", so we'll get a json like this:
@@ -109,8 +109,7 @@ db.upsert("Collection1", new User("id011", "Tom", "Banks",List.of(new Parent("To
 ### Create database and collection dynamically
 
 ```java
-var cosmos = new Cosmos(System.getenv("YOUR_CONNECTION_STRING"));
-var db = cosmos.createIfNotExist("Database1", "Collection1");
+var db = cosmosAccount.createIfNotExist("Database1", "Collection1");
 db.upsert("Collection1", new User("id011", "Tom", "Banks"))
 
 // create a collection with uniqueIndexPolicy
@@ -121,7 +120,7 @@ var db = cosmos.createIfNotExist("Database1", "Collection2", uniqueKeyPolicy);
 ### CRUD
 
 ```java
-var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1");
+var db = cosmosAccount.getDatabase("Database1");
 
 // Create
 db.create("Collection1", new User("id011", "Tom", "Banks"), "Users");
@@ -144,7 +143,7 @@ db.delete("Collection1", user1,id, "Users");
 > Note: Batch operation is transactional. The maximum number of operations is 100.
 > https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/transactional-batch?tabs=java
 ```java
-var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1");
+var db = cosmosAccount.getDatabase("Database1");
 
 // Create
 db.batchCreate("Collection1", List.of(new User("id011", "Tom", "Banks")), "Users");
@@ -163,7 +162,7 @@ db.batchDelete("Collection1", List.of(user1.id), "Users");
 > Note: Bulk operation is NOT transactional. Have no number limit in theoretically.
 > https://learn.microsoft.com/en-us/azure/cosmos-db/bulk-executor-overview
 ```java
-var db = new Cosmos(System.getenv("YOUR_CONNECTION_STRING")).getDatabase("Database1");
+var db = cosmosAccount.getDatabase("Database1");
 
 // Create
 db.bulkCreate("Collection1", List.of(new User("id011", "Tom", "Banks")), "Users");
