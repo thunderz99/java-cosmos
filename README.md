@@ -502,9 +502,9 @@ db.upsert("Database1", new User("id011","Tom","Banks"), "Collection1");
                 
 ```
 
-### $ELEM_MATCH queries in mongo/postgres to match fields in  array type field
+### $ELEM_MATCH queries to match fields in  array type field
 
-For cosmosdb, we can do a query like this using rawSql to find a child whose grade greater than 5 and gender is "female".
+Dealing with array types in json, we can do a query like this using rawSql to find a child whose grade greater than 5 and gender is "female".
 
 ```
 // the document, contains an array field named "children"
@@ -557,7 +557,7 @@ var result = db.find("Collection1", cond);
 
 ```
 
-We do not support rawSql in mongodb, so we introduce a $ELEM_MATCH filter to achieve this.
+We do not support rawSql in mongodb, so we introduce a $ELEM_MATCH filter to achieve this. We can use $ELEM_MATCH for cosmosdb / mongodb / postgresql in a consistent usage.
 
 ```
 // the mongosh is:
@@ -573,11 +573,11 @@ db.Families.find({
 
 ```
 // Java code is:
+// This works for cosmosdb / mongodb / postgresql
 var cond = Condition.filter("$ELEM_MATCH", Map.of("children.grade >", 5, "children.gender =" "female")).join(Set.of("children"));
 var result = db.find("Collection1", cond);
 ```
 
-At present, "$ELEM_MATCH" only works for mongodb/postgres. But we will consider support it for cosmosdb too, so that we do not need to use rawSql. And the same Java code will work for both database type.
 
 
 ## Reference
