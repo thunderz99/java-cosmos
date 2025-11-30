@@ -33,17 +33,10 @@ public class PGCronUtil {
         Checker.checkNotBlank(sql, "sql");
         Checker.check(CronUtil.isValidPgCronExpression(cronExpression), "cronExpression is not valid: %s".formatted(cronExpression));
 
-        var scheduleSQL = String.format("""
-                SELECT cron.schedule(
-                    '%s',
-                    '%s',
-                     $$
-                     %s
-                     $$
-                );
-                """, jobName, cronExpression, sql);
-
-        try (var stmt = conn.prepareStatement(scheduleSQL)) {
+        try (var stmt = conn.prepareStatement("SELECT cron.schedule(?, ?, ?);")) {
+            stmt.setString(1, jobName);
+            stmt.setString(2, cronExpression);
+            stmt.setString(3, sql);
             try (var rs = stmt.executeQuery()) {
                 if (rs.next()) {
                     var jobId = rs.getLong(1);
@@ -69,7 +62,8 @@ public class PGCronUtil {
 
         Checker.checkNotBlank(jobName, "jobName");
 
-        try (var stmt = conn.prepareStatement(String.format("SELECT cron.unschedule('%s');", jobName))) {
+        try (var stmt = conn.prepareStatement("SELECT cron.unschedule(?);")) {
+            stmt.setString(1, jobName);
             try (var rs = stmt.executeQuery()) {
                 if (rs.next()) {
                     if (log.isInfoEnabled()) {

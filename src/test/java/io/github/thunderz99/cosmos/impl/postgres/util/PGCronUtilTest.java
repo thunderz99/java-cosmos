@@ -9,6 +9,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.sql.Connection;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -108,6 +110,48 @@ class PGCronUtilTest {
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
             }
         }
+    }
+
+    @Test
+    void scheduleCustomJob_should_not_allow_sql_injection() throws Exception {
+        var jobName = "test_injection_job'; DROP TABLE cron.job; --" + RandomStringUtils.randomAlphanumeric(4);
+        var cronExpression = "*/5 * * * *";
+        var sql = "SELECT 1;";
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            var beforeCount = countCronJobs(conn);
+
+            var jobId = PGCronUtil.scheduleCustomJob(conn, jobName, cronExpression, sql);
+            assertThat(jobId).isGreaterThan(0);
+
+            var afterCount = countCronJobs(conn);
+            assertThat(afterCount).isGreaterThanOrEqualTo(beforeCount);
+
+            var job = PGCronUtil.findJobByName(conn, jobName);
+            assertThat(job).isNotNull();
+            assertThat(job.jobName).isEqualTo(jobName);
+            assertThat(job.schedule.trim()).isEqualTo(cronExpression);
+            assertThat(job.command.trim()).isEqualTo(sql);
+
+            var unScheduled = PGCronUtil.unScheduleJob(conn, jobName);
+            assertThat(unScheduled).isTrue();
+            assertThat(PGCronUtil.jobExists(conn, jobName)).isFalse();
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                PGCronUtil.unScheduleJob(conn, jobName);
+            }
+        }
+    }
+
+    private static long countCronJobs(Connection conn) throws Exception {
+        try (var stmt = conn.prepareStatement("SELECT count(*) FROM cron.job")) {
+            try (var rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
+            }
+        }
+        return 0;
     }
 
     @Test
