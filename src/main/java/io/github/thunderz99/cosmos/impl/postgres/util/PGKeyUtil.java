@@ -19,6 +19,20 @@ public class PGKeyUtil {
     static Set<String> textKeys = Set.of("id", "mail", "name", "kana", "title", "formId");
 
     /**
+     * Escape single quotes in key part to prevent SQL injection.
+     * In PostgreSQL string literals, a single quote is escaped by doubling it.
+     *
+     * @param keyPart a part of the key (e.g. "lastName" or "address")
+     * @return the escaped key part
+     */
+    static String escapeKeyPart(String keyPart) {
+        if (keyPart == null) {
+            return null;
+        }
+        return keyPart.replace("'", "''");
+    }
+
+    /**
      * Instead of data.key, return data->'key' or data->'address'->>'city' for query
      *
      * @param key filter's key
@@ -77,14 +91,14 @@ public class PGKeyUtil {
         // the intermediate path is data->'address'->'city'
         var sb = new StringBuilder(selectAlias);
         for (int i = 0; i < parts.length - 1; i++) {
-            sb.append("->'").append(parts[i]).append("'");
+            sb.append("->'").append(escapeKeyPart(parts[i])).append("'");
         }
 
         // The last part will use ->>
         var lastPart = parts[parts.length - 1];
         // If there's at least one part, append ->>'lastPart'
         // Otherwise (in the weird case parts.length==0), you'd just return the alias
-        sb.append("->>'").append(lastPart).append("'");
+        sb.append("->>'").append(escapeKeyPart(lastPart)).append("'");
 
         // Now sb is something like "data->'address'->'city'->>'country'"
         // We'll wrap it with parentheses and add a cast if needed
