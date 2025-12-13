@@ -1120,6 +1120,58 @@ class MongoDatabaseImplTest {
     }
 
     @Test
+    void find_should_work_with_invalid_filter_key() throws Exception {
+
+        var partition = "Families";
+
+        // test invalid filter key to do an injection with single quote
+        {
+            var cond = Condition.filter("lastName'|'", "Andersen")
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var docs = db.find(host, cond, partition).toMap();
+            assertThat(docs).isEmpty();
+        }
+
+        // test invalid filter key to do an injection with double quote
+        {
+            var cond = Condition.filter("lastName'||'", "Andersen")
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var docs = db.find(host, cond, partition).toMap();
+            assertThat(docs).isEmpty();
+        }
+
+        // test invalid filter key to do an injection with triple quote
+        {
+            var cond = Condition.filter("lastName'|||'", "Andersen")
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var docs = db.find(host, cond, partition).toMap();
+            assertThat(docs).isEmpty();
+        }
+
+        // test invalid filter key to do an injection with quadruple quote
+        {
+            var cond = Condition.filter("lastName'||||'", "Andersen")
+                    .sort("id", "ASC") //
+                    .limit(10) //
+                    .offset(0);
+
+            var docs = db.find(host, cond, partition).toMap();
+            assertThat(docs).isEmpty();
+        }
+
+    }
+
+
+    @Test
     void find_with_true_false_condition_should_work() throws Exception {
         var partition = "Families";
 

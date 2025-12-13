@@ -52,6 +52,34 @@ class PGKeyUtilTest {
 
 
     @Test
+    void escapeKeyPart_should_work() {
+        // normal cases
+        assertThat(PGKeyUtil.escapeKeyPart("lastName")).isEqualTo("lastName");
+        assertThat(PGKeyUtil.escapeKeyPart("address")).isEqualTo("address");
+
+        // single quote injection cases
+        assertThat(PGKeyUtil.escapeKeyPart("lastName'")).isEqualTo("lastName''");
+        assertThat(PGKeyUtil.escapeKeyPart("lastName'|'")).isEqualTo("lastName''|''");
+        assertThat(PGKeyUtil.escapeKeyPart("lastName'||'")).isEqualTo("lastName''||''");
+        assertThat(PGKeyUtil.escapeKeyPart("key'with'quotes")).isEqualTo("key''with''quotes");
+
+        // null case
+        assertThat(PGKeyUtil.escapeKeyPart(null)).isNull();
+
+        // empty string case
+        assertThat(PGKeyUtil.escapeKeyPart("")).isEqualTo("");
+    }
+
+    @Test
+    void getFormattedKeyWithAlias_should_escape_single_quotes() {
+        // keys with single quotes should be escaped to prevent SQL injection
+        assertThat(PGKeyUtil.getFormattedKeyWithAlias("lastName'|'", "data", "value"))
+                .isEqualTo("data->>'lastName''|'''");
+        assertThat(PGKeyUtil.getFormattedKeyWithAlias("address.city'inject", "data", "value"))
+                .isEqualTo("data->'address'->>'city''inject'");
+    }
+
+    @Test
     void getJsonbPathKey_should_work() {
         {
             // normal cases: basic
