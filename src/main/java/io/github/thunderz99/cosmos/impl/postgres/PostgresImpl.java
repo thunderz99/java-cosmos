@@ -22,6 +22,8 @@ import java.net.URISyntaxException;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /***
  * class that represent a cosmos account
@@ -38,6 +40,8 @@ import java.util.Objects;
 public class PostgresImpl implements Cosmos {
 
     private static final Logger log = LoggerFactory.getLogger(PostgresImpl.class);
+
+    private static final Pattern PGBOUNCER_PARAM_PATTERN = Pattern.compile("(^|&)pgbouncer=([^&]*)");
 
     HikariDataSource dataSource;
 
@@ -103,8 +107,18 @@ public class PostgresImpl implements Cosmos {
         String jdbcUrl = String.format("jdbc:postgresql://%s:%d%s",
                 uri.getHost(), uri.getPort(), uri.getRawPath());
 
-        if(StringUtils.isNotEmpty(uri.getRawQuery())) {
-            jdbcUrl += "?" + uri.getRawQuery();
+        var rawQuery = uri.getRawQuery();
+        boolean pgbouncerEnabled = false;
+        if (StringUtils.isNotEmpty(rawQuery)) {
+            Matcher matcher = PGBOUNCER_PARAM_PATTERN.matcher(rawQuery);
+            if (matcher.find()) {
+                var rawValue = matcher.group(2);
+                pgbouncerEnabled = "1".equals(rawValue) || Boolean.parseBoolean(rawValue);
+            }
+            var filteredQuery = removePgbouncerParam(rawQuery);
+            if (StringUtils.isNotEmpty(filteredQuery)) {
+                jdbcUrl += "?" + filteredQuery;
+            }
         }
         config.setJdbcUrl(jdbcUrl);
 
@@ -128,9 +142,26 @@ public class PostgresImpl implements Cosmos {
         }
         config.setDriverClassName("org.postgresql.Driver");
 
+        if (pgbouncerEnabled) {
+            config.addDataSourceProperty("preferQueryMode", "simple");
+            config.addDataSourceProperty("prepareThreshold", "0");
+        }
+
         var account = uri.getHost();
 
         return Pair.of(config, account);
+    }
+
+    static String removePgbouncerParam(String rawQuery) {
+        if (StringUtils.isEmpty(rawQuery)) {
+            return rawQuery;
+        }
+        var filtered = rawQuery.replaceAll("(^|&)pgbouncer=[^&]*", "");
+        filtered = filtered.replaceAll("^&", "").replaceAll("&$", "");
+        while (filtered.contains("&&")) {
+            filtered = filtered.replace("&&", "&");
+        }
+        return filtered;
     }
 
     /**

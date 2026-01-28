@@ -1,16 +1,13 @@
 package io.github.thunderz99.cosmos.impl.postgres;
 
-import com.mongodb.client.MongoIterable;
 import io.github.thunderz99.cosmos.CosmosDocument;
 import io.github.thunderz99.cosmos.CosmosDocumentIterator;
 import io.github.thunderz99.cosmos.CosmosDocumentList;
 import io.github.thunderz99.cosmos.dto.MapIterator;
 import io.github.thunderz99.cosmos.dto.TypedIterator;
 import io.github.thunderz99.cosmos.util.Checker;
-import org.bson.Document;
 
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 
 /**

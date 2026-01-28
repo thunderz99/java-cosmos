@@ -13,7 +13,7 @@ public class PostgresImplTest {
     /**
      * local postgres connection string if test against a local setup.
      */
-    public static final String LOCAL_CONNECTION_STRING = "jdbc:postgresql://localhost:5432/postgres?user=postgres&password=mysecretpassword&sslmode=disable";
+    public static final String LOCAL_CONNECTION_STRING = "jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres&sslmode=disable";
 
     String db = "unit_test_db_" + RandomStringUtils.randomAlphanumeric(6);
 
@@ -90,6 +90,32 @@ public class PostgresImplTest {
             assertThat(config.getUsername()).isEqualTo("xxx");
             assertThat(config.getPassword()).isEqualTo("yyy");
             assertThat(account).isEqualTo("pg-local-test1.postgres.database.example.com");
+        }
+
+        {
+            // test with pgbouncer enabled
+            var pair = PostgresImpl.parseToHikariConfig("jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres&sslmode=disable&pgbouncer=true");
+            var config = pair.getLeft();
+            var account = pair.getRight();
+
+            assertThat(config.getJdbcUrl()).isEqualTo("jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres&sslmode=disable");
+            assertThat(config.getDataSourceProperties().getProperty("preferQueryMode")).isEqualTo("simple");
+            assertThat(config.getDataSourceProperties().getProperty("prepareThreshold")).isEqualTo("0");
+            assertThat(account).isEqualTo("localhost");
+        }
+
+        {
+            // test with postgres scheme and pgbouncer enabled
+            var pair = PostgresImpl.parseToHikariConfig("postgres://postgres:postgres@localhost:6432/postgres?sslmode=disable&pgbouncer=true");
+            var config = pair.getLeft();
+            var account = pair.getRight();
+
+            assertThat(config.getJdbcUrl()).isEqualTo("jdbc:postgresql://localhost:6432/postgres?sslmode=disable");
+            assertThat(config.getUsername()).isEqualTo("postgres");
+            assertThat(config.getPassword()).isEqualTo("postgres");
+            assertThat(config.getDataSourceProperties().getProperty("preferQueryMode")).isEqualTo("simple");
+            assertThat(config.getDataSourceProperties().getProperty("prepareThreshold")).isEqualTo("0");
+            assertThat(account).isEqualTo("localhost");
         }
 
     }

@@ -499,6 +499,19 @@ var db = cosmos.getDatabase("Database1");
 
 // you can use db instance as the same way as you are using cosmosdb
 db.upsert("Database1", new User("id011","Tom","Banks"), "Collection1");
+
+// for postgres via PgBouncer
+// use pgbouncer=true to enable PgBouncer compatible settings (disable prepared statements)
+var cosmos = new CosmosBuilder().withDatabaseType("postgres")
+ .withConnectionString("jdbc:postgresql://localhost:6432/postgres?user=postgres&password=postgres&sslmode=disable&pgbouncer=true"))
+                .build();
+var db = cosmos.getDatabase("Database1");
+
+// pg connection string format is also supported
+var cosmos = new CosmosBuilder().withDatabaseType("postgres")
+ .withConnectionString("postgres://postgres:postgres@localhost:6432/postgres?sslmode=disable&pgbouncer=true"))
+                .build();
+var db = cosmos.getDatabase("Database1");
                 
 ```
 
