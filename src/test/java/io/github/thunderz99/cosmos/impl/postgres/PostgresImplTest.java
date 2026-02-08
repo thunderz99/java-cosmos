@@ -13,7 +13,7 @@ public class PostgresImplTest {
     /**
      * local postgres connection string if test against a local setup.
      */
-    public static final String LOCAL_CONNECTION_STRING = "jdbc:postgresql://localhost:5432/postgres?user=postgres&password=mysecretpassword&sslmode=disable";
+    public static final String LOCAL_CONNECTION_STRING = "jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres&sslmode=disable";
 
     String db = "unit_test_db_" + RandomStringUtils.randomAlphanumeric(6);
 
