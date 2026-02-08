@@ -1,12 +1,14 @@
 package io.github.thunderz99.cosmos.impl.postgres;
 
 import io.github.thunderz99.cosmos.impl.mongo.MongoImpl;
+import io.github.thunderz99.cosmos.impl.postgres.dto.PostgresHikariOptions;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class PostgresImplTest {
 
@@ -92,6 +94,72 @@ public class PostgresImplTest {
             assertThat(account).isEqualTo("pg-local-test1.postgres.database.example.com");
         }
 
+    }
+
+    @Test
+    void parseToHikariConfig_should_apply_custom_hikari_settings() {
+        var options = new PostgresHikariOptions()
+                .withMaximumPoolSize(37)
+                .withMinimumIdle(5)
+                .withConnectionTimeoutMs(45_000)
+                .withIdleTimeoutMs(120_000)
+                .withMaxLifetimeMs(300_000)
+                .withValidationTimeoutMs(4_000)
+                .withPoolName("java-cosmos-test-pool")
+                .withHikariProperty("initializationFailTimeout", "-1");
+
+        var pair = PostgresImpl.parseToHikariConfig("postgres://localhost:5432/test?sslmode=disable", options);
+        var config = pair.getLeft();
+
+        assertThat(config.getMaximumPoolSize()).isEqualTo(37);
+        assertThat(config.getMinimumIdle()).isEqualTo(5);
+        assertThat(config.getConnectionTimeout()).isEqualTo(45_000);
+        assertThat(config.getIdleTimeout()).isEqualTo(120_000);
+        assertThat(config.getMaxLifetime()).isEqualTo(300_000);
+        assertThat(config.getValidationTimeout()).isEqualTo(4_000);
+        assertThat(config.getPoolName()).isEqualTo("java-cosmos-test-pool");
+        assertThat(config.getInitializationFailTimeout()).isEqualTo(-1);
+    }
+
+    @Test
+    void postgresHikariOptions_should_reject_invalid_maximumPoolSize() {
+        var options = new PostgresHikariOptions();
+
+        assertThatThrownBy(() -> options.withMaximumPoolSize(0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maximumPoolSize");
+
+        assertThatThrownBy(() -> options.withMinimumIdle(-1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("minimumIdle");
+
+        assertThatThrownBy(() -> options.withConnectionTimeoutMs(0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("connectionTimeoutMs");
+
+        assertThatThrownBy(() -> options.withIdleTimeoutMs(-1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("idleTimeoutMs");
+
+        assertThatThrownBy(() -> options.withMaxLifetimeMs(-1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxLifetimeMs");
+
+        assertThatThrownBy(() -> options.withValidationTimeoutMs(0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("validationTimeoutMs");
+
+        assertThatThrownBy(() -> options.withPoolName("  "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("poolName");
+
+        assertThatThrownBy(() -> options.withHikariProperty("", "x"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("key");
+
+        assertThatThrownBy(() -> options.withHikariProperty("x", null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("value");
     }
 
     @Test

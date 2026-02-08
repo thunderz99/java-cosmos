@@ -5,6 +5,7 @@ import java.util.List;
 import io.github.thunderz99.cosmos.impl.cosmosdb.CosmosImpl;
 import io.github.thunderz99.cosmos.impl.mongo.MongoImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
+import io.github.thunderz99.cosmos.impl.postgres.dto.PostgresHikariOptions;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGSortUtil;
 import io.github.thunderz99.cosmos.util.Checker;
 import org.apache.commons.lang3.StringUtils;
@@ -48,6 +49,11 @@ public class CosmosBuilder {
     boolean expireAtEnabled = false;
 
     boolean etagEnabled = false;
+
+    /**
+     * Optional custom HikariCP settings for postgres.
+     */
+    PostgresHikariOptions postgresHikariOptions;
 
     /**
      * Specify the dbType( "cosmosdb" or "mongodb" or "postgres")
@@ -139,6 +145,35 @@ public class CosmosBuilder {
     }
 
     /**
+     * Set hikari maximum pool size for postgres.
+     *
+     * <p>
+     * This is a convenient entrypoint for the most common HikariCP tuning.
+     * </p>
+     *
+     * @param maximumPoolSize max number of connections in the pool
+     * @return this
+     */
+    public CosmosBuilder withHikariMaximumPoolSize(int maximumPoolSize) {
+        if (this.postgresHikariOptions == null) {
+            this.postgresHikariOptions = new PostgresHikariOptions();
+        }
+        this.postgresHikariOptions.withMaximumPoolSize(maximumPoolSize);
+        return this;
+    }
+
+    /**
+     * Set custom hikari settings for postgres.
+     *
+     * @param options custom hikari options
+     * @return this
+     */
+    public CosmosBuilder withCustomHikariSettings(PostgresHikariOptions options) {
+        this.postgresHikariOptions = options;
+        return this;
+    }
+
+    /**
      * Build the instance representing a Cosmos instance.
      *
      * @return Cosmos instance
@@ -156,7 +191,7 @@ public class CosmosBuilder {
         }
 
         if (StringUtils.equals(dbType, POSTGRES)) {
-            return new PostgresImpl(connectionString, expireAtEnabled, etagEnabled, collate);
+            return new PostgresImpl(connectionString, expireAtEnabled, etagEnabled, collate, postgresHikariOptions);
         }
 
         throw new IllegalArgumentException("Not supported dbType: " + dbType);
@@ -165,4 +200,3 @@ public class CosmosBuilder {
 
 
 }
-
