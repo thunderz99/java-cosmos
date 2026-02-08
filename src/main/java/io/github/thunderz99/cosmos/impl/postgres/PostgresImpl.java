@@ -9,6 +9,7 @@ import io.github.thunderz99.cosmos.CosmosDatabase;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosContainerResponse;
 import io.github.thunderz99.cosmos.dto.UniqueKeyPolicy;
+import io.github.thunderz99.cosmos.impl.postgres.dto.PostgresHikariOptions;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGSortUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.Checker;
@@ -61,8 +62,22 @@ public class PostgresImpl implements Cosmos {
     }
 
     public PostgresImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled, String collate) {
+        this(connectionString, expireAtEnabled, etagEnabled, collate, null);
+    }
 
-        var pair = parseToHikariConfig(connectionString);
+    /**
+     * Build postgres cosmos client with custom hikari settings.
+     *
+     * @param connectionString postgres connection string
+     * @param expireAtEnabled whether enable expireAt feature
+     * @param etagEnabled whether enable etag feature
+     * @param collate collation used for postgres sorting
+     * @param hikariOptions optional custom hikari options
+     */
+    public PostgresImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled,
+                        String collate, PostgresHikariOptions hikariOptions) {
+
+        var pair = parseToHikariConfig(connectionString, hikariOptions);
         var config = pair.getLeft();
         this.account = pair.getRight();
 
@@ -84,9 +99,21 @@ public class PostgresImpl implements Cosmos {
      * @return pair of HikariConfig and account(hostName)
      */
     public static Pair<HikariConfig, String> parseToHikariConfig(String connectionString) {
+        return parseToHikariConfig(connectionString, null);
+    }
+
+    /**
+     * parse connectionString("postgres://user:pass@localhost:5432/database1") to HikariConfig,
+     * then apply optional custom hikari settings.
+     *
+     * @param connectionString postgres connectionString
+     * @param hikariOptions optional custom hikari options
+     * @return pair of HikariConfig and account(hostName)
+     */
+    public static Pair<HikariConfig, String> parseToHikariConfig(String connectionString,
+                                                                  PostgresHikariOptions hikariOptions) {
 
         Checker.checkNotBlank(connectionString, "connectionString");
-        var config = new HikariConfig();
         URI uri;
         try {
             // use URI to parse connectionString
@@ -99,6 +126,8 @@ public class PostgresImpl implements Cosmos {
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException("connectionString not valid for postgres: " + connectionString, e);
         }
+
+        var config = hikariOptions == null ? new HikariConfig() : new HikariConfig(hikariOptions.getHikariProperties());
 
         String jdbcUrl = String.format("jdbc:postgresql://%s:%d%s",
                 uri.getHost(), uri.getPort(), uri.getRawPath());
@@ -127,6 +156,10 @@ public class PostgresImpl implements Cosmos {
             }
         }
         config.setDriverClassName("org.postgresql.Driver");
+
+        if (hikariOptions != null) {
+            hikariOptions.applyTo(config);
+        }
 
         var account = uri.getHost();
 

@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.8.23</version>
+    <version>0.8.24</version>
 </dependency>
 ```
 
@@ -500,6 +500,33 @@ var db = cosmos.getDatabase("Database1");
 // you can use db instance as the same way as you are using cosmosdb
 db.upsert("Database1", new User("id011","Tom","Banks"), "Collection1");
                 
+```
+
+### PostgreSQL HikariCP settings
+
+```java
+import io.github.thunderz99.cosmos.impl.postgres.dto.PostgresHikariOptions;
+
+var hikariOptions = new PostgresHikariOptions()
+    .withMaximumPoolSize(30)
+    .withMinimumIdle(5)
+    .withConnectionTimeoutMs(30_000)
+    .withIdleTimeoutMs(120_000)
+    .withMaxLifetimeMs(600_000)
+    .withValidationTimeoutMs(5_000)
+    .withPoolName("java-cosmos-pool")
+    // Optional: pass raw Hikari properties for minor/future settings
+    .withHikariProperty("initializationFailTimeout", "-1")
+    .withHikariProperty("leakDetectionThreshold", "30000");
+
+var cosmos = new CosmosBuilder()
+    .withDatabaseType("postgres")
+    .withConnectionString("jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres")
+    // quick entrypoint for common tuning
+    .withHikariMaximumPoolSize(30)
+    // optional: typed + raw custom settings
+    .withCustomHikariSettings(hikariOptions)
+    .build();
 ```
 
 ### $ELEM_MATCH queries to match fields in  array type field
