@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   mongo-replica:
     image: mongo:5.0
