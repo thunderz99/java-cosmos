@@ -240,6 +240,33 @@ The main difference between Partial update and Patch is that:
 * Partial update is focused at insert/replace fields' values. And is able to support updating 10 more fields in one call.
 * Patch is focused to implementing a method similar to JSON Patch, which supports more complicated ops like "Add, Set, Replace, Remove, Increment". And is not able to support ops exceeding 10 in one patch call.
 
+### Bulk Patch
+
+Bulk patch is a non-transactional bulk operation for patch updates.
+
+```java
+// 1) Apply the same patch operations to multiple ids
+var ids = List.of("id001", "id002", "id003");
+var operations = PatchOperations.create()
+        .set("/status", "ENABLED")
+        .increment("/version", 1);
+
+var result1 = db.bulkPatch("Collection1", ids, operations, "Users");
+
+// 2) Apply different patch operations per id
+var patchList = List.of(
+        BulkPatchOperation.of("id001", PatchOperations.create().set("/status", "ENABLED")),
+        BulkPatchOperation.of("id002", PatchOperations.create().set("/status", "DISABLED"))
+);
+
+var result2 = db.bulkPatch("Collection1", patchList, "Users");
+```
+
+Return value is `CosmosBulkResult`:
+
+* `successList`: patched documents (or document ids depending on implementation)
+* `fatalList`: failed items with `CosmosException` (for example, target id not found)
+
 ### Complex queries
 
 ```java
