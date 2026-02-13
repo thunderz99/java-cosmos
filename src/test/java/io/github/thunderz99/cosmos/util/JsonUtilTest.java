@@ -96,7 +96,7 @@ public class JsonUtilTest {
         var json = "{\"id\":1, \"name\":}";
         assertThatThrownBy(() -> JsonUtil.fromJson(json, Data.class))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("json process error.");
+                .hasMessageStartingWith("json process error: Unexpected character");
     }
 
     @Test
