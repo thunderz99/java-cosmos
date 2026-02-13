@@ -10,6 +10,7 @@ import com.google.common.base.Preconditions;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
@@ -37,6 +38,10 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
     private static Logger log = LoggerFactory.getLogger(CosmosDatabaseImpl.class);
 
     static final int MAX_BATCH_NUMBER_OF_OPERATION = 100;
+    /**
+     * Chunk size for bulk patch operations.
+     */
+    static final int BULK_PATCH_CHUNK_SIZE = 100;
 
     static final int FIND_PREFERRED_PAGE_SIZE = 10;
 
@@ -1157,6 +1162,40 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         checkValidId(data);
     }
 
+    /**
+     * Common checks for bulk patch requests.
+     *
+     * @param coll       collection name
+     * @param data       patch targets
+     * @param partition  partition name
+     * @param operations patch operations
+     */
+    static void doCheckBeforeBulkPatch(String coll, List<?> data, String partition, PatchOperations operations) {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(data, "bulkPatch data " + coll + " " + partition);
+        Checker.checkNotNull(operations, "operations");
+        Preconditions.checkArgument(operations.size() <= PatchOperations.LIMIT,
+                "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10", operations.size());
+    }
+
+    /**
+     * Merge bulk results from source to target.
+     *
+     * @param target target bulk result
+     * @param source source bulk result
+     */
+    static void mergeBulkResult(CosmosBulkResult target, CosmosBulkResult source) {
+        if (source == null) {
+            return;
+        }
+        target.successList.addAll(source.successList);
+        target.fatalList.addAll(source.fatalList);
+        @SuppressWarnings("unchecked")
+        var targetRetryList = (List<Object>) target.retryList;
+        targetRetryList.addAll(source.retryList);
+    }
+
     private List<CosmosDocument> doBatchWithRetry(CosmosContainer container, CosmosBatch batch) throws Exception {
         var response = RetryUtil.executeBatchWithRetry(() ->
                 new CosmosBatchResponseWrapper(container.executeCosmosBatch(batch))
@@ -1277,6 +1316,109 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
         log.info("end bulkDelete coll:{}, partition:{}, account:{}", coll, partition, getAccount());
         return result;
+    }
+
+    /**
+     * Bulk patch documents with the same operations.
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll       collection name
+     * @param ids        document ids
+     * @param operations patch operations to apply to all targets
+     * @param partition  partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<?> ids, PatchOperations operations, String partition) throws Exception {
+        doCheckBeforeBulkPatch(coll, ids, partition, operations);
+
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+        log.info("begin bulkPatch coll:{}, partition:{}, account:{}", coll, partition, getAccount());
+
+        var ret = new CosmosBulkResult();
+        var partitionKey = new PartitionKey(partition);
+        var operationList = new ArrayList<CosmosItemOperation>(BULK_PATCH_CHUNK_SIZE);
+        CosmosPatchOperations currentPatchOperations = null;
+
+        for (var idObj : ids) {
+            var id = getId(idObj);
+            if (StringUtils.isEmpty(id)) {
+                continue;
+            }
+            checkValidId(id);
+
+            if (operationList.isEmpty()) {
+                currentPatchOperations = operations.copy().getCosmosPatchOperations();
+            }
+
+            operationList.add(CosmosBulkOperations.getPatchItemOperation(id, partitionKey, currentPatchOperations));
+
+            if (operationList.size() >= BULK_PATCH_CHUNK_SIZE) {
+                var chunkResult = RetryUtil.executeBulkWithRetry(coll, operationList,
+                        (ops) -> container.executeBulkOperations(ops));
+                mergeBulkResult(ret, chunkResult);
+                operationList.clear();
+                currentPatchOperations = null;
+            }
+        }
+
+        if (!operationList.isEmpty()) {
+            var chunkResult = RetryUtil.executeBulkWithRetry(coll, operationList,
+                    (ops) -> container.executeBulkOperations(ops));
+            mergeBulkResult(ret, chunkResult);
+        }
+
+        log.info("end bulkPatch coll:{}, partition:{}, account:{}", coll, partition, getAccount());
+        return ret;
+    }
+
+    /**
+     * Bulk patch documents with individual operations.
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll      collection name
+     * @param data      list of bulk patch operations
+     * @param partition partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<BulkPatchOperation> data, String partition) throws Exception {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(data, "bulkPatch data " + coll + " " + partition);
+
+        var partitionKey = new PartitionKey(partition);
+        var operationList = new ArrayList<CosmosItemOperation>(BULK_PATCH_CHUNK_SIZE);
+        for (var bulkPatchOperation : data) {
+            Checker.checkNotNull(bulkPatchOperation, "bulkPatchOperation");
+            var id = bulkPatchOperation.id;
+            var operations = bulkPatchOperation.operations;
+            Checker.checkNotBlank(id, "id");
+            Checker.checkNotNull(operations, "operations");
+            operations = operations.copy();
+            Preconditions.checkArgument(operations.size() <= PatchOperations.LIMIT,
+                    "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10", operations.size());
+            checkValidId(id);
+            operationList.add(CosmosBulkOperations.getPatchItemOperation(id, partitionKey, operations.getCosmosPatchOperations()));
+        }
+
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+        log.info("begin bulkPatch coll:{}, partition:{}, account:{}", coll, partition, getAccount());
+
+        var ret = new CosmosBulkResult();
+        if (operationList.isEmpty()) {
+            log.info("end bulkPatch coll:{}, partition:{}, account:{}", coll, partition, getAccount());
+            return ret;
+        }
+
+        for (int i = 0; i < operationList.size(); i += BULK_PATCH_CHUNK_SIZE) {
+            var toIndex = Math.min(i + BULK_PATCH_CHUNK_SIZE, operationList.size());
+            var chunk = new ArrayList<CosmosItemOperation>(operationList.subList(i, toIndex));
+            var chunkResult = RetryUtil.executeBulkWithRetry(coll, chunk,
+                    (ops) -> container.executeBulkOperations(ops));
+            mergeBulkResult(ret, chunkResult);
+        }
+
+        log.info("end bulkPatch coll:{}, partition:{}, account:{}", coll, partition, getAccount());
+        return ret;
     }
 
     @Override

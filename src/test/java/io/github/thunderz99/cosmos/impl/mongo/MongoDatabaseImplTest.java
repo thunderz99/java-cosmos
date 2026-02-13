@@ -18,6 +18,7 @@ import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CheckBox;
 import io.github.thunderz99.cosmos.dto.EvalSkip;
 import io.github.thunderz99.cosmos.dto.FullNameUser;
@@ -3573,6 +3574,149 @@ class MongoDatabaseImplTest {
 
         } finally {
             db.bulkDelete(host, userList, "Users");
+        }
+    }
+
+    /**
+     * Bulk patch should update multiple documents with the same operations.
+     */
+    @Test
+    void bulkPatch_should_work_with_same_operations() throws Exception {
+        var partition = "Users";
+        int size = 5;
+        var dataList = new ArrayList<Map<String, Object>>(size);
+        for (int i = 0; i < size; i++) {
+            var id = "bulkPatch_same_" + i;
+            dataList.add(Map.of(
+                    "id", id,
+                    "status", "NEW",
+                    "contents", Map.of("age", 20 + i)
+            ));
+        }
+
+        var ids = dataList.stream().map(item -> item.get("id").toString()).collect(Collectors.toList());
+
+        try {
+            db.bulkCreate(host, dataList, partition);
+
+            var operations = PatchOperations.create()
+                    .set("/status", "DONE")
+                    .set("/contents/age", 99);
+
+            var result = db.bulkPatch(host, ids, operations, partition);
+            assertThat(result.fatalList).hasSize(0);
+            assertThat(result.retryList).hasSize(0);
+            assertThat(result.successList).hasSize(size);
+
+            for (var id : ids) {
+                var item = db.read(host, id, partition).toMap();
+                assertThat(item.get("status")).isEqualTo("DONE");
+                assertThat(((Map<String, Object>) item.get("contents"))).containsEntry("age", 99);
+            }
+        } finally {
+            db.bulkDelete(host, ids, partition);
+        }
+    }
+
+    /**
+     * Bulk patch should update multiple documents with different operations.
+     */
+    @Test
+    void bulkPatch_should_work_with_per_item_operations() throws Exception {
+        var partition = "Users";
+        int size = 3;
+        var dataList = new ArrayList<Map<String, Object>>(size);
+        var patchList = new ArrayList<BulkPatchOperation>(size);
+
+        for (int i = 0; i < size; i++) {
+            var id = "bulkPatch_diff_" + i;
+            dataList.add(Map.of(
+                    "id", id,
+                    "firstName", "firstName" + i,
+                    "lastName", "lastName" + i
+            ));
+            patchList.add(new BulkPatchOperation(id, PatchOperations.create()
+                    .set("/firstName", "patchedFirstName" + i)
+                    .set("/status", "UPDATED")));
+        }
+
+        var ids = dataList.stream().map(item -> item.get("id").toString()).collect(Collectors.toList());
+
+        try {
+            db.bulkCreate(host, dataList, partition);
+
+            var result = db.bulkPatch(host, patchList, partition);
+            assertThat(result.fatalList).hasSize(0);
+            assertThat(result.retryList).hasSize(0);
+            assertThat(result.successList).hasSize(size);
+
+            for (int i = 0; i < size; i++) {
+                var id = ids.get(i);
+                var item = db.read(host, id, partition).toMap();
+                assertThat(item.get("firstName")).isEqualTo("patchedFirstName" + i);
+                assertThat(item.get("status")).isEqualTo("UPDATED");
+            }
+        } finally {
+            db.bulkDelete(host, ids, partition);
+        }
+    }
+
+    @Test
+    void bulkPatch_should_classify_missing_ids_correctly_with_same_operations() throws Exception {
+        var partition = "Users";
+        var existingId = "bulkPatch_existing_id";
+        var missingId = "bulkPatch_missing_id";
+        var data = Map.of(
+                "id", existingId,
+                "status", "NEW"
+        );
+        var ids = List.of(missingId, existingId);
+
+        try {
+            db.create(host, data, partition);
+
+            var operations = PatchOperations.create().set("/status", "DONE");
+            var result = db.bulkPatch(host, ids, operations, partition);
+
+            assertThat(result.successList)
+                    .extracting(it -> it.toMap().get("id"))
+                    .containsExactly(existingId);
+            assertThat(result.fatalList)
+                    .extracting(CosmosException::getCode)
+                    .containsExactly(missingId);
+
+            var item = db.read(host, existingId, partition).toMap();
+            assertThat(item.get("status")).isEqualTo("DONE");
+        } finally {
+            db.delete(host, existingId, partition);
+        }
+    }
+
+    @Test
+    void bulkPatch_should_handle_null_operations_in_per_item_operations() throws Exception {
+        var partition = "Users";
+        var validId = "bulkPatch_per_item_valid";
+        var invalidId = "bulkPatch_per_item_invalid";
+        var patchList = List.of(
+                new BulkPatchOperation(invalidId, null),
+                new BulkPatchOperation(validId, PatchOperations.create().set("/status", "UPDATED"))
+        );
+
+        try {
+            db.create(host, Map.of("id", validId, "status", "NEW"), partition);
+
+            var result = db.bulkPatch(host, patchList, partition);
+            assertThat(result.successList)
+                    .extracting(it -> it.toMap().get("id"))
+                    .containsExactly(validId);
+            assertThat(result.fatalList)
+                    .extracting(CosmosException::getCode)
+                    .containsExactly(invalidId);
+
+            var item = db.read(host, validId, partition).toMap();
+            assertThat(item.get("status")).isEqualTo("UPDATED");
+        } finally {
+            db.delete(host, validId, partition);
         }
     }
 

@@ -47,4 +47,23 @@ class PatchOperationsTest {
 
     }
 
+    @Test
+    void copy_should_work() {
+        var operations = PatchOperations.create()
+                .add("/add", 1)
+                .remove("/remove")
+                .set("/set", 3)
+                .replace("/replace", 4)
+                .increment("/increment", 5)
+                .increment("/incrementDouble", 1.5);
+
+        var copied = operations.copy();
+        assertThat(copied).isNotSameAs(operations);
+        assertThat(copied.size()).isEqualTo(operations.size());
+
+        copied.add("/new", "value");
+        assertThat(operations.size()).isEqualTo(6);
+        assertThat(copied.size()).isEqualTo(7);
+    }
+
 }

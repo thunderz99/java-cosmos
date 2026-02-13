@@ -14,6 +14,7 @@ import com.mongodb.client.model.*;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.FilterOptions;
@@ -42,6 +43,10 @@ import static com.mongodb.client.model.Projections.*;
 public class MongoDatabaseImpl implements CosmosDatabase {
 
     private static Logger log = LoggerFactory.getLogger(MongoDatabaseImpl.class);
+    /**
+     * Chunk size for bulk patch operations.
+     */
+    static final int BULK_PATCH_CHUNK_SIZE = 100;
 
     static final int MAX_BATCH_NUMBER_OF_OPERATION = 100;
 
@@ -1493,6 +1498,149 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             for (String id : ids) {
                 ret.fatalList.add(new CosmosException(500, id, "Failed to delete"));
             }
+        }
+
+        return ret;
+    }
+
+    /**
+     * Bulk patch documents with the same operations.
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll       collection name
+     * @param ids        document ids
+     * @param operations patch operations to apply to all targets
+     * @param partition  partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<?> ids, PatchOperations operations, String partition) throws Exception {
+
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(ids, "bulkPatch data " + coll + " " + partition);
+        Checker.checkNotNull(operations, "operations");
+
+        Preconditions.checkArgument(operations.size() <= PatchOperations.LIMIT,
+                "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10", operations.size());
+
+        var idList = new ArrayList<String>();
+        for (var obj : ids) {
+            var id = getId(obj);
+            checkValidId(id);
+            if (StringUtils.isNotEmpty(id)) {
+                idList.add(id);
+            }
+        }
+
+        var ret = new CosmosBulkResult();
+        if (idList.isEmpty()) {
+            return ret;
+        }
+
+        var operationsCopy = operations.copy();
+        operationsCopy.set("/_ts", TimestampUtil.getTimestampInDouble());
+        var patchData = JsonPatchUtil.toMongoPatchData(operationsCopy);
+        if (CollectionUtils.isEmpty(patchData)) {
+            log.warn("operations is empty. do nothing in collection '{}.{}'.", coll, partition);
+            ret.successList = idList.stream().map(id -> new CosmosDocument(Map.of("id", id))).collect(Collectors.toList());
+            return ret;
+        }
+
+        var update = Updates.combine(patchData);
+        var container = this.client.getDatabase(coll).getCollection(partition);
+
+        for (int i = 0; i < idList.size(); i += BULK_PATCH_CHUNK_SIZE) {
+            var toIndex = Math.min(i + BULK_PATCH_CHUNK_SIZE, idList.size());
+            var subIds = idList.subList(i, toIndex);
+            int matchedCount = 0;
+
+            for (var id : subIds) {
+                var updateResult = container.updateOne(Filters.eq("_id", id), update);
+                if (updateResult.getMatchedCount() > 0) {
+                    ret.successList.add(new CosmosDocument(Map.of("id", id)));
+                    matchedCount++;
+                } else {
+                    ret.fatalList.add(new CosmosException(500, id, "Failed to patch"));
+                }
+            }
+
+            log.info("Bulk patched Documents in collection:{}, partition:{}, matchedCount:{}, account:{}",
+                    coll, partition, matchedCount, getAccount());
+        }
+
+        return ret;
+    }
+
+    /**
+     * Bulk patch documents with individual operations.
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll      collection name
+     * @param data      list of bulk patch operations
+     * @param partition partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<BulkPatchOperation> data, String partition) throws Exception {
+
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(data, "bulkPatch data " + coll + " " + partition);
+
+        var ret = new CosmosBulkResult();
+
+        var updatesById = new ArrayList<Map.Entry<String, Bson>>();
+
+        for (var bulkPatchOperation : data) {
+            if (bulkPatchOperation == null) {
+                ret.fatalList.add(new CosmosException(500, "null", "bulkPatchOperation is null"));
+                continue;
+            }
+            var id = bulkPatchOperation.id;
+            var operations = bulkPatchOperation.operations;
+            Checker.checkNotBlank(id, "id");
+            if (operations == null) {
+                ret.fatalList.add(new CosmosException(500, id, "operations is null"));
+                continue;
+            }
+            operations = operations.copy();
+            Preconditions.checkArgument(operations.size() <= PatchOperations.LIMIT,
+                    "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10", operations.size());
+            checkValidId(id);
+
+            operations.set("/_ts", TimestampUtil.getTimestampInDouble());
+            var patchData = JsonPatchUtil.toMongoPatchData(operations);
+            if (CollectionUtils.isEmpty(patchData)) {
+                ret.successList.add(new CosmosDocument(Map.of("id", id)));
+                continue;
+            }
+
+            var update = Updates.combine(patchData);
+            updatesById.add(new AbstractMap.SimpleEntry<>(id, update));
+        }
+
+        if (updatesById.isEmpty()) {
+            return ret;
+        }
+
+        var container = this.client.getDatabase(coll).getCollection(partition);
+        for (int i = 0; i < updatesById.size(); i += BULK_PATCH_CHUNK_SIZE) {
+            var toIndex = Math.min(i + BULK_PATCH_CHUNK_SIZE, updatesById.size());
+            var subUpdates = updatesById.subList(i, toIndex);
+            int matchedCount = 0;
+
+            for (var updateById : subUpdates) {
+                var id = updateById.getKey();
+                var updateResult = container.updateOne(Filters.eq("_id", id), updateById.getValue());
+                if (updateResult.getMatchedCount() > 0) {
+                    ret.successList.add(new CosmosDocument(Map.of("id", id)));
+                    matchedCount++;
+                } else {
+                    ret.fatalList.add(new CosmosException(500, id, "Failed to patch"));
+                }
+            }
+
+            log.info("Bulk patched Documents in collection:{}, partition:{}, matchedCount:{}, account:{}",
+                    coll, partition, matchedCount, getAccount());
         }
 
         return ret;

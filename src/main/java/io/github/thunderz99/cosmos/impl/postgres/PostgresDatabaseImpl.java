@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
@@ -37,6 +38,10 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
     public static final String DEFAULT_SCHEMA = "public";
     private static Logger log = LoggerFactory.getLogger(PostgresDatabaseImpl.class);
+    /**
+     * Chunk size for bulk patch operations.
+     */
+    static final int BULK_PATCH_CHUNK_SIZE = 100;
 
     static final int MAX_BATCH_NUMBER_OF_OPERATION = 100;
 
@@ -236,6 +241,23 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         if (StringUtils.containsAny(id, "\t", "\n", "\r", "/")) {
             throw new IllegalArgumentException("id cannot contain \\t or \\n or \\r or /. id:" + id);
         }
+    }
+
+    /**
+     * Merge bulk results from source to target.
+     *
+     * @param target target bulk result
+     * @param source source bulk result
+     */
+    static void mergeBulkResult(CosmosBulkResult target, CosmosBulkResult source) {
+        if (source == null) {
+            return;
+        }
+        target.successList.addAll(source.successList);
+        target.fatalList.addAll(source.fatalList);
+        @SuppressWarnings("unchecked")
+        var targetRetryList = (List<Object>) target.retryList;
+        targetRetryList.addAll(source.retryList);
     }
 
 
@@ -1213,6 +1235,126 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         if (log.isInfoEnabled()){
             log.info("bulk deleted Document:{}/docs/, deleted count:{}, partition:{}, account:{}", collectionLink, ids.size(), partition, getAccount());
         }
+        return ret;
+    }
+
+    /**
+     * Bulk patch documents with the same operations.
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll       collection name
+     * @param ids        document ids
+     * @param operations patch operations to apply to all targets
+     * @param partition  partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<?> ids, PatchOperations operations, String partition) throws Exception {
+
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(ids, "bulkPatch data " + coll + " " + partition);
+        Checker.checkNotNull(operations, "operations");
+
+        Preconditions.checkArgument(operations.size() <= PatchOperations.LIMIT,
+                "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10", operations.size());
+
+        coll = TableUtil.checkAndNormalizeValidEntityName(coll);
+
+        var idList = new ArrayList<String>();
+        for (var obj : ids) {
+            var id = getId(obj);
+            checkValidId(id);
+            if (StringUtils.isNotEmpty(id)) {
+                idList.add(id);
+            }
+        }
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        final var _coll = coll;
+        final var _partition = partition;
+        final var _operations = operations.copy();
+
+        // currently, we wrap the SQLException to CosmosException. And do not retry(maxRetries = 0)
+        // TODO: retry for bulk operations
+        var ret = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                var chunkResult = new CosmosBulkResult();
+                for (int i = 0; i < idList.size(); i += BULK_PATCH_CHUNK_SIZE) {
+                    var toIndex = Math.min(i + BULK_PATCH_CHUNK_SIZE, idList.size());
+                    var chunk = idList.subList(i, toIndex);
+                    var result = TableUtil.bulkPatchRecords(conn, _coll, _partition, chunk, _operations);
+                    mergeBulkResult(chunkResult, result);
+                }
+                return chunkResult;
+            } catch (SQLException e) {
+                log.warn("Error when bulk patching records from table '{}.{}'. records size:{}. ", _coll, partition, idList.size(), e);
+                throw e;
+            }
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, 0);
+
+        if (log.isInfoEnabled()) {
+            log.info("bulk patched Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, idList.size(), partition, getAccount());
+        }
+
+        return ret;
+    }
+
+    /**
+     * Bulk patch documents with individual operations.
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll      collection name
+     * @param data      list of bulk patch operations
+     * @param partition partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<BulkPatchOperation> data, String partition) throws Exception {
+
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(data, "bulkPatch data " + coll + " " + partition);
+
+        coll = TableUtil.checkAndNormalizeValidEntityName(coll);
+
+        var checkedData = new ArrayList<BulkPatchOperation>();
+        for (var bulkPatchOperation : data) {
+            Checker.checkNotNull(bulkPatchOperation, "bulkPatchOperation");
+            Checker.checkNotBlank(bulkPatchOperation.id, "id");
+            Checker.checkNotNull(bulkPatchOperation.operations, "operations");
+            Preconditions.checkArgument(bulkPatchOperation.operations.size() <= PatchOperations.LIMIT,
+                    "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10", bulkPatchOperation.operations.size());
+            checkValidId(bulkPatchOperation.id);
+            checkedData.add(new BulkPatchOperation(bulkPatchOperation.id, bulkPatchOperation.operations.copy()));
+        }
+
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        final var _coll = coll;
+        final var _partition = partition;
+
+        // currently, we wrap the SQLException to CosmosException. And do not retry(maxRetries = 0)
+        // TODO: retry for bulk operations
+        var ret = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                var chunkResult = new CosmosBulkResult();
+                for (int i = 0; i < checkedData.size(); i += BULK_PATCH_CHUNK_SIZE) {
+                    var toIndex = Math.min(i + BULK_PATCH_CHUNK_SIZE, checkedData.size());
+                    var chunk = checkedData.subList(i, toIndex);
+                    var result = TableUtil.bulkPatchRecords(conn, _coll, _partition, chunk);
+                    mergeBulkResult(chunkResult, result);
+                }
+                return chunkResult;
+            } catch (SQLException e) {
+                log.warn("Error when bulk patching records from table '{}.{}'. records size:{}. ", _coll, partition, checkedData.size(), e);
+                throw e;
+            }
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, 0);
+
+        if (log.isInfoEnabled()) {
+            log.info("bulk patched Document:{}/docs/, records size:{}, partition:{}, account:{}", collectionLink, checkedData.size(), partition, getAccount());
+        }
+
         return ret;
     }
 

@@ -3,6 +3,7 @@ package io.github.thunderz99.cosmos.impl.postgres.util;
 import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.CosmosDocument;
 import io.github.thunderz99.cosmos.CosmosException;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
@@ -662,6 +663,140 @@ public class TableUtil {
             log.warn("Error when patch record in table '{}.{}'. id:{}.", schemaName, tableName, id, e);
             throw e;
         }
+    }
+
+    /**
+     * Bulk patch records with the same operations.
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param ids        target ids
+     * @param operations patch operations to apply to all targets
+     * @return CosmosBulkResult instance including successList and fatalList
+     * @throws Exception if a database error occurs
+     */
+    public static CosmosBulkResult bulkPatchRecords(Connection conn, String schemaName, String tableName, List<String> ids, PatchOperations operations) throws Exception {
+
+        Checker.checkNotNull(ids, "ids");
+        Checker.checkNotNull(operations, "operations");
+
+        var ret = new CosmosBulkResult();
+        if (ids.isEmpty()) {
+            return ret;
+        }
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+
+        if (CollectionUtils.isEmpty(operations.getPatchOperations())) {
+            log.warn("operations is empty. do nothing in table '{}.{}'.", schemaName, tableName);
+            return ret;
+        }
+
+        var querySpec = JsonPatchUtil.toPostgresPatchData(operations);
+        querySpec = NamedParameterUtil.convert(querySpec);
+
+        var subSql = querySpec.queryText;
+        var params = querySpec.params;
+
+        var patchTableSQL = String.format("""
+                UPDATE %s.%s
+                SET %s = %s
+                WHERE %s = ?
+                RETURNING *
+                """, schemaName, tableName, DATA, subSql, ID);
+
+        try (var pstmt = conn.prepareStatement(patchTableSQL)) {
+            for (var id : ids) {
+                try {
+                    var index = bindPatchParams(pstmt, params, 1);
+                    pstmt.setString(index, id);
+
+                    try (var resultSet = pstmt.executeQuery()) {
+                        if (resultSet.next()) {
+                            var record = new PostgresRecord(resultSet.getString(ID), JsonUtil.toMap(resultSet.getString(DATA)));
+                            ret.successList.add(getCosmosDocument(record));
+                        } else {
+                            ret.fatalList.add(new CosmosException(404, "404", "resultSet is 404 Not Found when bulk patch record into table '%s.%s'. id:%s.".formatted(schemaName, tableName, id)));
+                        }
+                    }
+                } catch (Exception e) {
+                    ret.fatalList.add(new CosmosException(500, id, "Failed to bulk patch record in table '%s.%s'. id:%s".formatted(schemaName, tableName, id), e));
+                }
+            }
+        } catch (SQLException e) {
+            log.warn("Error when bulk patch records in table '{}.{}'.", schemaName, tableName, e);
+            throw e;
+        }
+
+        return ret;
+    }
+
+    /**
+     * Bulk patch records with individual operations.
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param data       list of bulk patch operations
+     * @return CosmosBulkResult instance including successList and fatalList
+     * @throws Exception if a database error occurs
+     */
+    public static CosmosBulkResult bulkPatchRecords(Connection conn, String schemaName, String tableName, List<BulkPatchOperation> data) throws Exception {
+
+        Checker.checkNotNull(data, "data");
+
+        var ret = new CosmosBulkResult();
+        if (data.isEmpty()) {
+            return ret;
+        }
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+
+        for (var bulkPatchOperation : data) {
+            if (bulkPatchOperation == null) {
+                ret.fatalList.add(new CosmosException(500, "null", "bulkPatchOperation is null"));
+                continue;
+            }
+            var id = bulkPatchOperation.id;
+            var operations = bulkPatchOperation.operations;
+            try {
+                Checker.checkNotBlank(id, "id");
+                Checker.checkNotNull(operations, "operations");
+
+                var record = patchRecord(conn, schemaName, tableName, id, operations);
+                ret.successList.add(getCosmosDocument(record));
+            } catch (Exception e) {
+                ret.fatalList.add(new CosmosException(500, id, "Failed to bulk patch record in table '%s.%s'. id:%s".formatted(schemaName, tableName, id), e));
+            }
+        }
+
+        return ret;
+    }
+
+    /**
+     * Bind patch parameters to the PreparedStatement and return the next index.
+     *
+     * @param pstmt      prepared statement
+     * @param params     patch parameters
+     * @param startIndex start index (1-based)
+     * @return next index for subsequent bindings
+     * @throws SQLException if binding fails
+     */
+    static int bindPatchParams(PreparedStatement pstmt, List<CosmosSqlParameter> params, int startIndex) throws SQLException {
+        var index = startIndex;
+        for (var param : params) {
+            // Use JSON text for non-string values to preserve types in jsonb operations.
+            if (param.value instanceof String strValue) {
+                pstmt.setString(index, "\"" + strValue + "\"");
+            } else {
+                pstmt.setString(index, JsonUtil.toJson(param.value));
+            }
+            index++;
+        }
+        return index;
     }
 
     /**

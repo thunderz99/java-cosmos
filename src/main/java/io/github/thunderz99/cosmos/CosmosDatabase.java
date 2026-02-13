@@ -4,6 +4,7 @@ import java.util.List;
 
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -511,6 +512,29 @@ public interface CosmosDatabase {
      * @return CosmosBulkResult
      */
     public CosmosBulkResult bulkDelete(String coll, List<?> data, String partition) throws Exception;
+
+    /**
+     * Bulk patch documents with the same operations.
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll       collection name
+     * @param ids        document ids
+     * @param operations patch operations to apply to all targets
+     * @param partition  partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<?> ids, PatchOperations operations, String partition) throws Exception;
+
+    /**
+     * Bulk patch documents with individual operations.
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * @param coll      collection name
+     * @param data      list of bulk patch operations
+     * @param partition partition name
+     * @return CosmosBulkResult
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<BulkPatchOperation> data, String partition) throws Exception;
 
     /**
      * Ping a collection to test whether it is accessible.
