@@ -8,6 +8,7 @@ import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CheckBox;
 import io.github.thunderz99.cosmos.dto.EvalSkip;
 import io.github.thunderz99.cosmos.dto.FullNameUser;
@@ -3742,6 +3743,69 @@ public class PostgresDatabaseImplTest {
             db.delete(host, id, partition);
         }
 
+    }
+
+    @Test
+    void bulkPatch_should_classify_missing_ids_correctly_with_same_operations() throws Exception {
+        var partition = "PatchTests";
+        var existingId = "bulkPatch_existing_id_postgres";
+        var missingId = "bulkPatch_missing_id_postgres";
+        var data = Map.of(
+                "id", existingId,
+                "status", "NEW"
+        );
+        var ids = List.of(missingId, existingId);
+
+        try {
+            db.create(host, data, partition);
+
+            var operations = PatchOperations.create().set("/status", "DONE");
+            var result = db.bulkPatch(host, ids, operations, partition);
+
+            assertThat(result.successList)
+                    .extracting(it -> it.toMap().get("id"))
+                    .contains(existingId);
+            assertThat(result.fatalList)
+                    .extracting(CosmosException::getStatusCode)
+                    .contains(404);
+
+            var item = db.read(host, existingId, partition).toMap();
+            assertThat(item.get("status")).isEqualTo("DONE");
+        } finally {
+            db.delete(host, existingId, partition);
+        }
+    }
+
+    @Test
+    void bulkPatch_should_classify_missing_ids_correctly_with_per_item_operations() throws Exception {
+        var partition = "PatchTests";
+        var existingId = "bulkPatch_per_item_existing_id_postgres";
+        var missingId = "bulkPatch_per_item_missing_id_postgres";
+        var data = Map.of(
+                "id", existingId,
+                "status", "NEW"
+        );
+        var patchList = List.of(
+                new BulkPatchOperation(missingId, PatchOperations.create().set("/status", "DONE")),
+                new BulkPatchOperation(existingId, PatchOperations.create().set("/status", "UPDATED"))
+        );
+
+        try {
+            db.create(host, data, partition);
+
+            var result = db.bulkPatch(host, patchList, partition);
+            assertThat(result.successList)
+                    .extracting(it -> it.toMap().get("id"))
+                    .contains(existingId);
+            assertThat(result.fatalList)
+                    .extracting(CosmosException::getStatusCode)
+                    .contains(404);
+
+            var item = db.read(host, existingId, partition).toMap();
+            assertThat(item.get("status")).isEqualTo("UPDATED");
+        } finally {
+            db.delete(host, existingId, partition);
+        }
     }
 
     @Test

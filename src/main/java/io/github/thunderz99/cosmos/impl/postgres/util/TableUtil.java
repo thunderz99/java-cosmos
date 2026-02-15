@@ -870,6 +870,122 @@ public class TableUtil {
     }
 
     /**
+     * Patch a bulk of records with the same patch operations(Transaction is NOT managed in this method).
+     *
+     * <p>
+     * This method will NOT begin/commit a transaction. You can manage transaction by yourself.
+     * </p>
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param ids        target document ids
+     * @param operations patch operations applied to all ids
+     * @return CosmosBulkResult
+     * @throws Exception if a database error occurs
+     */
+    public static CosmosBulkResult bulkPatchRecords(Connection conn, String schemaName, String tableName, List<String> ids, PatchOperations operations) throws Exception {
+        return bulkPatchRecords(conn, schemaName, tableName, ids, operations, CosmosLimits.BULK_CHUNK_SIZE);
+    }
+
+    /**
+     * Patch a bulk of records with the same patch operations(Transaction is NOT managed in this method).
+     *
+     * <p>
+     * This method will NOT begin/commit a transaction. You can manage transaction by yourself.
+     * </p>
+     *
+     * @param conn       the database connection
+     * @param schemaName the name of the schema
+     * @param tableName  the name of the table
+     * @param ids        target document ids
+     * @param operations patch operations applied to all ids
+     * @param chunkSize  chunk size for bulk processing
+     * @return CosmosBulkResult
+     * @throws Exception if a database error occurs
+     */
+    static CosmosBulkResult bulkPatchRecords(Connection conn, String schemaName, String tableName, List<String> ids, PatchOperations operations, int chunkSize) throws Exception {
+        Checker.checkNotNull(ids, "ids");
+        Checker.checkNotNull(operations, "operations");
+        Checker.check(chunkSize > 0, "chunkSize should be positive");
+
+        var ret = new CosmosBulkResult();
+        if (ids.isEmpty()) {
+            return ret;
+        }
+
+        schemaName = checkAndNormalizeValidEntityName(schemaName);
+        tableName = checkAndNormalizeValidEntityName(tableName);
+
+        if (CollectionUtils.isEmpty(operations.getPatchOperations())) {
+            for (var id : ids) {
+                ret.successList.add(getCosmosDocument(new PostgresRecord(id, new HashMap<>())));
+            }
+            return ret;
+        }
+
+        var querySpec = JsonPatchUtil.toPostgresPatchData(operations);
+        querySpec = NamedParameterUtil.convert(querySpec);
+
+        var subSql = querySpec.queryText;
+        var params = querySpec.params;
+
+        var patchTableSQL = String.format("""
+                UPDATE %s.%s
+                SET %s = %s
+                WHERE %s = ANY(?)
+                RETURNING *
+                """, schemaName, tableName, DATA, subSql, ID);
+
+        for (int from = 0; from < ids.size(); from += chunkSize) {
+            var to = Math.min(from + chunkSize, ids.size());
+            var chunkIds = ids.subList(from, to);
+
+            try (var pstmt = conn.prepareStatement(patchTableSQL)) {
+                var index = 1;
+                for (var param : params) {
+                    if (param.value instanceof String strValue) {
+                        pstmt.setString(index, "\"" + strValue + "\"");
+                    } else {
+                        pstmt.setString(index, JsonUtil.toJson(param.value));
+                    }
+                    index++;
+                }
+                var sqlArray = conn.createArrayOf("text", chunkIds.toArray());
+                pstmt.setArray(index, sqlArray);
+
+                var updatedMap = new HashMap<String, PostgresRecord>();
+                try (var resultSet = pstmt.executeQuery()) {
+                    while (resultSet.next()) {
+                        var record = new PostgresRecord(resultSet.getString(ID), JsonUtil.toMap(resultSet.getString(DATA)));
+                        updatedMap.put(record.id, record);
+                    }
+                }
+
+                for (var id : chunkIds) {
+                    var updated = updatedMap.get(id);
+                    if (updated != null) {
+                        ret.successList.add(getCosmosDocument(updated));
+                    } else {
+                        ret.fatalList.add(new CosmosException(404, "404",
+                                "resultSet is 404 Not Found when patch record into table '%s.%s'. id:%s.".formatted(schemaName, tableName, id)));
+                    }
+                }
+            } catch (SQLException e) {
+                log.warn("Error when bulk patch records in table '{}.{}'. from:{}, to:{}", schemaName, tableName, from, to, e);
+                for (int i = from; i < ids.size(); i++) {
+                    var id = ids.get(i);
+                    ret.fatalList.add(new CosmosException(500, id,
+                            "Failed to bulkPatch. %s.%s, id:%s, index:%s".formatted(schemaName, tableName, id, i), e));
+                }
+                return ret;
+            }
+        }
+
+        return ret;
+    }
+
+    /**
      * Inner method: Insert a bulk of records into a table(Transaction is NOT managed in this method).
      *
      * <p>
@@ -908,7 +1024,7 @@ public class TableUtil {
         try (var pstmt = conn.prepareStatement(insertSQL)) {
 
             var count = 0;
-            var chunkSize = 100;
+            var chunkSize = CosmosLimits.BULK_CHUNK_SIZE;
 
             // Add multiple records to the batch
             for (var record : records) {
@@ -986,7 +1102,7 @@ public class TableUtil {
         try (var pstmt = conn.prepareStatement(deleteSQL)) {
 
             int count = 0;
-            int chunkSize = 100;
+            int chunkSize = CosmosLimits.BULK_CHUNK_SIZE;
             for (var id : ids) {
 
                 pstmt.setString(1, id);
@@ -1059,7 +1175,7 @@ public class TableUtil {
         try (var pstmt = conn.prepareStatement(upsertSQL)) {
 
             int count = 0;
-            int chunkSize = 100;
+            int chunkSize = CosmosLimits.BULK_CHUNK_SIZE;
 
             for (var record : records) {
 
@@ -1072,7 +1188,7 @@ public class TableUtil {
                 count++;
 
                 // execute the batch in chunks, in order to reduce memory consumption
-                if (count % 100 == 0) {
+                if (count % chunkSize == 0) {
                     var expOccurred = executeAndRecordResult(schemaName, tableName, records, throwException, pstmt, chunkSize, count, ret);
                     if (expOccurred) {
 

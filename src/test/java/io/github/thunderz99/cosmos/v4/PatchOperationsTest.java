@@ -47,4 +47,30 @@ class PatchOperationsTest {
 
     }
 
+    @Test
+    void copy_should_work() {
+        var operations = PatchOperations.create()
+                .add("/obj", new DummyPojo("Alice", 20))
+                .set("/name", "Bob")
+                .replace("/age", 21)
+                .increment("/score", 1)
+                .remove("/unused");
+
+        var copied = operations.copy();
+
+        assertThat(copied).isNotSameAs(operations);
+        assertThat(copied.size()).isEqualTo(operations.size());
+        assertThat(copied.getPatchOperations()).isNotSameAs(operations.getPatchOperations());
+    }
+
+    static class DummyPojo {
+        String name;
+        int age;
+
+        DummyPojo(String name, int age) {
+            this.name = name;
+            this.age = age;
+        }
+    }
+
 }

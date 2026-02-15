@@ -4,6 +4,7 @@ import java.util.List;
 
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -511,6 +512,67 @@ public interface CosmosDatabase {
      * @return CosmosBulkResult
      */
     public CosmosBulkResult bulkDelete(String coll, List<?> data, String partition) throws Exception;
+
+    /**
+     * Bulk patch documents with the same patch operations.
+     *
+     * <p>
+     * Default implementation converts ids to BulkPatchOperation list and delegates to
+     * {@link #bulkPatch(String, List, String)}.
+     * </p>
+     *
+     * @param coll       collection name
+     * @param ids        target document ids
+     * @param operations patch operations applied to each target id
+     * @param partition  partition name
+     * @return CosmosBulkResult
+     * @throws Exception cosmos exception
+     */
+    default CosmosBulkResult bulkPatch(String coll, List<String> ids, PatchOperations operations, String partition) throws Exception {
+        if (ids == null) {
+            return this.bulkPatch(coll, (List<BulkPatchOperation>) null, partition);
+        }
+
+        var data = ids.stream()
+                .map(id -> BulkPatchOperation.of(id, operations == null ? null : operations.copy()))
+                .toList();
+        return this.bulkPatch(coll, data, partition);
+    }
+
+    /**
+     * Bulk patch documents.
+     * Note: Non-transaction. Have no number limit in theoretically.
+     *
+     * <p>
+     * Default implementation executes one-by-one patch for compatibility.
+     * </p>
+     *
+     * @param coll      collection name
+     * @param data      bulk patch operations (id + PatchOperations)
+     * @param partition partition name
+     * @return CosmosBulkResult
+     */
+    default CosmosBulkResult bulkPatch(String coll, List<BulkPatchOperation> data, String partition) throws Exception {
+        var ret = new CosmosBulkResult();
+        if (data == null) {
+            return ret;
+        }
+
+        for (var operation : data) {
+            try {
+                if (operation == null) {
+                    throw new CosmosException(400, "BAD_REQUEST", "bulkPatch operation should not be null");
+                }
+                ret.successList.add(this.patch(coll, operation.id, operation.operations, partition));
+            } catch (CosmosException ce) {
+                ret.fatalList.add(ce);
+            } catch (Exception e) {
+                ret.fatalList.add(new CosmosException(500, "UNKNOWN", e.getMessage(), e));
+            }
+        }
+
+        return ret;
+    }
 
     /**
      * Ping a collection to test whether it is accessible.

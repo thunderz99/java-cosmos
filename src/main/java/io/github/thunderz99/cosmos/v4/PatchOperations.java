@@ -175,4 +175,39 @@ public class PatchOperations {
     public List<PatchOperation> getPatchOperations() {
         return this.operations;
     }
+
+    /**
+     * Create a deep copy of current patch operations.
+     *
+     * @return copied PatchOperations
+     */
+    public PatchOperations copy() {
+        var copied = PatchOperations.create();
+        for (var _operation : this.operations) {
+            var operation = (PatchOperationCore<?>) _operation;
+            var op = operation.getOperationType();
+            var path = operation.getPath();
+            var value = operation.getResource();
+
+            switch (op) {
+                case ADD -> copied.add(path, value);
+                case REMOVE -> copied.remove(path);
+                case REPLACE -> copied.replace(path, value);
+                case SET -> copied.set(path, value);
+                case INCREMENT -> {
+                    if (value instanceof Double v) {
+                        copied.increment(path, v);
+                    } else if (value instanceof Float v) {
+                        copied.increment(path, v.doubleValue());
+                    } else if (value instanceof Number v) {
+                        copied.increment(path, v.longValue());
+                    } else {
+                        throw new IllegalArgumentException("Unsupported increment value type: " + value);
+                    }
+                }
+                default -> throw new UnsupportedOperationException("Unsupported JSON Patch operation: " + op);
+            }
+        }
+        return copied;
+    }
 }

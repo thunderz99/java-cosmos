@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
@@ -38,7 +39,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     public static final String DEFAULT_SCHEMA = "public";
     private static Logger log = LoggerFactory.getLogger(PostgresDatabaseImpl.class);
 
-    static final int MAX_BATCH_NUMBER_OF_OPERATION = 100;
+    static final int MAX_BATCH_NUMBER_OF_OPERATION = CosmosLimits.BATCH_OPERATION_LIMIT;
 
     /**
      * field automatically added to contain the expiration timestamp
@@ -1053,6 +1054,33 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         Checker.checkNotEmpty(data, "create data " + coll + " " + partition);
     }
 
+    static void doCheckBeforeBulkPatch(String coll, List<String> ids, PatchOperations operations, String partition) {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(ids, "bulkPatch ids " + coll + " " + partition);
+        Checker.checkNotNull(operations, "bulkPatch operations");
+        Preconditions.checkArgument(operations.size() <= PatchOperations.LIMIT,
+                "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10",
+                operations.size());
+        checkValidId(ids);
+    }
+
+    static void doCheckBeforeBulkPatch(String coll, List<BulkPatchOperation> data, String partition) {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(data, "bulkPatch data " + coll + " " + partition);
+
+        for (var operation : data) {
+            Checker.checkNotNull(operation, "bulkPatch operation");
+            Checker.checkNotBlank(operation.id, "bulkPatch operation id");
+            checkValidId(operation.id);
+            Checker.checkNotNull(operation.operations, "bulkPatch operation patch operations");
+            Preconditions.checkArgument(operation.operations.size() <= PatchOperations.LIMIT,
+                    "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10",
+                    operation.operations.size());
+        }
+    }
+
     /**
      * Bulk create documents.
      * Note: Non-transaction. Have no number limit in theoretically.
@@ -1216,12 +1244,91 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         return ret;
     }
 
+    /**
+     * Bulk patch documents with the same patch operations.
+     *
+     * @param coll       collection name
+     * @param ids        target document ids
+     * @param operations patch operations
+     * @param partition  partition name
+     * @return CosmosBulkResult
+     * @throws Exception cosmos exception
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<String> ids, PatchOperations operations, String partition) throws Exception {
+
+        doCheckBeforeBulkPatch(coll, ids, operations, partition);
+
+        coll = TableUtil.checkAndNormalizeValidEntityName(coll);
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        final var _coll = coll;
+        // Do not retry bulkPatch at wrapper level (maxRetries = 0):
+        // patch operations can be non-idempotent (e.g. increment), so retrying the whole batch may apply
+        // successful items twice and break per-id success/failure classification.
+        var ret = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                // use chunked bulk patch for same operations to reduce SQL round trips.
+                return TableUtil.bulkPatchRecords(conn, _coll, partition, ids, operations);
+            }
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, 0);
+
+        if (log.isInfoEnabled()) {
+            log.info("bulk patched(same operations) Document:{}/docs/, ids size:{}, partition:{}, account:{}",
+                    collectionLink, ids.size(), partition, getAccount());
+        }
+        return ret;
+    }
+
+    /**
+     * Bulk patch documents with different patch operations.
+     *
+     * @param coll      collection name
+     * @param data      bulk patch operations
+     * @param partition partition name
+     * @return CosmosBulkResult
+     * @throws Exception cosmos exception
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<BulkPatchOperation> data, String partition) throws Exception {
+
+        doCheckBeforeBulkPatch(coll, data, partition);
+
+        coll = TableUtil.checkAndNormalizeValidEntityName(coll);
+        var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+
+        var ret = new CosmosBulkResult();
+        final var _coll = coll;
+        // Do not retry bulkPatch at wrapper level (maxRetries = 0):
+        // patch operations can be non-idempotent (e.g. increment), so retrying the whole batch may apply
+        // successful items twice and break per-id success/failure classification.
+        RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                for (var operation : data) {
+                    try {
+                        var record = TableUtil.patchRecord(conn, _coll, partition, operation.id, operation.operations);
+                        ret.successList.add(getCosmosDocument(record));
+                    } catch (CosmosException ce) {
+                        ret.fatalList.add(ce);
+                    } catch (Exception e) {
+                        ret.fatalList.add(new CosmosException(500, "UNKNOWN", e.getMessage(), e));
+                    }
+                }
+                return ret;
+            }
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, 0);
+
+        if (log.isInfoEnabled()) {
+            log.info("bulk patched Document:{}/docs/, records size:{}, partition:{}, account:{}",
+                    collectionLink, data.size(), partition, getAccount());
+        }
+        return ret;
+    }
+
 
     static void checkBatchMaxOperations(List<?> data) {
         // There's a current limit of 100 operations per TransactionalBatch to ensure the performance is as expected and within SLAs:
         // https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/transactional-batch?tabs=dotnet#limitations
         if (data.size() > MAX_BATCH_NUMBER_OF_OPERATION) {
-            throw new IllegalArgumentException("The number of data operations should not exceed 100.");
+            throw new IllegalArgumentException("The number of data operations should not exceed %d.".formatted(MAX_BATCH_NUMBER_OF_OPERATION));
         }
     }
 

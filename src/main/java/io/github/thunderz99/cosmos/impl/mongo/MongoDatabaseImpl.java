@@ -14,6 +14,7 @@ import com.mongodb.client.model.*;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.FilterOptions;
@@ -43,7 +44,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
     private static Logger log = LoggerFactory.getLogger(MongoDatabaseImpl.class);
 
-    static final int MAX_BATCH_NUMBER_OF_OPERATION = 100;
+    static final int MAX_BATCH_NUMBER_OF_OPERATION = CosmosLimits.BATCH_OPERATION_LIMIT;
+    static final int BULK_PATCH_CHUNK_SIZE = CosmosLimits.BULK_CHUNK_SIZE;
 
     /**
      * field automatically added to contain the expiration timestamp
@@ -1308,6 +1310,33 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         Checker.checkNotEmpty(data, "create data " + coll + " " + partition);
     }
 
+    static void doCheckBeforeBulkPatch(String coll, List<String> ids, PatchOperations operations, String partition) {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(ids, "bulkPatch ids " + coll + " " + partition);
+        Checker.checkNotNull(operations, "bulkPatch operations");
+        Preconditions.checkArgument(operations.size() <= PatchOperations.LIMIT,
+                "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10",
+                operations.size());
+        checkValidId(ids);
+    }
+
+    static void doCheckBeforeBulkPatch(String coll, List<BulkPatchOperation> data, String partition) {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(data, "bulkPatch data " + coll + " " + partition);
+
+        for (var operation : data) {
+            Checker.checkNotNull(operation, "bulkPatch operation");
+            Checker.checkNotBlank(operation.id, "bulkPatch operation id");
+            checkValidId(operation.id);
+            Checker.checkNotNull(operation.operations, "bulkPatch operation patch operations");
+            Preconditions.checkArgument(operation.operations.size() <= PatchOperations.LIMIT,
+                    "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10",
+                    operation.operations.size());
+        }
+    }
+
     /**
      * Bulk create documents.
      * Note: Non-transaction. Have no number limit in theoretically.
@@ -1498,6 +1527,111 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         return ret;
     }
 
+    /**
+     * Bulk patch documents with the same patch operations.
+     *
+     * @param coll       collection name
+     * @param ids        target document ids
+     * @param operations patch operations
+     * @param partition  partition name
+     * @return CosmosBulkResult
+     * @throws Exception cosmos exception
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<String> ids, PatchOperations operations, String partition) throws Exception {
+        doCheckBeforeBulkPatch(coll, ids, operations, partition);
+
+        // Keep the same timestamp for this bulk execution to avoid per-item mutation.
+        var operationsWithTs = operations.copy().set("/_ts", TimestampUtil.getTimestampInDouble());
+        var patchData = JsonPatchUtil.toMongoPatchData(operationsWithTs);
+
+        var container = this.client.getDatabase(coll).getCollection(partition);
+        var update = Updates.combine(patchData);
+        var totalModifiedCount = 0L;
+        var ret = new CosmosBulkResult();
+
+        for (int from = 0; from < ids.size(); from += BULK_PATCH_CHUNK_SIZE) {
+            var to = Math.min(from + BULK_PATCH_CHUNK_SIZE, ids.size());
+            var chunkIds = ids.subList(from, to);
+            int matchedCount = 0;
+
+            // Intentionally use per-id updateOne here instead of bulkWrite:
+            // we need deterministic success/failure classification for each id (including not-found ids),
+            // while bulkWrite only exposes aggregated counters and does not map unmatched items by id.
+            for (var id : chunkIds) {
+                try {
+                    var updateResult = container.updateOne(Filters.eq("_id", id), update);
+                    if (updateResult.getMatchedCount() > 0) {
+                        ret.successList.add(new CosmosDocument(Map.of("id", id)));
+                        matchedCount++;
+                    } else {
+                        ret.fatalList.add(new CosmosException(500, id, "Failed to patch"));
+                    }
+                } catch (Exception e) {
+                    ret.fatalList.add(new CosmosException(500, id, "Failed to patch", e));
+                }
+            }
+
+            totalModifiedCount += matchedCount;
+        }
+
+        log.info("Bulk patched(same operations) Documents in collection:{}, partition:{}, modifiedCount:{}, account:{}",
+                coll, partition, totalModifiedCount, getAccount());
+
+        return ret;
+    }
+
+    /**
+     * Bulk patch documents with different patch operations.
+     *
+     * @param coll      collection name
+     * @param data      bulk patch operations
+     * @param partition partition name
+     * @return CosmosBulkResult
+     * @throws Exception cosmos exception
+     */
+    public CosmosBulkResult bulkPatch(String coll, List<BulkPatchOperation> data, String partition) throws Exception {
+        doCheckBeforeBulkPatch(coll, data, partition);
+
+        var container = this.client.getDatabase(coll).getCollection(partition);
+        var totalModifiedCount = 0L;
+        var ret = new CosmosBulkResult();
+
+        for (int from = 0; from < data.size(); from += BULK_PATCH_CHUNK_SIZE) {
+            var to = Math.min(from + BULK_PATCH_CHUNK_SIZE, data.size());
+            var chunkData = data.subList(from, to);
+            int matchedCount = 0;
+
+            // Intentionally use per-id updateOne here instead of bulkWrite:
+            // we need deterministic success/failure classification for each id (including not-found ids),
+            // while bulkWrite only exposes aggregated counters and does not map unmatched items by id.
+            for (var operation : chunkData) {
+                try {
+                    // Keep per-item operation immutable by copying before adding timestamp.
+                    var operationsWithTs = operation.operations.copy().set("/_ts", TimestampUtil.getTimestampInDouble());
+                    var patchData = JsonPatchUtil.toMongoPatchData(operationsWithTs);
+                    var update = Updates.combine(patchData);
+
+                    var updateResult = container.updateOne(Filters.eq("_id", operation.id), update);
+                    if (updateResult.getMatchedCount() > 0) {
+                        ret.successList.add(new CosmosDocument(Map.of("id", operation.id)));
+                        matchedCount++;
+                    } else {
+                        ret.fatalList.add(new CosmosException(500, operation.id, "Failed to patch"));
+                    }
+                } catch (Exception e) {
+                    ret.fatalList.add(new CosmosException(500, operation.id, "Failed to patch", e));
+                }
+            }
+
+            totalModifiedCount += matchedCount;
+        }
+
+        log.info("Bulk patched Documents in collection:{}, partition:{}, modifiedCount:{}, account:{}",
+                coll, partition, totalModifiedCount, getAccount());
+
+        return ret;
+    }
+
     @Override
     public boolean ping(String coll) throws Exception {
         var docs = this.find(coll, Condition.filter().limit(1), "_ping");
@@ -1508,7 +1642,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         // There's a current limit of 100 operations per TransactionalBatch to ensure the performance is as expected and within SLAs:
         // https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/transactional-batch?tabs=dotnet#limitations
         if (data.size() > MAX_BATCH_NUMBER_OF_OPERATION) {
-            throw new IllegalArgumentException("The number of data operations should not exceed 100.");
+            throw new IllegalArgumentException("The number of data operations should not exceed %d.".formatted(MAX_BATCH_NUMBER_OF_OPERATION));
         }
     }
 
