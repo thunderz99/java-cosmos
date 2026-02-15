@@ -1554,6 +1554,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             var chunkIds = ids.subList(from, to);
             int matchedCount = 0;
 
+            // Intentionally use per-id updateOne here instead of bulkWrite:
+            // we need deterministic success/failure classification for each id (including not-found ids),
+            // while bulkWrite only exposes aggregated counters and does not map unmatched items by id.
             for (var id : chunkIds) {
                 try {
                     var updateResult = container.updateOne(Filters.eq("_id", id), update);
@@ -1598,6 +1601,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             var chunkData = data.subList(from, to);
             int matchedCount = 0;
 
+            // Intentionally use per-id updateOne here instead of bulkWrite:
+            // we need deterministic success/failure classification for each id (including not-found ids),
+            // while bulkWrite only exposes aggregated counters and does not map unmatched items by id.
             for (var operation : chunkData) {
                 try {
                     // Keep per-item operation immutable by copying before adding timestamp.
