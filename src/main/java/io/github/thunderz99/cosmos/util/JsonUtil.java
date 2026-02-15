@@ -476,9 +476,9 @@ public class JsonUtil {
     }
 
     private static void processException(Object object, Exception e) {
-        log.warn("json process error. e = \n{}", exceptionToString(e));
-        log.warn("json process error. object = {}", object);
-        throw new IllegalArgumentException("json process error.", e);
+        log.warn("json process error. object = {}", object, e);
+        String detail = e.getMessage() == null ? e.getClass().getName() : e.getMessage();
+        throw new IllegalArgumentException("json process error: " + detail, e);
     }
 
     static String exceptionToString(Throwable throwable) {
