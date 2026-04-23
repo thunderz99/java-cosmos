@@ -8,7 +8,6 @@ import io.github.thunderz99.cosmos.util.JsonUtil;
 import io.github.thunderz99.cosmos.util.NumberUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.math.NumberUtils;
 import org.postgresql.util.PGobject;
 
 /**
@@ -43,13 +42,6 @@ public class PGAggregateUtil {
                 // for compatibility with cosmosdb, we need to convert null to empty map
                 if(value == null){
                     return new LinkedHashMap<>();
-                }
-
-                // check if the value is a String that can be parsed to Long or Integer
-                if(value instanceof String strValue && !StringUtils.contains(strValue, ".")){
-                    if(NumberUtils.isCreatable(strValue)){
-                        value = NumberUtils.createNumber(strValue);
-                    }
                 }
 
                 // Check if the value is an instance of Long
