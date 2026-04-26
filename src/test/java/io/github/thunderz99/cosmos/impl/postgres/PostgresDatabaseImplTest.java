@@ -2076,6 +2076,40 @@ public class PostgresDatabaseImplTest {
 
     }
 
+    @Test
+    void aggregate_should_preserve_numeric_string_group_keys() throws Exception {
+
+        var partition = "Users2";
+        var id1 = "group_numeric_string1_" + RandomStringUtils.randomAlphanumeric(3);
+        var id2 = "group_numeric_string2_" + RandomStringUtils.randomAlphanumeric(3);
+        var id3 = "group_numeric_string3_" + RandomStringUtils.randomAlphanumeric(3);
+
+        try {
+            db.upsert(host, Map.of("id", id1, "employeeCode", "123"), partition);
+            db.upsert(host, Map.of("id", id2, "employeeCode", "123"), partition);
+            db.upsert(host, Map.of("id", id3, "employeeCode", "ABC"), partition);
+
+            var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("employeeCode");
+            var cond = Condition.filter("id STARTSWITH", "group_numeric_string");
+
+            var result = db.aggregate(host, aggregate, cond, partition).toMap();
+            assertThat(result).hasSize(2);
+
+            var numericStringGroup = result.stream()
+                    .filter(row -> "123".equals(String.valueOf(row.get("employeeCode"))))
+                    .findFirst()
+                    .orElseThrow();
+
+            assertThat(numericStringGroup.get("employeeCode")).isInstanceOf(String.class).isEqualTo("123");
+            assertThat(numericStringGroup.get("facetCount")).isInstanceOf(Integer.class).isEqualTo(2);
+        } finally {
+            db.delete(host, id1, partition);
+            db.delete(host, id2, partition);
+            db.delete(host, id3, partition);
+        }
+
+    }
+
 
     @Test
     void aggregate_should_work_without_group_by() throws Exception {
