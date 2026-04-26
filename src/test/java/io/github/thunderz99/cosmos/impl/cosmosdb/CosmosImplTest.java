@@ -5,6 +5,7 @@ import java.util.Set;
 
 import io.github.thunderz99.cosmos.util.EnvUtil;
 import io.github.thunderz99.cosmos.util.UniqueKeyUtil;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -19,7 +20,7 @@ class CosmosImplTest {
     @Test
     void testCreateAndDeleteCollection_withUniqueKey() throws Exception {
         var cosmos = new CosmosImpl(EnvUtil.get("COSMOSDB_CONNECTION_STRING"));
-        String testColl = "UnitTest2-UniqueKey";
+        String testColl = "UnitTest2-UniqueKey" + RandomStringUtils.randomAlphanumeric(4);
         var id1 = "001";
         var id2 = "002";
         var partition = "Users";
