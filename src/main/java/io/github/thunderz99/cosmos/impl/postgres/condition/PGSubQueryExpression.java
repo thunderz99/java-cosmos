@@ -10,6 +10,7 @@ import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.Expression;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
+import io.github.thunderz99.cosmos.impl.postgres.util.PGJsonbContainmentUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGKeyUtil;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
@@ -160,6 +161,21 @@ public class PGSubQueryExpression implements Expression {
                     PGKeyUtil.getFormattedKeyWithAlias(joinKey, selectAlias, paramValue), paramName);
         }
          */
+
+        // Root data ARRAY_CONTAINS_ANY can use the default GIN(data) index; object-array filterKey queries keep the existing path.
+        if (StringUtils.isEmpty(filterKey) && PGJsonbContainmentUtil.canUseWholeDocumentArrayContains(joinKey, selectAlias)) {
+            var index = 0;
+            var subQueries = new ArrayList<String>();
+
+            for (var value : paramValue) {
+                var subParamName = String.format("%s__%d", paramName, index);
+                params.add(PGJsonbContainmentUtil.createArrayContainsParameter(joinKey, subParamName, value));
+                subQueries.add(String.format("%s @> %s::jsonb", selectAlias, subParamName));
+                index++;
+            }
+
+            return String.format(" (%s)", String.join(" OR ", subQueries));
+        }
 
         // Condition.filter("items ARRAY_CONTAINS_ANY id", List.of("A","B"))
         // INPUT: "items", "id", "@items_id_010", ["id001", "id002", "id005"], params

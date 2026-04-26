@@ -6,6 +6,7 @@ import io.github.thunderz99.cosmos.condition.Expression;
 import io.github.thunderz99.cosmos.condition.FieldKey;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
+import io.github.thunderz99.cosmos.impl.postgres.util.PGJsonbContainmentUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGKeyUtil;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
@@ -142,9 +143,16 @@ public class PGSimpleExpression implements Expression {
             // other types
             var formattedKey = PGKeyUtil.getFormattedKeyWithAlias(this.key, selectAlias, paramValue);
             if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >, LIKE
-                //use c["key"] for cosmosdb reserved words
-                ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, valueString));
-                params.add(Condition.createSqlParameter(paramName, paramValue));
+                // Root data equality for common ID fields can use the default GIN(data) index via JSONB containment.
+                if (!(paramValue instanceof FieldKey)
+                        && PGJsonbContainmentUtil.canUseWholeDocumentIdEquals(this.key, paramValue, this.operator, selectAlias)) {
+                    ret.setQueryText(PGJsonbContainmentUtil.buildContainsQuery(selectAlias, paramName));
+                    params.add(PGJsonbContainmentUtil.createContainsParameter(this.key, paramName, paramValue));
+                } else {
+                    //use c["key"] for cosmosdb reserved words
+                    ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, valueString));
+                    params.add(Condition.createSqlParameter(paramName, paramValue));
+                }
 
             } else if (Condition.typeCheckFunctionPattern.asMatchPredicate().test(this.operator)) { // type check funcs: IS_DEFINED|IS_NUMBER|IS_PRIMITIVE, etc
 
@@ -155,7 +163,7 @@ public class PGSimpleExpression implements Expression {
 
             } else { // other binary functions. e.g. STARTSWITH, CONTAINS, ARRAY_CONTAINS
                 params.add(Condition.createSqlParameter(paramName, paramValue));
-                buildBinaryFunctionDetails(ret, formattedKey, valueString, paramValue, params);
+                buildBinaryFunctionDetails(ret, formattedKey, valueString, paramValue, params, selectAlias);
             }
 
 		}
@@ -247,7 +255,7 @@ public class PGSimpleExpression implements Expression {
      * @param paramValue the original paramValue, e.g. true
      * @param params the list of params to add paramValue
      */
-    void buildBinaryFunctionDetails(CosmosSqlQuerySpec querySpec, String formattedKey, String valuePart, Object paramValue, List<CosmosSqlParameter> params) {
+    void buildBinaryFunctionDetails(CosmosSqlQuerySpec querySpec, String formattedKey, String valuePart, Object paramValue, List<CosmosSqlParameter> params, String selectAlias) {
 
         /**
          * STARTSWITH, CONTAINS, REGEXMATCH, ARRAY_CONTAINS
@@ -290,6 +298,15 @@ public class PGSimpleExpression implements Expression {
                 querySpec.setQueryText(String.format(" (%s ~ %s)", formattedKey, valuePart));
             }
             case "ARRAY_CONTAINS" -> {
+                // Root data array containment can use the default GIN(data) index; join and aggregation aliases keep the existing path.
+                if (PGJsonbContainmentUtil.canUseWholeDocumentArrayContains(this.key, selectAlias)) {
+                    var currentIndex = params.size() - 1;
+                    var param = params.get(currentIndex);
+                    param.value = PGJsonbContainmentUtil.buildJsonbObject(this.key, List.of(paramValue));
+                    querySpec.setQueryText(PGJsonbContainmentUtil.buildContainsQuery(selectAlias, valuePart));
+                    return;
+                }
+
                 // use data->'skills' ?? 'Java'
                 // because ? is also a placeholder for PreparedStatement, ?? insteadof ? in JDBC
                 // https://stackoverflow.com/questions/26516204/how-do-i-escape-a-literal-question-mark-in-a-jdbc-prepared-statement
