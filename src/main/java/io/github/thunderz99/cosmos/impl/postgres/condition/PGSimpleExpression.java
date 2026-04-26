@@ -6,6 +6,7 @@ import io.github.thunderz99.cosmos.condition.Expression;
 import io.github.thunderz99.cosmos.condition.FieldKey;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
+import io.github.thunderz99.cosmos.impl.postgres.util.PGJsonbContainmentUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGKeyUtil;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.JsonUtil;
@@ -142,10 +143,11 @@ public class PGSimpleExpression implements Expression {
             // other types
             var formattedKey = PGKeyUtil.getFormattedKeyWithAlias(this.key, selectAlias, paramValue);
             if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >, LIKE
+                // Root data equality for common ID fields can use the default GIN(data) index via JSONB containment.
                 if (!(paramValue instanceof FieldKey)
-                        && PGJsonbContainment.canUseWholeDocumentIdEquals(this.key, paramValue, this.operator, selectAlias)) {
-                    ret.setQueryText(PGJsonbContainment.buildContainsQuery(selectAlias, paramName));
-                    params.add(PGJsonbContainment.createContainsParameter(this.key, paramName, paramValue));
+                        && PGJsonbContainmentUtil.canUseWholeDocumentIdEquals(this.key, paramValue, this.operator, selectAlias)) {
+                    ret.setQueryText(PGJsonbContainmentUtil.buildContainsQuery(selectAlias, paramName));
+                    params.add(PGJsonbContainmentUtil.createContainsParameter(this.key, paramName, paramValue));
                 } else {
                     //use c["key"] for cosmosdb reserved words
                     ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, valueString));
@@ -296,11 +298,12 @@ public class PGSimpleExpression implements Expression {
                 querySpec.setQueryText(String.format(" (%s ~ %s)", formattedKey, valuePart));
             }
             case "ARRAY_CONTAINS" -> {
-                if (PGJsonbContainment.canUseWholeDocumentArrayContains(this.key, selectAlias)) {
+                // Root data array containment can use the default GIN(data) index; join and aggregation aliases keep the existing path.
+                if (PGJsonbContainmentUtil.canUseWholeDocumentArrayContains(this.key, selectAlias)) {
                     var currentIndex = params.size() - 1;
                     var param = params.get(currentIndex);
-                    param.value = PGJsonbContainment.buildJsonbObject(this.key, List.of(paramValue));
-                    querySpec.setQueryText(PGJsonbContainment.buildContainsQuery(selectAlias, valuePart));
+                    param.value = PGJsonbContainmentUtil.buildJsonbObject(this.key, List.of(paramValue));
+                    querySpec.setQueryText(PGJsonbContainmentUtil.buildContainsQuery(selectAlias, valuePart));
                     return;
                 }
 

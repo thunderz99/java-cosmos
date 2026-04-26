@@ -1379,6 +1379,51 @@ public class PostgresDatabaseImplTest {
 
 
     @Test
+    void find_should_work_for_array_contains_with_integer_target_id_list() throws Exception {
+        var partition = "Users";
+        var id1 = "target_id_list_integer_01";
+        var id2 = "target_id_list_integer_02";
+        var id3 = "target_id_list_integer_03";
+        var targetId = 1001;
+        var splitTargetIds = List.of(targetId, 3003);
+
+        var doc1 = Map.of("id", id1, "targetIdList", List.of(targetId, 2002));
+        var doc2 = Map.of("id", id2, "targetIdList", List.of(4004));
+        var doc3 = Map.of("id", id3, "targetIdList", List.of(3003));
+
+        try {
+            db.upsert(host, doc1, partition);
+            db.upsert(host, doc2, partition);
+            db.upsert(host, doc3, partition);
+
+            {
+                var cond = Condition.filter("targetIdList ARRAY_CONTAINS", targetId)
+                        .sort("id", "ASC")
+                        .limit(10);
+                var docs = db.find(host, cond, partition).toMap();
+
+                assertThat(docs).hasSize(1);
+                assertThat(docs.get(0).get("id")).isEqualTo(id1);
+            }
+
+            {
+                var cond = Condition.filter("targetIdList ARRAY_CONTAINS_ANY", splitTargetIds)
+                        .sort("id", "ASC")
+                        .limit(10);
+                var docs = db.find(host, cond, partition).toMap();
+
+                assertThat(docs).hasSize(2);
+                assertThat(docs).extracting(doc -> doc.get("id")).containsExactly(id1, id3);
+            }
+        } finally {
+            db.delete(host, id1, partition);
+            db.delete(host, id2, partition);
+            db.delete(host, id3, partition);
+        }
+    }
+
+
+    @Test
     void find_should_work_for_array_contains_any_field_query() throws Exception {
         var partition = "Families";
 
