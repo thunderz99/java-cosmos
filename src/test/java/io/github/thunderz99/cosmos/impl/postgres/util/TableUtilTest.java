@@ -1221,6 +1221,36 @@ public class TableUtilTest {
                 assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName, null, new IndexOption()))
                         .isInstanceOf(NullPointerException.class);
             }
+
+            // 4. Test GIN index on a single jsonb field
+            {
+                var ginField = new PGIndexField("targetIdList");
+                var ginIndexName = TableUtil.getIndexName(tableName, ginField.fieldName);
+
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, ginIndexName)).isFalse();
+
+                var created = TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName, ginField, new IndexOption().gin());
+                assertThat(created).isEqualTo(formattedSchemaName + "." + TableUtil.checkAndNormalizeValidEntityName(ginIndexName));
+
+                var indexMap = findIndexes(conn, schemaName, tableName);
+                var indexDef = indexMap.get(TableUtil.removeQuotes(TableUtil.checkAndNormalizeValidEntityName(ginIndexName)));
+                assertThat(indexDef).isNotNull()
+                        .containsIgnoringCase("USING GIN")
+                        .contains("data -> 'targetIdList'::text");
+            }
+
+            // 5. Test invalid GIN combinations
+            {
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName,
+                        new PGIndexField("ginUniqueField"), IndexOption.unique(true).gin()))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("GIN index does not support unique=true");
+
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName,
+                        new PGIndexField("ginNumericField", PGFieldType.INTEGER), new IndexOption().gin()))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("GIN index does not support fieldType cast. use PGFieldType.TEXT/JSONB or omit fieldType");
+            }
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
@@ -1297,6 +1327,11 @@ public class TableUtilTest {
                 assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4MultiFields(conn, schemaName, tableName, null, new IndexOption()))
                         .isInstanceOf(IllegalArgumentException.class)
                         .hasMessage("fields cannot be empty");
+
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4MultiFields(conn, schemaName, tableName,
+                        List.of(new PGIndexField("targetIdList"), new PGIndexField("otherField")), new IndexOption().gin()))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessage("GIN index currently only supports a single field");
             }
 
         } finally {

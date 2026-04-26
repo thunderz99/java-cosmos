@@ -1737,18 +1737,14 @@ public class TableUtil {
             // create index
             // Construct JSON path expression
             // data->'address'->'city'->>'street'
-
-            var jsonPathExpression = PGKeyUtil.getFormattedKey(fieldName);
-
-            if(SUPPORTED_INDEX_FIELD_TYPE.contains(indexOption.fieldType)){
-                jsonPathExpression = "(%s)::%s".formatted(jsonPathExpression, indexOption.fieldType);
-            }
+            var jsonPathExpression = buildIndexExpression(fieldName, indexOption);
+            var indexMethod = getIndexMethod(indexOption);
 
             var createIndexSQL = """
                     CREATE %s INDEX IF NOT EXISTS %s
-                      ON %s.%s ((%s));
+                      ON %s.%s USING %s ((%s));
                     """
-                    .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, jsonPathExpression);
+                    .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, indexMethod, jsonPathExpression);
 
             stmt.execute(createIndexSQL);
             if (log.isInfoEnabled()) {
@@ -1997,24 +1993,14 @@ public class TableUtil {
                 return "";
             }
 
-            // Construct composite JSON path expression e.g. ( ((data->>'lastName')), (((data->>'age')::integer)) )
-            var jsonPathExpression = fields.stream()
-                    .map(field -> {
-                        var path = PGKeyUtil.getFormattedKey(field.fieldName);
-                        if (SUPPORTED_INDEX_FIELD_TYPE.contains(field.fieldType.toString())) {
-                            return "((%s)::%s)".formatted(path, field.fieldType);
-                        } else {
-                            // default to text if not a supported castable type
-                            return "(%s)".formatted(path);
-                        }
-                    })
-                    .collect(Collectors.joining(", "));
+            var indexMethod = getIndexMethod(indexOption);
+            var jsonPathExpression = buildIndexExpression(fields, indexOption);
 
             var createIndexSQL = """
                     CREATE %s INDEX IF NOT EXISTS %s
-                      ON %s.%s (%s);
+                      ON %s.%s USING %s (%s);
                     """
-                    .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, jsonPathExpression);
+                    .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, indexMethod, jsonPathExpression);
 
             stmt.execute(createIndexSQL);
             if (log.isInfoEnabled()) {
@@ -2039,6 +2025,95 @@ public class TableUtil {
         }
 
         return "%s.%s".formatted(schemaName, indexName);
+    }
+
+    /**
+     * Resolves the PostgreSQL index method keyword from {@link IndexOption}.
+     *
+     * <p>
+     * The returned value is used directly in {@code CREATE INDEX ... USING <method>}.
+     * </p>
+     *
+     * @param indexOption the index option containing the desired method
+     * @return the PostgreSQL index method keyword, e.g. {@code BTREE} or {@code GIN}
+     */
+    static String getIndexMethod(IndexOption indexOption) {
+        Checker.checkNotNull(indexOption, "indexOption");
+        Checker.checkNotNull(indexOption.indexMethod, "indexMethod");
+        return indexOption.indexMethod.name();
+    }
+
+    /**
+     * Builds the PostgreSQL index expression for a single field.
+     *
+     * <p>
+     * For BTREE indexes this returns the existing scalar expression, optionally with a cast
+     * such as {@code ((data->>'age')::numeric)}.
+     * For GIN indexes this returns a JSONB expression such as {@code data->'targetIdList'} so
+     * PostgreSQL can create an expression GIN index on the JSON sub-document.
+     * </p>
+     *
+     * @param fieldName   the field name or JSON path under the {@code data} column
+     * @param indexOption the index option that controls the method and expression shape
+     * @return the SQL expression used inside the index definition
+     */
+    static String buildIndexExpression(String fieldName, IndexOption indexOption) {
+        Checker.checkNotBlank(fieldName, "fieldName");
+        Checker.checkNotNull(indexOption, "indexOption");
+
+        if (IndexOption.IndexMethod.GIN.equals(indexOption.indexMethod)) {
+            Checker.check(!indexOption.unique, "GIN index does not support unique=true");
+            Checker.check("text".equalsIgnoreCase(indexOption.fieldType) || "jsonb".equalsIgnoreCase(indexOption.fieldType),
+                    "GIN index does not support fieldType cast. use default fieldType/text for jsonb expression indexes");
+            return PGKeyUtil.getFormattedKey4JsonWithAlias(fieldName, DATA);
+        }
+
+        var jsonPathExpression = PGKeyUtil.getFormattedKey(fieldName);
+        if (SUPPORTED_INDEX_FIELD_TYPE.contains(indexOption.fieldType)) {
+            return "(%s)::%s".formatted(jsonPathExpression, indexOption.fieldType);
+        }
+        return jsonPathExpression;
+    }
+
+    /**
+     * Builds the PostgreSQL index expression list for typed index creation.
+     *
+     * <p>
+     * BTREE supports the existing multi-field scalar expressions.
+     * GIN is intentionally limited to a single JSONB field so callers can create expression
+     * indexes such as {@code USING GIN ((data->'targetIdList'))} for array/object queries.
+     * </p>
+     *
+     * @param fields      the fields to be indexed
+     * @param indexOption the index option that controls the method and validation rules
+     * @return the SQL expression list used inside the index definition
+     */
+    static String buildIndexExpression(List<PGIndexField> fields, IndexOption indexOption) {
+        Checker.check(CollectionUtils.isNotEmpty(fields), "fields cannot be empty");
+        Checker.checkNotNull(indexOption, "indexOption");
+
+        if (IndexOption.IndexMethod.GIN.equals(indexOption.indexMethod)) {
+            Checker.check(!indexOption.unique, "GIN index does not support unique=true");
+            Checker.check(fields.size() == 1, "GIN index currently only supports a single field");
+
+            var field = fields.get(0);
+            Checker.check(field.fieldType == PGFieldType.TEXT || field.fieldType == PGFieldType.JSONB,
+                    "GIN index does not support fieldType cast. use PGFieldType.TEXT/JSONB or omit fieldType");
+            return "(%s)".formatted(PGKeyUtil.getFormattedKey4JsonWithAlias(field.fieldName, DATA));
+        }
+
+        // Construct composite JSON path expression e.g. ( ((data->>'lastName')), (((data->>'age')::integer)) )
+        return fields.stream()
+                .map(field -> {
+                    var path = PGKeyUtil.getFormattedKey(field.fieldName);
+                    if (SUPPORTED_INDEX_FIELD_TYPE.contains(field.fieldType.toString())) {
+                        return "((%s)::%s)".formatted(path, field.fieldType);
+                    } else {
+                        // default to text if not a supported castable type
+                        return "(%s)".formatted(path);
+                    }
+                })
+                .collect(Collectors.joining(", "));
     }
 
     /**
