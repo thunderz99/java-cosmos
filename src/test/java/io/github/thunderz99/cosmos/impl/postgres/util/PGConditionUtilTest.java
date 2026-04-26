@@ -171,6 +171,55 @@ class PGConditionUtilTest {
         }
     }
 
+    @Test
+    void buildQuerySpec_should_work_for_target_id_list_array_contains() {
+        var cond = Condition.filter("targetIdList ARRAY_CONTAINS", "a");
+        var querySpec = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+        var expectedSQL = """
+                SELECT *
+                 FROM schema1.table1
+                 WHERE (data->'targetIdList' ?? @param000_targetIdList) OFFSET 0 LIMIT 100
+                """;
+        assertThat(querySpec.getQueryText().trim()).isEqualTo(expectedSQL.trim());
+        assertThat(querySpec.getParameters()).containsExactly(
+                new CosmosSqlParameter("@param000_targetIdList", "a")
+        );
+    }
+
+    @Test
+    void buildQuerySpec_should_work_for_target_id_list_array_contains_any() {
+        var cond = Condition.filter("targetIdList ARRAY_CONTAINS_ANY", List.of("a", "b"));
+        var querySpec = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+        var expectedSQL = """
+                SELECT *
+                 FROM schema1.table1
+                 WHERE (data->'targetIdList' @> @param000_targetIdList__0::jsonb OR data->'targetIdList' @> @param000_targetIdList__1::jsonb) OFFSET 0 LIMIT 100
+                """;
+        assertThat(querySpec.getQueryText().trim()).isEqualTo(expectedSQL.trim());
+        assertThat(querySpec.getParameters()).containsExactly(
+                new CosmosSqlParameter("@param000_targetIdList__0", "\"a\""),
+                new CosmosSqlParameter("@param000_targetIdList__1", "\"b\"")
+        );
+    }
+
+    @Test
+    void buildQuerySpec_should_not_generate_whole_document_contains_for_target_id_list() {
+        var cond = Condition.filter("targetIdList =", List.of("a"));
+        var querySpec = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+        var expectedSQL = """
+                SELECT *
+                 FROM schema1.table1
+                 WHERE (data->'targetIdList' = (@param000_targetIdList)::jsonb) OFFSET 0 LIMIT 100
+                """;
+        assertThat(querySpec.getQueryText().trim()).isEqualTo(expectedSQL.trim());
+        assertThat(querySpec.getParameters()).containsExactly(
+                new CosmosSqlParameter("@param000_targetIdList", JsonUtil.toJson(List.of("a")))
+        );
+    }
+
 
     @Test
     void buildQuerySpec_should_work_for_and_nested_with_or() {

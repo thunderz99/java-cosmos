@@ -556,6 +556,36 @@ var cosmos = new CosmosBuilder()
     .build();
 ```
 
+### PostgreSQL typed index creation
+
+For PostgreSQL, java-cosmos automatically creates a default `GIN(data)` index when a table is created.
+If you need a field-level expression index such as `USING GIN ((data->'targetIdList'))`, you can create it with the typed `TableUtil` API.
+
+```java
+import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
+import io.github.thunderz99.cosmos.impl.postgres.dto.IndexOption;
+import io.github.thunderz99.cosmos.impl.postgres.dto.PGIndexField;
+import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
+
+try (var conn = ((PostgresImpl) cosmos).getDataSource().getConnection()) {
+    TableUtil.createIndexIfNotExist4SingleField(
+            conn,
+            "Database1",
+            "Collection1",
+            new PGIndexField("targetIdList"),
+            new IndexOption().gin()
+    );
+}
+```
+
+Notes:
+
+* `new IndexOption()` keeps the previous default behavior and creates a `BTREE` index.
+* `new IndexOption().gin()` creates a PostgreSQL expression `GIN` index for a single JSON field.
+* `GIN` currently supports single-field typed indexes only.
+* `unique + GIN` is not supported.
+* `GIN` typed indexes use the JSONB expression directly, so `fieldType(...)` casts are not supported in this mode.
+
 ### $ELEM_MATCH queries to match fields in  array type field
 
 Dealing with array types in json, we can do a query like this using rawSql to find a child whose grade greater than 5 and gender is "female".

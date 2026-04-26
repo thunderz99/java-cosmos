@@ -1,10 +1,20 @@
 package io.github.thunderz99.cosmos.impl.postgres.dto;
 
 /**
- * Options for index. currently only unique or not is supported
+ * Options for index.
  */
 public class IndexOption {
+    public enum IndexMethod {
+        BTREE,
+        GIN
+    }
+
     public boolean unique = false;
+
+    /**
+     * PostgreSQL index method. default is BTREE.
+     */
+    public IndexMethod indexMethod = IndexMethod.BTREE;
 
     /**
      * fieldType for this index. default is text. other valid value is bigint / numeric / float8 / etc
@@ -34,6 +44,25 @@ public class IndexOption {
      */
     public IndexOption fieldType(String fieldType) {
         this.fieldType = fieldType;
+        return this;
+    }
+
+    /**
+     * set the index method. default is BTREE
+     * @param indexMethod
+     * @return indexOption
+     */
+    public IndexOption indexMethod(IndexMethod indexMethod) {
+        this.indexMethod = indexMethod;
+        return this;
+    }
+
+    /**
+     * use GIN as the index method
+     * @return indexOption
+     */
+    public IndexOption gin() {
+        this.indexMethod = IndexMethod.GIN;
         return this;
     }
 
