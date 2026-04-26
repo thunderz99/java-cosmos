@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
@@ -172,35 +173,51 @@ class PGConditionUtilTest {
     }
 
     @Test
-    void buildQuerySpec_should_work_for_target_id_list_array_contains() {
+    void buildQuerySpec_should_work_for_target_id_equals_with_default_gin_data() {
+        var cond = Condition.filter("targetId =", "a");
+        var querySpec = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+        var expectedSQL = """
+                SELECT *
+                 FROM schema1.table1
+                 WHERE (data @> @param000_targetId::jsonb) OFFSET 0 LIMIT 100
+                """;
+        assertThat(querySpec.getQueryText().trim()).isEqualTo(expectedSQL.trim());
+        assertThat(querySpec.getParameters()).containsExactly(
+                new CosmosSqlParameter("@param000_targetId", JsonUtil.toJson(Map.of("targetId", "a")))
+        );
+    }
+
+    @Test
+    void buildQuerySpec_should_work_for_target_id_list_array_contains_with_default_gin_data() {
         var cond = Condition.filter("targetIdList ARRAY_CONTAINS", "a");
         var querySpec = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
         var expectedSQL = """
                 SELECT *
                  FROM schema1.table1
-                 WHERE (data->'targetIdList' ?? @param000_targetIdList) OFFSET 0 LIMIT 100
+                 WHERE (data @> @param000_targetIdList::jsonb) OFFSET 0 LIMIT 100
                 """;
         assertThat(querySpec.getQueryText().trim()).isEqualTo(expectedSQL.trim());
         assertThat(querySpec.getParameters()).containsExactly(
-                new CosmosSqlParameter("@param000_targetIdList", "a")
+                new CosmosSqlParameter("@param000_targetIdList", JsonUtil.toJson(Map.of("targetIdList", List.of("a"))))
         );
     }
 
     @Test
-    void buildQuerySpec_should_work_for_target_id_list_array_contains_any() {
+    void buildQuerySpec_should_work_for_target_id_list_array_contains_any_with_default_gin_data() {
         var cond = Condition.filter("targetIdList ARRAY_CONTAINS_ANY", List.of("a", "b"));
         var querySpec = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
         var expectedSQL = """
                 SELECT *
                  FROM schema1.table1
-                 WHERE (data->'targetIdList' @> @param000_targetIdList__0::jsonb OR data->'targetIdList' @> @param000_targetIdList__1::jsonb) OFFSET 0 LIMIT 100
+                 WHERE (data @> @param000_targetIdList__0::jsonb OR data @> @param000_targetIdList__1::jsonb) OFFSET 0 LIMIT 100
                 """;
         assertThat(querySpec.getQueryText().trim()).isEqualTo(expectedSQL.trim());
         assertThat(querySpec.getParameters()).containsExactly(
-                new CosmosSqlParameter("@param000_targetIdList__0", "\"a\""),
-                new CosmosSqlParameter("@param000_targetIdList__1", "\"b\"")
+                new CosmosSqlParameter("@param000_targetIdList__0", JsonUtil.toJson(Map.of("targetIdList", List.of("a")))),
+                new CosmosSqlParameter("@param000_targetIdList__1", JsonUtil.toJson(Map.of("targetIdList", List.of("b"))))
         );
     }
 
@@ -698,12 +715,12 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE (data->'rooms' @> @param000_rooms__0::jsonb OR data->'rooms' @> @param000_rooms__1::jsonb) OFFSET 0 LIMIT 100
+                     WHERE (data @> @param000_rooms__0::jsonb OR data @> @param000_rooms__1::jsonb) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(2);
             assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__0");
-            assertThat(q.getParameters().get(0).getValue()).isEqualTo("\"003\"");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo(JsonUtil.toJson(Map.of("rooms", List.of("003"))));
 
         }
 
@@ -715,12 +732,12 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE (data->'rooms' @> @param000_rooms__0::jsonb OR data->'rooms' @> @param000_rooms__1::jsonb) OFFSET 0 LIMIT 100
+                     WHERE (data @> @param000_rooms__0::jsonb OR data @> @param000_rooms__1::jsonb) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(2);
             assertThat(q.getParameters().get(0).getName()).isEqualTo("@param000_rooms__0");
-            assertThat(q.getParameters().get(0).getValue()).isEqualTo("3");
+            assertThat(q.getParameters().get(0).getValue()).isEqualTo(JsonUtil.toJson(Map.of("rooms", List.of(3))));
 
         }
 

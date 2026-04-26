@@ -6,6 +6,7 @@ import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +23,16 @@ class PGSimpleExpressionTest {
             var expected = new CosmosSqlQuerySpec();
             expected.setQueryText(" (data->>'name' = @param000_name)");
             expected.addParameter(new CosmosSqlParameter("@param000_name", "Hanks"));
+            assertThat(actual).isEqualTo(expected);
+        }
+
+        {
+            // id-like string value can use the default GIN(data) index
+            var expr = new PGSimpleExpression("targetId", "ID001", "=");
+            var actual = expr.toQuerySpec(new AtomicInteger(0), "data");
+            var expected = new CosmosSqlQuerySpec();
+            expected.setQueryText(" (data @> @param000_targetId::jsonb)");
+            expected.addParameter(new CosmosSqlParameter("@param000_targetId", JsonUtil.toJson(Map.of("targetId", "ID001"))));
             assertThat(actual).isEqualTo(expected);
         }
 

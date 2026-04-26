@@ -161,6 +161,20 @@ public class PGSubQueryExpression implements Expression {
         }
          */
 
+        if (StringUtils.isEmpty(filterKey) && PGJsonbContainment.canUseWholeDocumentArrayContains(joinKey, selectAlias)) {
+            var index = 0;
+            var subQueries = new ArrayList<String>();
+
+            for (var value : paramValue) {
+                var subParamName = String.format("%s__%d", paramName, index);
+                params.add(PGJsonbContainment.createArrayContainsParameter(joinKey, subParamName, value));
+                subQueries.add(String.format("%s @> %s::jsonb", selectAlias, subParamName));
+                index++;
+            }
+
+            return String.format(" (%s)", String.join(" OR ", subQueries));
+        }
+
         // Condition.filter("items ARRAY_CONTAINS_ANY id", List.of("A","B"))
         // INPUT: "items", "id", "@items_id_010", ["id001", "id002", "id005"], params
         // OUTPUT:
