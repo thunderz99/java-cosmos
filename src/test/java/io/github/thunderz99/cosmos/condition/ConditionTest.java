@@ -528,7 +528,7 @@ class ConditionTest {
                     .toQuerySpecForAggregate(aggregate);
 
             assertThat(q.getQueryText().trim()).isEqualTo(
-                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
+                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c GROUP BY c[\"status\"], c[\"location\"]");
 
             var params = List.copyOf(q.getParameters());
             assertThat(params).isEmpty();
@@ -542,7 +542,7 @@ class ConditionTest {
                     .toQuerySpecForAggregate(aggregate);
 
             assertThat(q.getQueryText().trim()).isEqualTo(
-                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
+                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"]");
 
             var params = List.copyOf(q.getParameters());
             assertThat(params).hasSize(1);
@@ -551,13 +551,13 @@ class ConditionTest {
         }
 
         {
-            // with inner offset / limit
+            // with inner offset / limit. inner offset / limit will be ignored
             var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location");
             var q = Condition.filter("age >=", 20).offset(5).limit(10) //
                     .toQuerySpecForAggregate(aggregate);
 
             assertThat(q.getQueryText().trim()).isEqualTo(
-                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 5 LIMIT 10");
+                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"]");
 
             var params = List.copyOf(q.getParameters());
             assertThat(params).hasSize(1);
@@ -572,7 +572,7 @@ class ConditionTest {
                     .toQuerySpecForAggregate(aggregate);
 
             assertThat(q.getQueryText().trim()).isEqualTo(
-                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"] OFFSET 0 LIMIT 100");
+                    "SELECT COUNT(1) AS facetCount, c[\"status\"], c[\"location\"] FROM c WHERE (c[\"age\"] >= @param000_age) GROUP BY c[\"status\"], c[\"location\"]");
 
             var params = List.copyOf(q.getParameters());
             assertThat(params).hasSize(1);
