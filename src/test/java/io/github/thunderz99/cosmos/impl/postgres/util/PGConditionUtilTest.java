@@ -76,6 +76,65 @@ class PGConditionUtilTest {
         }
     }
 
+    @Test
+    void postgresDatabase_toQuerySpecForFind_should_return_postgres_sql() throws Exception {
+        if (PostgresDatabaseImplTest.db == null) {
+            PostgresDatabaseImplTest.beforeAll();
+        }
+
+        var cond = Condition.filter("age", 18)
+                .fields("id", "name")
+                .sort("name", "ASC");
+
+        var querySpec = PostgresDatabaseImplTest.db.toQuerySpecForFind("schema1", cond, "table1");
+
+        var expectedSQL = """
+                SELECT id,
+                jsonb_build_object('id', data->'id', 'name', data->'name') AS "data"
+                
+                 FROM schema1.table1
+                 WHERE (NULLIF(data->>'age','')::numeric = @param000_age)
+                 ORDER BY data->>'name' COLLATE "C" ASC, data->>'_ts' ASC, id COLLATE "C" ASC OFFSET 0 LIMIT 100
+                """;
+        assertThat(querySpec.getQueryText()).isEqualTo(expectedSQL.trim());
+        assertThat(querySpec.getParameters()).containsExactly(new CosmosSqlParameter("@param000_age", 18));
+    }
+
+    @Test
+    void postgresDatabase_toQuerySpecForCount_should_return_postgres_sql() throws Exception {
+        if (PostgresDatabaseImplTest.db == null) {
+            PostgresDatabaseImplTest.beforeAll();
+        }
+
+        var cond = Condition.filter("age", 18);
+        var querySpec = PostgresDatabaseImplTest.db.toQuerySpecForCount("schema1", cond, "table1");
+
+        assertThat(querySpec.getQueryText())
+                .isEqualTo("SELECT COUNT(*) FROM schema1.table1 WHERE (NULLIF(data->>'age','')::numeric = @param000_age)");
+        assertThat(querySpec.getParameters()).containsExactly(new CosmosSqlParameter("@param000_age", 18));
+    }
+
+    @Test
+    void postgresDatabase_toQuerySpecForAggregate_should_return_postgres_sql() throws Exception {
+        if (PostgresDatabaseImplTest.db == null) {
+            PostgresDatabaseImplTest.beforeAll();
+        }
+
+        var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("formId");
+        var cond = Condition.filter("formId IN", List.of("id1", "id2"));
+        var querySpec = PostgresDatabaseImplTest.db.toQuerySpecForAggregate("schema1", aggregate, cond, "table1");
+
+        var expectedSQL = """
+                SELECT COUNT(1) AS "facetCount", data->>'formId' AS "formId"
+                 FROM schema1.table1
+                 WHERE (data->>'formId' = ANY(@param000_formId))
+                 GROUP BY data->>'formId'
+                 OFFSET 0 LIMIT 100
+                """;
+        assertThat(querySpec.getQueryText()).isEqualTo(expectedSQL.trim());
+        assertThat(querySpec.getParameters()).containsExactly(new CosmosSqlParameter("@param000_formId", List.of("id1", "id2")));
+    }
+
 
     @Test
     void generateFilterQuery_should_work() {

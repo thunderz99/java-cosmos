@@ -89,6 +89,7 @@ public class PGConditionUtil {
         // offset and limit
         queryText.append(String.format(" OFFSET %d LIMIT %d", cond.offset, cond.limit));
 
+        logPostgresQuery(queryText);
         return new CosmosSqlQuerySpec(queryText.toString(), params);
 
     }
@@ -252,6 +253,7 @@ public class PGConditionUtil {
             params = filterQueryAgg.params;
         }
 
+        logPostgresQuery(queryText);
         return new CosmosSqlQuerySpec(queryText.toString(), params);
 
     }
@@ -533,8 +535,23 @@ public class PGConditionUtil {
         // offset and limit
         // not needed for count
 
+        logPostgresQuery(queryText);
         return new CosmosSqlQuerySpec(queryText.toString(), params);
 
+    }
+
+    /**
+     * log the query text for pg at info level
+     *
+     * <p>
+     *     we may change the log level to trace in the future, if this is too noisy
+     * </p>
+     * @param queryText
+     */
+    static void logPostgresQuery(CharSequence queryText) {
+        if (log.isInfoEnabled()) {
+            log.info("postgresQueryText:{}", queryText);
+        }
     }
 
 
@@ -810,4 +827,3 @@ public class PGConditionUtil {
     }
 
 }
-

@@ -7,6 +7,7 @@ import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
+import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGAggregateUtil;
@@ -594,6 +595,17 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
     }
 
+    @Override
+    public CosmosSqlQuerySpec toQuerySpecForFind(String coll, Condition cond, String partition) {
+        if (cond == null) {
+            cond = new Condition();
+        }
+        if (StringUtils.isEmpty(cond.collate)) {
+            cond.collate = ((PostgresImpl) cosmosAccount).collate;
+        }
+        return PGConditionUtil.toQuerySpec(coll, cond, partition);
+    }
+
     /**
      * find data by condition to iterator and return a CosmosDocumentIterator instead of a list.
      * Using this iterator can suppress memory consumption compared to the normal find method, when dealing with large data(size over 1000).
@@ -747,6 +759,15 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         return new CosmosDocumentList(maps);
     }
 
+    @Override
+    public CosmosSqlQuerySpec toQuerySpecForAggregate(String coll, Aggregate aggregate, Condition cond, String partition) {
+        if (cond == null) {
+            cond = new Condition();
+        }
+        var queryContext = QueryContext.create().databaseImpl(this);
+        return PGConditionUtil.toQuerySpec4Aggregate(coll, cond, aggregate, partition, queryContext);
+    }
+
     /**
      * Count data by condition(ignores offset and limit)
      * <p>
@@ -793,6 +814,14 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
                 return count;
             }
         });
+    }
+
+    @Override
+    public CosmosSqlQuerySpec toQuerySpecForCount(String coll, Condition cond, String partition) {
+        if (cond == null) {
+            cond = new Condition();
+        }
+        return PGConditionUtil.toQuerySpecForCount(coll, cond, partition);
     }
 
     /**
