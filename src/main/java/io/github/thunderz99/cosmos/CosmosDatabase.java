@@ -6,6 +6,7 @@ import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
+import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 
@@ -233,6 +234,24 @@ public interface CosmosDatabase {
 
     public CosmosDocumentList find(String coll, Condition cond, String partition) throws Exception;
 
+    /**
+     * Generate a database-specific query spec for diagnostics such as slow query logs.
+     *
+     * <p>
+     * The default implementation returns the Cosmos DB SQL representation for backward
+     * compatibility. Database implementations with a different runtime dialect should override
+     * this method.
+     * </p>
+     *
+     * @param coll collection name
+     * @param cond condition to find
+     * @param partition partition name
+     * @return query spec in the runtime database dialect
+     */
+    default public CosmosSqlQuerySpec toQuerySpecForFind(String coll, Condition cond, String partition) {
+        return (cond == null ? Condition.filter() : cond).toQuerySpec();
+    }
+
 
 
 
@@ -316,6 +335,19 @@ public interface CosmosDatabase {
     public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond, String partition) throws Exception;
 
     /**
+     * Generate a database-specific aggregate query spec for diagnostics such as slow query logs.
+     *
+     * @param coll collection name
+     * @param aggregate Aggregate function and groupBys
+     * @param cond condition to aggregate
+     * @param partition partition name
+     * @return aggregate query spec in the runtime database dialect
+     */
+    default public CosmosSqlQuerySpec toQuerySpecForAggregate(String coll, Aggregate aggregate, Condition cond, String partition) {
+        return (cond == null ? Condition.filter() : cond).toQuerySpecForAggregate(aggregate);
+    }
+
+    /**
      * do an aggregate query by Aggregate and empty condition
      * <p>
      * {@code
@@ -381,6 +413,18 @@ public interface CosmosDatabase {
      */
 
     public int count(String coll, Condition cond, String partition) throws Exception;
+
+    /**
+     * Generate a database-specific count query spec for diagnostics such as slow query logs.
+     *
+     * @param coll collection name
+     * @param cond condition to count
+     * @param partition partition name
+     * @return count query spec in the runtime database dialect
+     */
+    default public CosmosSqlQuerySpec toQuerySpecForCount(String coll, Condition cond, String partition) {
+        return (cond == null ? Condition.filter() : cond).toQuerySpecForCount();
+    }
 
     /**
      * Increment a number field of a document using json path format(e.g. "/count")
