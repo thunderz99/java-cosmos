@@ -129,7 +129,6 @@ class PGConditionUtilTest {
                  FROM schema1.table1
                  WHERE (data->>'formId' = ANY(@param000_formId))
                  GROUP BY data->>'formId'
-                 OFFSET 0 LIMIT 100
                 """;
         assertThat(querySpec.getQueryText()).isEqualTo(expectedSQL.trim());
         assertThat(querySpec.getParameters()).containsExactly(new CosmosSqlParameter("@param000_formId", List.of("id1", "id2")));
@@ -1270,9 +1269,41 @@ class PGConditionUtilTest {
                      FROM schema1.table1
                      WHERE (data->>'formId' = ANY(@param000_formId))
                      GROUP BY data->>'formId'
-                     OFFSET 0 LIMIT 100
                     """;
-                    assertThat(querySpec.queryText.trim()).isEqualTo(expected.trim());
+            assertThat(querySpec.queryText.trim()).isEqualTo(expected.trim());
+
+            var querySpecWithInnerOffsetLimit = PGConditionUtil.toQuerySpec4Aggregate("schema1",
+                    Condition.filter("formId IN", List.of("id1", "id2")).offset(5).limit(10),
+                    aggregate, "table1", queryContext);
+            assertThat(querySpecWithInnerOffsetLimit.queryText.trim()).isEqualTo(expected.trim());
+
+            // Condition.sort should be applied to aggregate results, while Condition.offset / Condition.limit remain ignored.
+            var querySpecWithInnerSort = PGConditionUtil.toQuerySpec4Aggregate("schema1",
+                    Condition.filter("formId IN", List.of("id1", "id2")).sort("formId", "ASC").offset(5).limit(10),
+                    aggregate, "table1", queryContext);
+            var expectedWithInnerSort = """
+                    SELECT COUNT(1) AS "facetCount", data->>'formId' AS "formId"
+                     FROM schema1.table1
+                     WHERE (data->>'formId' = ANY(@param000_formId))
+                     GROUP BY data->>'formId'
+                     ORDER BY "formId" ASC NULLS FIRST
+                    """;
+            assertThat(querySpecWithInnerSort.queryText.trim()).isEqualTo(expectedWithInnerSort.trim());
+
+            var querySpecWithOuterOffsetLimit = PGConditionUtil.toQuerySpec4Aggregate("schema1",
+                    Condition.filter("formId IN", List.of("id1", "id2")),
+                    Aggregate.function("COUNT(1) AS facetCount").groupBy("formId")
+                            .conditionAfterAggregate(Condition.filter().sort("formId", "ASC").offset(5).limit(10)),
+                    "table1", queryContext);
+            var expectedWithOuterOffsetLimit = String.join("\n",
+                    "SELECT * FROM (SELECT COUNT(1) AS \"facetCount\", data->>'formId' AS \"formId\"",
+                    " FROM schema1.table1",
+                    " WHERE (data->>'formId' = ANY(@param000_formId))",
+                    " GROUP BY data->>'formId') agg",
+                    "",
+                    " ORDER BY \"formId\" ASC NULLS FIRST",
+                    " OFFSET 5 LIMIT 10");
+            assertThat(querySpecWithOuterOffsetLimit.queryText.trim()).isEqualTo(expectedWithOuterOffsetLimit.trim());
 
         }
 

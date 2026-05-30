@@ -367,12 +367,8 @@ public class Condition {
         // sort (inner sort will be ignored for aggregate)
         // no need to deal with
 
-        // offset and limit will be set and the following condition
-        // 1. groupBy is enabled
-        // 2. outer query is null. if outer query is enabled, setting inner offset / limit will cause sql exception in cosmosdb
-        if (CollectionUtils.isNotEmpty(aggregate.groupBy) && aggregate.condAfterAggregate == null) {
-            queryText.append(String.format(" OFFSET %d LIMIT %d", offset, limit));
-        }
+        // Inner offset / limit will be ignored for aggregate.
+        // Please set them in condAfterAggregate to apply them after aggregation.
 
         // condition after aggregation
         FilterQuery filterQueryAgg = null;

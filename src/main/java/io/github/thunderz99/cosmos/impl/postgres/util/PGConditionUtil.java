@@ -139,22 +139,15 @@ public class PGConditionUtil {
             queryText.append("\n GROUP BY ").append(groupBy);
         }
 
-        // sort (inner sort will be ignored for aggregate)
-        // no need to deal with
-
-        // offset and limit will be set and the following condition
-        // 1. groupBy is enabled
-        // 2. outer query is null. if outer query is enabled, setting inner offset / limit will cause sql exception in cosmosdb
-        if (CollectionUtils.isNotEmpty(aggregate.groupBy) && aggregate.condAfterAggregate == null) {
-            queryText.append(String.format("\n OFFSET %d LIMIT %d", cond.offset, cond.limit));
-
-            // if sort is not empty, we have to add it to condAfterAggregate
-            // because sort only works in the outer query
-            if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1) {
-                aggregate.condAfterAggregate = Condition.filter().sort(cond.sort.toArray(new String[0]));
-            }
-
+        // Apply Condition.sort to the aggregate result when no explicit post-aggregate condition is set.
+        // Condition.offset / Condition.limit are still intentionally ignored for aggregate queries.
+        if (!CollectionUtils.isEmpty(cond.sort) && cond.sort.size() > 1 && CollectionUtils.isNotEmpty(aggregate.groupBy)
+                && aggregate.condAfterAggregate == null) {
+            queryText.append(buildAggregateSorts(cond.sort));
         }
+
+        // Inner offset / limit will be ignored for aggregate.
+        // Please set them in condAfterAggregate to apply them after aggregation.
 
         // condition after aggregation
         FilterQuery filterQueryAgg = null;
@@ -205,8 +198,6 @@ public class PGConditionUtil {
                 // aggregation value like "count" cannot be used in sort after group by in CosmosDB, but can be used in postgres.
 
                 if (!CollectionUtils.isEmpty(condAfter.sort) && condAfter.sort.size() > 1) {
-                    var sortMap = new LinkedHashMap<String, String>();
-
                     // sort after aggregation, should use alias after "AS" ("lastName" / "facetCount"), instead of data->>'lastName'
 
                     /**
@@ -221,25 +212,7 @@ public class PGConditionUtil {
                      */
 
 
-                    for (int i = 0; i < condAfter.sort.size(); i++) {
-                        if (i % 2 == 0) {
-                            var direction = condAfter.sort.get(i + 1).toUpperCase();
-                            if(StringUtils.equals(direction, "ASC")){
-                                // this is added to be compatible with cosmosdb
-                                // because cosmosdb acts the same as "ASC NULLS FIRST" / "DESC NULLS LAST"
-                                direction = "ASC NULLS FIRST";
-                            } else {
-                                direction = "DESC NULLS LAST";
-                            }
-                            sortMap.put(condAfter.sort.get(i), direction);
-                        }
-                    }
-
-                    var sorts = sortMap.entrySet().stream()
-                            .map(entry -> String.format(" \"%s\" %s", entry.getKey(), entry.getValue().toUpperCase()))
-                            .collect(Collectors.joining(",", "\n ORDER BY", ""));
-
-                    filterQueryAgg.queryText.append(sorts);
+                    filterQueryAgg.queryText.append(buildAggregateSorts(condAfter.sort));
                 }
 
                 // offset and limit after agg
@@ -452,6 +425,39 @@ public class PGConditionUtil {
                     .formatted(dotFieldName, schemaName, tableName), e);
         }
         return "string".equals(jsonbType) ? "" : 0;
+    }
+
+    /**
+     * Generate the sort queryText for aggregate results.
+     *
+     * @param sort list of sort key and orders
+     * @return sort queryText
+     */
+    static String buildAggregateSorts(List<String> sort) {
+
+        if(CollectionUtils.isEmpty(sort)){
+            return "";
+        }
+
+        var sortMap = new LinkedHashMap<String, String>();
+
+        for (int i = 0; i < sort.size(); i++) {
+            if (i % 2 == 0) {
+                var direction = sort.get(i + 1).toUpperCase();
+                if(StringUtils.equals(direction, "ASC")){
+                    // this is added to be compatible with cosmosdb
+                    // because cosmosdb acts the same as "ASC NULLS FIRST" / "DESC NULLS LAST"
+                    direction = "ASC NULLS FIRST";
+                } else {
+                    direction = "DESC NULLS LAST";
+                }
+                sortMap.put(sort.get(i), direction);
+            }
+        }
+
+        return sortMap.entrySet().stream()
+                .map(entry -> String.format(" \"%s\" %s", entry.getKey(), entry.getValue().toUpperCase()))
+                .collect(Collectors.joining(",", "\n ORDER BY", ""));
     }
 
 
