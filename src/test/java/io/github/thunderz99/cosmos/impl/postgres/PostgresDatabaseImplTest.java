@@ -2967,6 +2967,66 @@ public class PostgresDatabaseImplTest {
     }
 
     @Test
+    void find_should_work_with_or_elem_match_preserving_child_join() throws Exception {
+        var monthlyMatchId = "issue237_or_elem_match_monthly";
+        var noMatchId = "issue237_or_elem_match_no_match";
+        var partition = "Users";
+        var memberId = "issue237_member";
+        var year = 2026;
+        var month = 6;
+        var levels = List.of("WARN", "ERROR");
+
+        var monthlyMatch = new LinkedHashMap<String, Object>();
+        monthlyMatch.put("id", monthlyMatchId);
+        monthlyMatch.put("memberId", memberId);
+        monthlyMatch.put("year", year);
+        monthlyMatch.put("monthWarningList", List.of(
+                Map.of("month", month, "monthWarningTypes", List.of("WARN"))
+        ));
+        monthlyMatch.put("overtimeHours", Map.of("warningType", "OK"));
+        monthlyMatch.put("exceedingCount", Map.of("warningType", "OK"));
+
+        var noMatch = new LinkedHashMap<String, Object>();
+        noMatch.put("id", noMatchId);
+        noMatch.put("memberId", memberId);
+        noMatch.put("year", year);
+        noMatch.put("monthWarningList", List.of(
+                Map.of("month", 5, "monthWarningTypes", List.of("WARN"))
+        ));
+        noMatch.put("overtimeHours", Map.of("warningType", "OK"));
+        noMatch.put("exceedingCount", Map.of("warningType", "OK"));
+
+        try {
+            db.upsert(host, monthlyMatch, partition);
+            db.upsert(host, noMatch, partition);
+
+            var monthFilters = new LinkedHashMap<String, Object>();
+            monthFilters.put("monthWarningList.month", month);
+            monthFilters.put("monthWarningList.monthWarningTypes ARRAY_CONTAINS_ANY", levels);
+
+            // Regression test for #237: the parent condition intentionally has no join.
+            // The $ELEM_MATCH child join must still be used inside the OR branch.
+            var monthCondition = Condition.filter(SubConditionType.ELEM_MATCH, monthFilters)
+                    .join(Set.of("monthWarningList"));
+            var condition = Condition.filter("memberId", List.of(memberId), "year", year)
+                    .sort("id", "ASC");
+            condition.filter.put(SubConditionType.OR, List.of(
+                    monthCondition,
+                    Condition.filter("overtimeHours.warningType", levels),
+                    Condition.filter("exceedingCount.warningType", levels)
+            ));
+
+            var result = db.find(host, condition, partition).toMap();
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0)).containsEntry("id", monthlyMatchId);
+        } finally {
+            db.delete(host, monthlyMatchId, partition);
+            db.delete(host, noMatchId, partition);
+        }
+    }
+
+    @Test
     void findToIterator_should_work_with_join_using_array_contains() throws Exception {
 
         // ARRAY_CONTAINS query with join
