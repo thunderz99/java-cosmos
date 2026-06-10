@@ -707,16 +707,28 @@ public class PGConditionUtil {
             return null;
         }
 
-        if (value instanceof Condition) {
-            // single condition
-            return ((Condition) value).join(parentCond.join);
+        if (value instanceof Condition childCond) {
+            // Sub conditions can define their own join, especially for $ELEM_MATCH.
+            // Inherit parent joins without overwriting the child-local joins.
+            return childCond.copy().join(mergeJoins(parentCond, childCond));
         } else if (value instanceof Map<?, ?>) {
             // single condition in the form of map
-            return new Condition(JsonUtil.toMap(value)).join(parentCond.join);
+            return new Condition(JsonUtil.toMap(value)).join(mergeJoins(parentCond, null));
         } else if (value instanceof Collection<?>) {
             throw new IllegalArgumentException("Cannot convert input to a single condition. Ensure the input is a single value(not a collection)." + value);
         }
         throw new IllegalArgumentException("Invalid input. expect a condition or a map. " + value);
+    }
+
+    static Set<String> mergeJoins(Condition parentCond, Condition childCond) {
+        var joins = new LinkedHashSet<String>();
+        if (parentCond != null && CollectionUtils.isNotEmpty(parentCond.join)) {
+            joins.addAll(parentCond.join);
+        }
+        if (childCond != null && CollectionUtils.isNotEmpty(childCond.join)) {
+            joins.addAll(childCond.join);
+        }
+        return joins;
     }
 
     /**

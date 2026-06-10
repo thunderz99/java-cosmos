@@ -1,27 +1,23 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
-import com.google.common.collect.Sets;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
-import io.github.thunderz99.cosmos.impl.postgres.PostgresDatabaseImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresDatabaseImplTest;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.*;
 
 class PGConditionUtilTest {
 
@@ -227,6 +223,60 @@ class PGConditionUtilTest {
             assertThat(params.get(0).toJson()).isEqualTo(new CosmosSqlParameter("@param000_position", "leader").toJson());
             assertThat(params.get(1).toJson()).isEqualTo(new CosmosSqlParameter("@param001_address", "London").toJson());
         }
+    }
+
+    @Test
+    void extractSubQueries_should_merge_parent_and_child_joins_without_mutating_child() {
+        var parentCond = Condition.filter("id", "001")
+                .join(new LinkedHashSet<>(List.of("parents")));
+        var childCond = Condition.filter("children.grade", 5)
+                .join(new LinkedHashSet<>(List.of("children")));
+
+        var subQueries = PGConditionUtil.extractSubQueries(parentCond, List.of(childCond));
+
+        assertThat(subQueries).hasSize(1);
+        assertThat(subQueries.get(0)).isNotSameAs(childCond);
+        assertThat(subQueries.get(0).join).containsExactly("parents", "children");
+        assertThat(childCond.join).containsExactly("children");
+    }
+
+    @Test
+    void buildQuerySpec_should_preserve_child_join_for_or_elem_match() {
+        var levels = List.of("WARN", "ERROR");
+
+        var monthFilters = new LinkedHashMap<String, Object>();
+        monthFilters.put("monthWarningList.month", 6);
+        monthFilters.put("monthWarningList.monthWarningTypes ARRAY_CONTAINS_ANY", levels);
+
+        var monthCondition = Condition.filter(SubConditionType.ELEM_MATCH, monthFilters)
+                .join(new LinkedHashSet<>(List.of("monthWarningList")));
+
+        var cond = Condition.filter("memberId", List.of("member-1", "member-2"), "year", 2026);
+        cond.filter.put(SubConditionType.OR, List.of(
+                monthCondition,
+                Condition.filter("overtimeHours.warningType", levels),
+                Condition.filter("exceedingCount.warningType", levels)
+        ));
+
+        var querySpec = PGConditionUtil.toQuerySpec(coll, cond, partition);
+
+        assertThat(querySpec.getQueryText())
+                .contains("FROM jsonb_array_elements(data->'monthWarningList') AS j2")
+                .contains("(NULLIF(j2->>'month','')::numeric = @param002_month)")
+                .contains("j2->'monthWarningTypes' @> @param003_monthWarningTypes__0::jsonb")
+                .contains("j2->'monthWarningTypes' @> @param003_monthWarningTypes__1::jsonb")
+                .contains("(data->'overtimeHours'->>'warningType' = ANY(@param004_overtimeHours__warningType))")
+                .contains("(data->'exceedingCount'->>'warningType' = ANY(@param005_exceedingCount__warningType))")
+                .doesNotContain("data->'$ELEM_MATCH'");
+        assertThat(querySpec.getParameters()).hasSize(7);
+        assertThat(querySpec.getParameters().get(0).getName()).isEqualTo("@param000_memberId");
+        assertThat(querySpec.getParameters().get(1).getName()).isEqualTo("@param001_year");
+        assertThat(querySpec.getParameters().get(2).getName()).isEqualTo("@param002_month");
+        assertThat(querySpec.getParameters().get(3).getName()).isEqualTo("@param003_monthWarningTypes__0");
+        assertThat(querySpec.getParameters().get(4).getName()).isEqualTo("@param003_monthWarningTypes__1");
+        assertThat(querySpec.getParameters().get(5).getName()).isEqualTo("@param004_overtimeHours__warningType");
+        assertThat(querySpec.getParameters().get(6).getName()).isEqualTo("@param005_exceedingCount__warningType");
+        assertThat(monthCondition.join).containsExactly("monthWarningList");
     }
 
     @Test
