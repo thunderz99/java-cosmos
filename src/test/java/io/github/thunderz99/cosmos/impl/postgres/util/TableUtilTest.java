@@ -966,6 +966,48 @@ public class TableUtilTest {
 
     }
 
+    @Test
+    @SuppressWarnings("removal")
+    void createIndexIfNotExists_should_work_for_boolean_field_type() throws Exception {
+
+        var tableName = "table_boolean_" + RandomStringUtils.randomAlphanumeric(3).toLowerCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+        var fieldName = "read";
+        var formattedIndexName = TableUtil.getIndexName(formattedTableName, fieldName);
+
+        try(var conn = cosmos.getDataSource().getConnection()) {
+            {
+                var createdTableName = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                assertThat(createdTableName).isEqualTo(formattedSchemaName + "." + formattedTableName);
+            }
+
+            {
+                var createdIndexName = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName,
+                        IndexOption.unique(false).fieldType("boolean"));
+                assertThat(createdIndexName).isEqualTo(formattedSchemaName + "." + formattedIndexName);
+
+                var indexMap = findIndexes(conn, schemaName, tableName);
+                var indexDef = indexMap.get(TableUtil.removeQuotes(formattedIndexName));
+                assertThat(indexDef).isNotNull()
+                        .contains("::boolean")
+                        .containsIgnoringCase("USING BTREE");
+            }
+
+            {
+                var createdAgain = TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName,
+                        IndexOption.unique(false).fieldType("boolean"));
+                assertThat(createdAgain).isEmpty();
+            }
+
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropIndexIfExists(conn, schemaName, formattedIndexName);
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+
+    }
+
 
     @Test
     void getShortenedEntityName_should_work() {
@@ -1203,7 +1245,26 @@ public class TableUtilTest {
                 assertThat(createdAgain).isEmpty();
             }
 
-            // 2. Test unique index
+            // 2. Test boolean index
+            {
+                var booleanField = new PGIndexField("read", PGFieldType.BOOLEAN);
+                var booleanIndexName = TableUtil.getIndexName(tableName, booleanField.fieldName);
+
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, booleanIndexName)).isFalse();
+
+                var created = TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName, booleanField, new IndexOption());
+                assertThat(created).isEqualTo(formattedSchemaName + "." + TableUtil.checkAndNormalizeValidEntityName(booleanIndexName));
+
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, booleanIndexName)).isTrue();
+
+                var indexMap = findIndexes(conn, schemaName, tableName);
+                var indexDef = indexMap.get(TableUtil.removeQuotes(TableUtil.checkAndNormalizeValidEntityName(booleanIndexName)));
+                assertThat(indexDef).isNotNull()
+                        .contains("::boolean")
+                        .containsIgnoringCase("USING BTREE");
+            }
+
+            // 3. Test unique index
             {
                 var uniqueField = new PGIndexField("email", PGFieldType.TEXT);
                 var uniqueIndexName = TableUtil.getIndexName(tableName, uniqueField.fieldName);
@@ -1216,13 +1277,13 @@ public class TableUtilTest {
                 assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, uniqueIndexName)).isTrue();
             }
 
-            // 3. Test invalid input (null field)
+            // 4. Test invalid input (null field)
             {
                 assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName, null, new IndexOption()))
                         .isInstanceOf(NullPointerException.class);
             }
 
-            // 4. Test GIN index on a single jsonb field
+            // 5. Test GIN index on a single jsonb field
             {
                 var ginField = new PGIndexField("targetIdList");
                 var ginIndexName = TableUtil.getIndexName(tableName, ginField.fieldName);
@@ -1239,7 +1300,7 @@ public class TableUtilTest {
                         .contains("data -> 'targetIdList'::text");
             }
 
-            // 5. Test invalid GIN combinations
+            // 6. Test invalid GIN combinations
             {
                 assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName,
                         new PGIndexField("ginUniqueField"), IndexOption.unique(true).gin()))
@@ -1318,7 +1379,32 @@ public class TableUtilTest {
 
             }
 
-            // 3. Test invalid input (empty/null field list)
+            // 3. Test composite index creation with a boolean field
+            {
+                var fields = List.of(
+                        new PGIndexField("accountId", PGFieldType.TEXT),
+                        new PGIndexField("read", PGFieldType.BOOLEAN),
+                        new PGIndexField("createdAt", PGFieldType.BIGINT));
+                var joinedFieldNames = fields.stream().map(f -> f.fieldName).collect(Collectors.joining("_"));
+                var indexName = TableUtil.getIndexName(tableName, joinedFieldNames);
+                var formattedIndexName = TableUtil.checkAndNormalizeValidEntityName(indexName);
+
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, indexName)).isFalse();
+
+                var created = TableUtil.createIndexIfNotExist4MultiFields(conn, schemaName, tableName, fields, new IndexOption());
+                assertThat(created).isEqualTo(formattedSchemaName + "." + formattedIndexName);
+
+                assertThat(TableUtil.indexExistsByName(conn, schemaName, tableName, indexName)).isTrue();
+
+                var indexMap = findIndexes(conn, schemaName, tableName);
+                var indexNameFound = TableUtil.removeQuotes(formattedIndexName);
+                var indexDef = indexMap.get(indexNameFound);
+                assertThat(indexDef).isNotNull()
+                        .contains("::boolean")
+                        .containsIgnoringCase("USING BTREE");
+            }
+
+            // 4. Test invalid input (empty/null field list)
             {
                 assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4MultiFields(conn, schemaName, tableName, new ArrayList<>(), new IndexOption()))
                         .isInstanceOf(IllegalArgumentException.class)
