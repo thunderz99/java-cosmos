@@ -54,7 +54,7 @@ public class TableUtil {
      * when creating index, field type that can be specified.
      * see <a href="https://www.postgresql.org/docs/current/datatype.html">https://www.postgresql.org/docs/current/datatype.html</a>
      */
-    public static final Set<String> SUPPORTED_INDEX_FIELD_TYPE = Set.of("bigint", "integer", "numeric", "float8", "timestamp", "text");
+    public static final Set<String> SUPPORTED_INDEX_FIELD_TYPE = Set.of("bigint", "integer", "numeric", "float8", "timestamp", "text", "boolean");
 
     /**
      * Checks if a table exists in the specified schema.
