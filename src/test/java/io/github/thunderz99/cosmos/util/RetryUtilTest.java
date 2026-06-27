@@ -377,8 +377,8 @@ class RetryUtilTest {
         var partition = "Users";
         var coll = "coll_executeBulkWithRetry_should_work";
 
-        var data = new ArrayList<User>(10);
-        for (int i = 0; i < 10; i++) {
+        var data = new ArrayList<User>(1);
+        for (int i = 0; i < 1; i++) {
             data.add(new User("doBulkWithRetry_should_work_" + i, "first" + i, "last" + i));
         }
 
@@ -401,15 +401,85 @@ class RetryUtilTest {
                                 generateCosmosBulkItemResponse(429, 5),
                                 new CosmosException(429, "429", "Too Many Requests", 5)));
                     }
-                    return List.of();
+                    var iter = ops.iterator();
+                    return List.of(generateCosmosBulkOperationResponse(iter.next(),
+                            generateCosmosBulkItemResponse(200, 0),
+                            null));
                 });
 
         // check retry logic is called in WARN level
         var events = tracker.getEvents().stream().filter(e -> e.getLevel() == Level.WARN).collect(Collectors.toList());
-        assertThat(events.get(0).toString()).isEqualTo(String.format("[WARN] doBulkWithRetry 429 occurred. Code:429, coll:%s, partition:[\"%s\"]. operationType:CREATE, Wait:%d ms", coll, partition, wait));
+        assertThat(events.get(0).toString()).contains(String.format("doBulkWithRetry 429 occurred. Code:429, coll:%s, partition:[\"%s\"]. operationType:CREATE, Wait:%d ms", coll, partition, wait));
 
         // wait should be doubled
-        assertThat(events.get(1).toString()).isEqualTo(String.format("[WARN] doBulkWithRetry 429 occurred. Code:429, coll:%s, partition:[\"%s\"]. operationType:CREATE, Wait:%d ms", coll, partition, wait * 2));
+        assertThat(events.get(1).toString()).contains(String.format("doBulkWithRetry 429 occurred. Code:429, coll:%s, partition:[\"%s\"]. operationType:CREATE, Wait:%d ms", coll, partition, wait * 2));
+    }
+
+    @Test
+    void executeBulkWithRetry_should_retry_when_response_is_empty() throws Exception {
+        var partition = "Users";
+        var coll = "coll_executeBulkWithRetry_should_retry_when_response_is_empty";
+        var operation = getCreateOperation(new User("response_empty", "first", "last"), partition);
+
+        var result = RetryUtil.executeBulkWithRetry(coll, List.of(operation),
+                ops -> List.of(generateCosmosBulkOperationResponse(ops.iterator().next(), null, null)), 1);
+
+        assertThat(result.successList).isEmpty();
+        assertThat(result.fatalList).isEmpty();
+        assertThat(result.retryList).isEqualTo(List.of(operation));
+    }
+
+    @Test
+    void executeBulkWithRetry_should_retry_when_operation_response_is_missing() throws Exception {
+        var partition = "Users";
+        var coll = "coll_executeBulkWithRetry_should_retry_when_operation_response_is_missing";
+        var operation1 = getCreateOperation(new User("response_exists", "first1", "last1"), partition);
+        var operation2 = getCreateOperation(new User("response_missing", "first2", "last2"), partition);
+        var calls = new AtomicInteger();
+
+        var result = RetryUtil.executeBulkWithRetry(coll, List.of(operation1, operation2),
+                ops -> {
+                    calls.incrementAndGet();
+                    var list = new ArrayList<CosmosBulkOperationResponse<Object>>();
+                    for (var op : ops) {
+                        if (op == operation1) {
+                            list.add(generateCosmosBulkOperationResponse(op, generateCosmosBulkItemResponse(200, 0), null));
+                        }
+                    }
+                    return list;
+                }, 2);
+
+        assertThat(calls).hasValue(2);
+        assertThat(result.successList).hasSize(1);
+        assertThat(result.successList.get(0).toMap()).containsEntry("id", "response_exists");
+        assertThat(result.fatalList).isEmpty();
+        assertThat(result.retryList).isEqualTo(List.of(operation2));
+    }
+
+    @Test
+    void executeBulkWithRetry_should_use_operation_item_when_success_response_item_is_empty() throws Exception {
+        var partition = "Users";
+        var coll = "coll_executeBulkWithRetry_should_use_operation_item_when_success_response_item_is_empty";
+        var operation = getCreateOperation(new User("success_without_item", "first", "last"), partition);
+
+        var result = RetryUtil.executeBulkWithRetry(coll, List.of(operation),
+                ops -> List.of(generateCosmosBulkOperationResponse(ops.iterator().next(),
+                        generateCosmosBulkItemResponse(200, 0, null), null)), 1);
+
+        assertThat(result.successList).hasSize(1);
+        assertThat(result.successList.get(0).toMap())
+                .containsEntry("id", "success_without_item")
+                .containsEntry("firstName", "first")
+                .containsEntry("lastName", "last");
+        assertThat(result.fatalList).isEmpty();
+        assertThat(result.retryList).isEmpty();
+    }
+
+    private static CosmosItemOperation getCreateOperation(User user, String partition) {
+        var partitionKey = new PartitionKey(partition);
+        var map = JsonUtil.toMap(user);
+        map.put(Cosmos.getDefaultPartitionKey(), partition);
+        return CosmosBulkOperations.getCreateItemOperation(map, partitionKey);
     }
 
 
@@ -421,6 +491,10 @@ class RetryUtilTest {
      * @throws Exception
      */
     static CosmosBulkItemResponse generateCosmosBulkItemResponse(int statusCode, int retryAfter) throws Exception {
+        return generateCosmosBulkItemResponse(statusCode, retryAfter, JsonNodeFactory.instance.objectNode());
+    }
+
+    static CosmosBulkItemResponse generateCosmosBulkItemResponse(int statusCode, int retryAfter, ObjectNode resourceObject) throws Exception {
         // Use reflection to access the package-private constructor
         Constructor<CosmosBulkItemResponse> constructor =
                 CosmosBulkItemResponse.class.getDeclaredConstructor(
@@ -441,7 +515,7 @@ class RetryUtilTest {
         CosmosBulkItemResponse response = constructor.newInstance(
                 "etagValue",                        // eTag
                 1.0,                                // requestCharge
-                JsonNodeFactory.instance.objectNode(), // resourceObject
+                resourceObject, // resourceObject
                 statusCode,                                // statusCode
                 Duration.ofMillis(retryAfter),             // retryAfter
                 0,                                  // subStatusCode
@@ -455,7 +529,7 @@ class RetryUtilTest {
     }
 
 
-    static CosmosBulkOperationResponse generateCosmosBulkOperationResponse(CosmosItemOperation op, CosmosBulkItemResponse itemResponse, Exception e) throws Exception {
+    static CosmosBulkOperationResponse<Object> generateCosmosBulkOperationResponse(CosmosItemOperation op, CosmosBulkItemResponse itemResponse, Exception e) throws Exception {
         // Use reflection to access the package-private constructor
         Constructor<CosmosBulkOperationResponse> constructor =
                 CosmosBulkOperationResponse.class.getDeclaredConstructor(
@@ -470,7 +544,7 @@ class RetryUtilTest {
 
 
         // Create an instance of CosmosBulkOperationResponse using the constructor
-        CosmosBulkOperationResponse<String> response = constructor.newInstance(
+        CosmosBulkOperationResponse<Object> response = constructor.newInstance(
                 op,
                 itemResponse,
                 e,

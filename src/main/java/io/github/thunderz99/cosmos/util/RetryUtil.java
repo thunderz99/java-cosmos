@@ -4,6 +4,7 @@ import java.util.*;
 import java.util.concurrent.Callable;
 
 import com.azure.cosmos.implementation.HttpConstants;
+import com.azure.cosmos.models.CosmosBulkItemResponse;
 import com.azure.cosmos.models.CosmosBulkOperationResponse;
 import com.azure.cosmos.models.CosmosItemOperation;
 import com.google.common.collect.Sets;
@@ -223,30 +224,62 @@ public class RetryUtil {
         long maxDelay = 16000;
 
         var successDocuments = new ArrayList<CosmosDocument>();
+        var pendingOperations = new ArrayList<>(operations);
 
-        for (int attempt = 0; attempt < maxRetries; attempt++) {
+        for (int attempt = 0; attempt < maxRetries && !pendingOperations.isEmpty(); attempt++) {
 
             var retryTasks = new ArrayList<CosmosItemOperation>();
-            var execResult = operationFunc.execute(operations);
+            var attemptOperations = new ArrayList<>(pendingOperations);
+            var unresolvedOperations = new ArrayList<>(attemptOperations);
+            var execResult = operationFunc.execute(attemptOperations);
+            if (execResult == null) {
+                delay = Math.max(delay, 1);
+                for (var operation : unresolvedOperations) {
+                    log.warn("doBulkWithRetry received empty execution result. coll:{}, partition:{}, operationType:{}, id:{}, attempt:{}",
+                            coll, getPartition(operation), operation.getOperationType(), getOperationId(operation), attempt + 1);
+                }
+                retryTasks.addAll(unresolvedOperations);
+                unresolvedOperations.clear();
+            }
 
-            for (CosmosBulkOperationResponse<?> result : execResult) {
+            for (CosmosBulkOperationResponse<?> result : ObjectUtils.defaultIfNull(execResult, List.<CosmosBulkOperationResponse<Object>>of())) {
+                if (ObjectUtils.isEmpty(result)) {
+                    continue;
+                }
+
                 var operation = result.getOperation();
+                if (ObjectUtils.isEmpty(operation)) {
+                    log.warn("doBulkWithRetry received a bulk result without operation. coll:{}, attempt:{}", coll, attempt + 1);
+                    continue;
+                }
+                removeOperation(unresolvedOperations, operation);
+
                 var response = result.getResponse();
                 if (ObjectUtils.isEmpty(response)) {
+                    delay = Math.max(delay, 1);
+                    log.warn("doBulkWithRetry received empty response. coll:{}, partition:{}, operationType:{}, id:{}, attempt:{}",
+                            coll, getPartition(operation), operation.getOperationType(), getOperationId(operation), attempt + 1);
+                    retryTasks.add(operation);
                     continue;
                 }
                 log.info("Document bulk operation: operation type:{}, request charge:{}, coll:{}, partition:{}",
-                        operation.getOperationType().name(), response.getRequestCharge(), coll, operation.getPartitionKeyValue().toString());
+                        operation.getOperationType().name(), response.getRequestCharge(), coll, getPartition(operation));
 
                 if (RetryUtil.shouldRetry(response.getStatusCode())) {
                     delay = Math.max(delay, response.getRetryAfterDuration().toMillis());
-                    log.warn("doBulkWithRetry 429 occurred. Code:{}, coll:{}, partition:{}. operationType:{}, Wait:{} ms",
-                            response.getStatusCode(), coll, operation.getPartitionKeyValue().toString(), operation.getOperationType(), delay);
+                    log.warn("doBulkWithRetry 429 occurred. Code:{}, coll:{}, partition:{}. operationType:{}, Wait:{} ms, id:{}, attempt:{}",
+                            response.getStatusCode(), coll, getPartition(operation), operation.getOperationType(), delay, getOperationId(operation), attempt + 1);
                     retryTasks.add(operation);
                 } else if (response.isSuccessStatusCode()) {
-                    var item = response.getItem(mapInstance.getClass());
-                    if (item == null) continue;
-                    successDocuments.add(new CosmosDocument(item));
+                    var document = getSuccessDocument(response, operation);
+                    if (document == null) {
+                        delay = Math.max(delay, 1);
+                        log.warn("doBulkWithRetry success response has no item and operation cannot be mapped. coll:{}, partition:{}, operationType:{}, id:{}, attempt:{}",
+                                coll, getPartition(operation), operation.getOperationType(), getOperationId(operation), attempt + 1);
+                        retryTasks.add(operation);
+                    } else {
+                        successDocuments.add(document);
+                    }
                 } else {
                     var ex = result.getException();
                     if (HttpConstants.StatusCodes.CONFLICT == response.getStatusCode()) {
@@ -262,24 +295,87 @@ public class RetryUtil {
                 }
             }
 
-            if (retryTasks.isEmpty()) {
-                operations.clear();
-                break;
-            } else {
-                operations = retryTasks;
+            if (!unresolvedOperations.isEmpty()) {
+                delay = Math.max(delay, 1);
+                for (var operation : unresolvedOperations) {
+                    log.warn("doBulkWithRetry missing response for operation. coll:{}, partition:{}, operationType:{}, id:{}, attempt:{}",
+                            coll, getPartition(operation), operation.getOperationType(), getOperationId(operation), attempt + 1);
+                }
+                retryTasks.addAll(unresolvedOperations);
             }
 
-            try {
-                Thread.sleep(delay);
-            } catch (InterruptedException ignored) {
+            if (retryTasks.isEmpty()) {
+                pendingOperations.clear();
+                break;
+            } else {
+                pendingOperations = retryTasks;
+            }
+
+            if (attempt + 1 < maxRetries) {
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
             }
             // Exponential Backoff
             delay = Math.min(maxDelay, delay * 2);
         }
 
-        bulkResult.retryList = operations;
+        bulkResult.retryList = pendingOperations;
         bulkResult.successList = successDocuments;
         return bulkResult;
+    }
+
+    private static void removeOperation(List<CosmosItemOperation> operations, CosmosItemOperation operation) {
+        if (!operations.removeIf(it -> it == operation)) {
+            operations.remove(operation);
+        }
+    }
+
+    private static CosmosDocument getSuccessDocument(CosmosBulkItemResponse response, CosmosItemOperation operation) {
+        try {
+            var item = response.getItem(mapInstance.getClass());
+            if (ObjectUtils.isNotEmpty(item)) {
+                return new CosmosDocument(item);
+            }
+        } catch (Exception e) {
+            log.warn("doBulkWithRetry failed to parse success response item. operationType:{}, id:{}", operation.getOperationType(), getOperationId(operation), e);
+        }
+
+        Map<String, Object> operationItem = operation.getItem();
+        if (ObjectUtils.isNotEmpty(operationItem)) {
+            return new CosmosDocument(operationItem);
+        }
+
+        var id = operation.getId();
+        if (ObjectUtils.isNotEmpty(id)) {
+            return new CosmosDocument(Map.of("id", id));
+        }
+
+        return null;
+    }
+
+    private static String getOperationId(CosmosItemOperation operation) {
+        try {
+            var id = operation.getId();
+            if (ObjectUtils.isNotEmpty(id)) {
+                return id;
+            }
+            Map<String, Object> item = operation.getItem();
+            if (ObjectUtils.isNotEmpty(item) && ObjectUtils.isNotEmpty(item.get("id"))) {
+                return item.get("id").toString();
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
+    }
+
+    private static String getPartition(CosmosItemOperation operation) {
+        if (ObjectUtils.isEmpty(operation.getPartitionKeyValue())) {
+            return "";
+        }
+        return operation.getPartitionKeyValue().toString();
     }
 
 
