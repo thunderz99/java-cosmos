@@ -640,11 +640,8 @@ public class TableUtil {
 
             var index = 1;
             for (var param : params) {
-                if (param.value instanceof String strValue) {
-                    pstmt.setString(index, "\"" + strValue + "\"");
-                } else {
-                    pstmt.setString(index, JsonUtil.toJson(param.value));
-                }
+                // Serialize the complete value so JSON special characters in strings are escaped for PostgreSQL JSONB.
+                pstmt.setString(index, JsonUtil.toJson(param.value));
                 index++;
             }
 
@@ -944,11 +941,8 @@ public class TableUtil {
             try (var pstmt = conn.prepareStatement(patchTableSQL)) {
                 var index = 1;
                 for (var param : params) {
-                    if (param.value instanceof String strValue) {
-                        pstmt.setString(index, "\"" + strValue + "\"");
-                    } else {
-                        pstmt.setString(index, JsonUtil.toJson(param.value));
-                    }
+                    // Serialize the complete value so JSON special characters in strings are escaped for PostgreSQL JSONB.
+                    pstmt.setString(index, JsonUtil.toJson(param.value));
                     index++;
                 }
                 var sqlArray = conn.createArrayOf("text", chunkIds.toArray());
