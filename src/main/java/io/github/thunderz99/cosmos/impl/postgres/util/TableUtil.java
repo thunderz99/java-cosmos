@@ -640,6 +640,7 @@ public class TableUtil {
 
             var index = 1;
             for (var param : params) {
+                // Serialize the complete value so JSON special characters in strings are escaped for PostgreSQL JSONB.
                 pstmt.setString(index, JsonUtil.toJson(param.value));
                 index++;
             }
@@ -940,6 +941,7 @@ public class TableUtil {
             try (var pstmt = conn.prepareStatement(patchTableSQL)) {
                 var index = 1;
                 for (var param : params) {
+                    // Serialize the complete value so JSON special characters in strings are escaped for PostgreSQL JSONB.
                     pstmt.setString(index, JsonUtil.toJson(param.value));
                     index++;
                 }
