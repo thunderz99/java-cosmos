@@ -517,6 +517,87 @@ public class TableUtilTest {
     }
 
     @Test
+    void patchRecord_should_preserve_json_special_characters_in_string_values() throws Exception {
+        var tableName = "patchRecord_string_test_" + RandomStringUtils.randomAlphanumeric(6);
+        var id = RandomStringUtils.randomAlphanumeric(6);
+        var expectedValues = Map.<String, Object>of(
+                "plainText", "AAA BBB",
+                "lineFeed", "AAA\nBBB",
+                "carriageReturnLineFeed", "AAA\r\nBBB",
+                "tab", "AAA\tBBB",
+                "doubleQuote", "AAA\"BBB",
+                "backslash", "AAA\\BBB"
+        );
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+            TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, Maps.newHashMap(Map.of("id", id))));
+
+            var operations = PatchOperations.create()
+                    .set("/plainText", expectedValues.get("plainText"))
+                    .set("/lineFeed", expectedValues.get("lineFeed"))
+                    .set("/carriageReturnLineFeed", expectedValues.get("carriageReturnLineFeed"))
+                    .set("/tab", expectedValues.get("tab"))
+                    .set("/doubleQuote", expectedValues.get("doubleQuote"))
+                    .set("/backslash", expectedValues.get("backslash"));
+
+            var patched = TableUtil.patchRecord(conn, schemaName, tableName, id, operations);
+            assertThat(patched.data).containsAllEntriesOf(expectedValues);
+
+            var read = TableUtil.readRecord(conn, schemaName, tableName, id);
+            assertThat(read.data).containsAllEntriesOf(expectedValues);
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void bulkPatchRecords_should_preserve_json_special_characters_in_string_values() throws Exception {
+        var tableName = "bulkPatchRecords_string_test_" + RandomStringUtils.randomAlphanumeric(6);
+        var ids = List.of(RandomStringUtils.randomAlphanumeric(6), RandomStringUtils.randomAlphanumeric(6));
+        var expectedValues = Map.<String, Object>of(
+                "plainText", "AAA BBB",
+                "lineFeed", "AAA\nBBB",
+                "carriageReturnLineFeed", "AAA\r\nBBB",
+                "tab", "AAA\tBBB",
+                "doubleQuote", "AAA\"BBB",
+                "backslash", "AAA\\BBB"
+        );
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+            for (var id : ids) {
+                TableUtil.upsertRecord(conn, schemaName, tableName, new PostgresRecord(id, Maps.newHashMap(Map.of("id", id))));
+            }
+
+            var operations = PatchOperations.create()
+                    .set("/plainText", expectedValues.get("plainText"))
+                    .set("/lineFeed", expectedValues.get("lineFeed"))
+                    .set("/carriageReturnLineFeed", expectedValues.get("carriageReturnLineFeed"))
+                    .set("/tab", expectedValues.get("tab"))
+                    .set("/doubleQuote", expectedValues.get("doubleQuote"))
+                    .set("/backslash", expectedValues.get("backslash"));
+
+            var result = TableUtil.bulkPatchRecords(conn, schemaName, tableName, ids, operations);
+            assertThat(result.fatalList).isEmpty();
+            assertThat(result.successList)
+                    .hasSize(ids.size())
+                    .allSatisfy(document -> assertThat(document.toMap()).containsAllEntriesOf(expectedValues));
+
+            for (var id : ids) {
+                var read = TableUtil.readRecord(conn, schemaName, tableName, id);
+                assertThat(read.data).containsAllEntriesOf(expectedValues);
+            }
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
     void batchInsertRecords_should_work() throws Exception {
         var tableName = "batchInsertRecords_test_" + RandomStringUtils.randomAlphanumeric(6);
         try (var conn = cosmos.getDataSource().getConnection()) {
