@@ -4,6 +4,7 @@ import java.util.List;
 
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.BatchPatchOperation;
 import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
@@ -522,6 +523,19 @@ public interface CosmosDatabase {
      * @throws Exception CosmosException
      */
     public List<CosmosDocument> batchDelete(String coll, List<?> data, String partition) throws Exception;
+
+    /**
+     * Patch batch documents in a single transaction.
+     * Note: all documents must belong to the supplied partition, the batch can contain at most
+     * 100 documents, and each document can contain at most 10 patch operations.
+     *
+     * @param coll      collection name
+     * @param data      patch operations grouped by document id
+     * @param partition partition name shared by every target document
+     * @return updated CosmosDocument instances
+     * @throws Exception CosmosException when validation or any patch operation fails
+     */
+    public List<CosmosDocument> batchPatch(String coll, List<BatchPatchOperation> data, String partition) throws Exception;
 
 
     /**
