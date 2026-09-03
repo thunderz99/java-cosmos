@@ -400,7 +400,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                     // we will not retry if checkETag is true, this will result in an OCC.
                     // if we do not checkETag, we will get the newest etag from DB and retry replaceDocument.
                     var maxRetry = option.checkETag ? 0 : 3;
-                    return replaceDocumentWithRefreshingEtag(coll, id, data, maxRetry, partition);
+                    return replaceDocumentWithRefreshingEtag(coll, id, data, maxRetry, partition, option.replaceEmptyMap);
                 }
         );
 
@@ -420,6 +420,11 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      * @throws Exception
      */
     Map<String, Object> readAndMerge(String coll, String id, Map<String, Object> data, String partition) throws Exception {
+        return readAndMerge(coll, id, data, partition, false);
+    }
+
+    Map<String, Object> readAndMerge(String coll, String id, Map<String, Object> data, String partition,
+                                     boolean replaceEmptyMap) throws Exception {
         var origin = read(coll, id, partition).toMap();
 
         var newData = JsonUtil.toMap(data);
@@ -427,7 +432,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         newData.put(Cosmos.getDefaultPartitionKey(), partition);
 
         // this is like `Object.assign(origin, newData)` in JavaScript, but support nested merge.
-        var merged = MapUtil.merge(origin, newData);
+        var merged = MapUtil.merge(origin, newData, replaceEmptyMap);
 
         checkValidId(merged);
         return merged;
@@ -445,6 +450,12 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
      * @throws Exception
      */
     Map<String, Object> replaceDocumentWithRefreshingEtag(String coll, String id, Map<String, Object> data, int maxRetry, String partition) throws Exception {
+        return replaceDocumentWithRefreshingEtag(coll, id, data, maxRetry, partition, false);
+    }
+
+    Map<String, Object> replaceDocumentWithRefreshingEtag(String coll, String id, Map<String, Object> data,
+                                                           int maxRetry, String partition,
+                                                           boolean replaceEmptyMap) throws Exception {
 
         var documentLink = LinkFormatUtil.getDocumentLink(db, coll, id);
 
@@ -453,7 +464,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
         while (true) {
-            var merged = readAndMerge(coll, id, data, partition);
+            var merged = readAndMerge(coll, id, data, partition, replaceEmptyMap);
             var etag = merged.getOrDefault(CosmosImpl.ETAG, "").toString();
 
             try {

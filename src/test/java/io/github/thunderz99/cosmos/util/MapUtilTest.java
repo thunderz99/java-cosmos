@@ -142,6 +142,19 @@ public class MapUtilTest {
     }
 
     @Test
+    void toFlatMap_should_preserve_nested_empty_map_when_enabled() {
+        var map = Map.of("values", Map.of("rules", Map.of()));
+
+        assertThat(MapUtil.toFlatMap(map)).isEmpty();
+        assertThat(MapUtil.toFlatMap(map, true))
+                .containsExactlyEntriesOf(Map.of("/values/rules", Map.of()));
+
+        assertThat(MapUtil.toFlatMapWithPeriod(map)).isEmpty();
+        assertThat(MapUtil.toFlatMapWithPeriod(map, true))
+                .containsExactlyEntriesOf(Map.of("values.rules", Map.of()));
+    }
+
+    @Test
     void merge_should_work_for_nested_json() {
 
         var map1 = new LinkedHashMap<String, Object>();
@@ -171,6 +184,48 @@ public class MapUtilTest {
                 .containsEntry("addresses", Lists.newArrayList("NY", "Houston")) //updated
         ;
 
+    }
+
+    @Test
+    void merge_should_replace_nested_empty_map_when_enabled() {
+        var existing = JsonUtil.toMap(Map.of(
+                "values", Map.of(
+                        "rules", Map.of("source", "target"),
+                        "sibling", "keep")));
+        var updated = JsonUtil.toMap(Map.of(
+                "values", Map.of("rules", Map.of())));
+
+        var merged = MapUtil.merge(existing, updated, true);
+
+        assertThat((Map<String, Object>) ((Map<String, Object>) merged.get("values")).get("rules")).isEmpty();
+        assertThat((Map<String, Object>) merged.get("values")).containsEntry("sibling", "keep");
+    }
+
+    @Test
+    void merge_should_keep_deep_merge_for_non_empty_map_when_empty_map_replacement_is_enabled() {
+        var existing = JsonUtil.toMap(Map.of(
+                "values", Map.of("rules", Map.of("existing", "keep"))));
+        var updated = JsonUtil.toMap(Map.of(
+                "values", Map.of("rules", Map.of("updated", "add"))));
+
+        var merged = MapUtil.merge(existing, updated, true);
+
+        assertThat((Map<String, Object>) ((Map<String, Object>) merged.get("values")).get("rules"))
+                .containsEntry("existing", "keep")
+                .containsEntry("updated", "add");
+    }
+
+    @Test
+    void merge_should_keep_legacy_empty_map_behavior_by_default() {
+        var existing = JsonUtil.toMap(Map.of(
+                "values", Map.of("rules", Map.of("source", "target"))));
+        var updated = JsonUtil.toMap(Map.of(
+                "values", Map.of("rules", Map.of())));
+
+        var merged = MapUtil.merge(existing, updated);
+
+        assertThat((Map<String, Object>) ((Map<String, Object>) merged.get("values")).get("rules"))
+                .containsEntry("source", "target");
     }
 
 

@@ -39,7 +39,18 @@ public class MapUtil {
      * @return map flattened
      */
     public static Map<String, Object> toFlatMap(Map<String, ? extends Object> map) {
-        return toFlatMap("", map, true);
+        return toFlatMap(map, false);
+    }
+
+    /**
+     * Convert a nested map to slash-separated paths.
+     *
+     * @param map map to convert
+     * @param preserveEmptyMap whether nested empty maps should be emitted as values
+     * @return map flattened
+     */
+    public static Map<String, Object> toFlatMap(Map<String, ? extends Object> map, boolean preserveEmptyMap) {
+        return toFlatMap("", map, true, preserveEmptyMap);
     }
 
 
@@ -71,11 +82,23 @@ public class MapUtil {
      * @return map flattened
      */
     public static Map<String, Object> toFlatMapWithPeriod(Map<String, ? extends Object> map) {
-        return toFlatMap("", map, false);
+        return toFlatMapWithPeriod(map, false);
     }
 
 
-    static Map<String, Object> toFlatMap(String baseKey, Map<String, ? extends Object> map, boolean useSlash) {
+    /**
+     * Convert a nested map to period-separated paths.
+     *
+     * @param map map to convert
+     * @param preserveEmptyMap whether nested empty maps should be emitted as values
+     * @return map flattened
+     */
+    public static Map<String, Object> toFlatMapWithPeriod(Map<String, ? extends Object> map, boolean preserveEmptyMap) {
+        return toFlatMap("", map, false, preserveEmptyMap);
+    }
+
+    static Map<String, Object> toFlatMap(String baseKey, Map<String, ? extends Object> map, boolean useSlash,
+                                         boolean preserveEmptyMap) {
 
         if (map == null) {
             return null;
@@ -109,8 +132,12 @@ public class MapUtil {
 
             if (value instanceof Map) {
                 var subMap = (Map<String, Object>) value;
-                var flatSubMap = toFlatMap(subKey, subMap, useSlash);
-                ret.putAll(flatSubMap);
+                if (preserveEmptyMap && subMap.isEmpty()) {
+                    ret.put(subKey, subMap);
+                } else {
+                    var flatSubMap = toFlatMap(subKey, subMap, useSlash, preserveEmptyMap);
+                    ret.putAll(flatSubMap);
+                }
             } else {
                 ret.put(subKey, value);
             }
@@ -143,6 +170,19 @@ public class MapUtil {
      * @return map after merge
      */
     public static Map<String, Object> merge(Map<String, Object> m1, Map<String, Object> m2) {
+        return merge(m1, m2, false);
+    }
+
+    /**
+     * Merge two maps recursively, optionally treating an explicitly supplied empty map as a replacement value.
+     *
+     * @param m1 existing map
+     * @param m2 updated map
+     * @param replaceEmptyMap whether an empty map in {@code m2} should replace the corresponding map in {@code m1}
+     * @return map after merge
+     */
+    public static Map<String, Object> merge(Map<String, Object> m1, Map<String, Object> m2,
+                                             boolean replaceEmptyMap) {
 
         for (var entry : m1.entrySet()) {
             var key = entry.getKey();
@@ -151,12 +191,14 @@ public class MapUtil {
             var value2 = m2.get(key);
 
             // do nested merge
-            if (value != null && value instanceof Map<?, ?> && value2 != null && value2 instanceof Map<?, ?>) {
+            if (value instanceof Map<?, ?> && value2 instanceof Map<?, ?>) {
                 var subMap1 = (Map<String, Object>) value;
                 var subMap2 = (Map<String, Object>) value2;
 
-                subMap1 = merge(subMap1, subMap2);
-                m2.put(key, subMap1);
+                if (!replaceEmptyMap || !subMap2.isEmpty()) {
+                    subMap1 = merge(subMap1, subMap2, replaceEmptyMap);
+                    m2.put(key, subMap1);
+                }
             }
 
         }
