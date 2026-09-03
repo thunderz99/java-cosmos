@@ -5,14 +5,17 @@ import com.zaxxer.hikari.HikariDataSource;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.condition.MultiBucketAggregate;
 import io.github.thunderz99.cosmos.dto.BatchPatchOperation;
 import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
+import io.github.thunderz99.cosmos.dto.MultiBucketAggregateResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGAggregateUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGConditionUtil;
+import io.github.thunderz99.cosmos.impl.postgres.util.PGMultiBucketUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TTLUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.*;
@@ -758,6 +761,25 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         // Because "itemsCount: 1L" is not acceptable by some users. They prefer "itemsCount: 1" more.
         maps = PGAggregateUtil.convertAggregateResultsToInteger(maps);
         return new CosmosDocumentList(maps);
+    }
+
+    @Override
+    public List<MultiBucketAggregateResult> aggregateMultiBucket(String coll, MultiBucketAggregate aggregate,
+                                                                 Condition sharedCondition, String partition) throws Exception {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+
+        var effectiveSharedCondition = sharedCondition == null ? Condition.filter() : sharedCondition;
+        var querySpec = PGMultiBucketUtil.toQuerySpec(coll, aggregate, effectiveSharedCondition, partition);
+
+        List<Map<String, Object>> maps = RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.aggregateRecords(conn, coll, partition, querySpec).stream()
+                        .map(record -> record.data)
+                        .toList();
+            }
+        });
+        return MultiBucketAggregateResultUtil.fromFlatRows(aggregate, maps);
     }
 
     @Override

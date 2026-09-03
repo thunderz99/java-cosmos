@@ -379,6 +379,177 @@ Using this iterator can reduce memory consumption compared to the normal find me
     ;
 ```
 
+### Multi-bucket conditional aggregates
+
+Use `aggregateMultiBucket` when one record may match more than one independent
+bucket and every bucket must be aggregated in one database request. This is
+different from `groupBy`: the bucket conditions may overlap and may use
+operators such as `ARRAY_CONTAINS_ANY`, `LIKE`, or a range expression.
+
+The public API is:
+
+```java
+List<MultiBucketAggregateResult> aggregateMultiBucket(
+        String coll,
+        MultiBucketAggregate aggregate,
+        Condition sharedCondition,
+        String partition) throws Exception;
+
+// Uses coll as the partition when crossPartition is false.
+List<MultiBucketAggregateResult> aggregateMultiBucket(
+        String coll,
+        MultiBucketAggregate aggregate,
+        Condition sharedCondition) throws Exception;
+```
+
+The request and result types are intentionally small data objects:
+
+```java
+public enum BucketAggregateFunction {
+    COUNT, SUM, AVG, MIN, MAX
+}
+
+public class ConditionBucket {
+    public String bucketId;
+    public Condition condition;
+
+    public static ConditionBucket of(String bucketId, Condition condition);
+}
+
+public class MultiBucketAggregate {
+    public BucketAggregateFunction function;
+    public String field;
+    public List<ConditionBucket> buckets;
+
+    public static MultiBucketAggregate of(
+            BucketAggregateFunction function,
+            String field,
+            List<ConditionBucket> buckets);
+}
+
+public class MultiBucketAggregateResult {
+    public String bucketId;
+    public long matched;
+    public Number value;
+}
+```
+
+Create one aggregate specification and assign an opaque, caller-owned ID to
+each bucket:
+
+```java
+import io.github.thunderz99.cosmos.condition.BucketAggregateFunction;
+import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.condition.ConditionBucket;
+import io.github.thunderz99.cosmos.condition.MultiBucketAggregate;
+import io.github.thunderz99.cosmos.dto.MultiBucketAggregateResult;
+
+import java.util.List;
+
+var sharedCondition = Condition.filter(
+        "status", "active",
+        "effectiveFrom <=", "2026-09-03",
+        "effectiveTo >", "2026-09-03"
+);
+
+var buckets = List.of(
+        ConditionBucket.of(
+                "organization/root-01",
+                Condition.filter(
+                        "assignedOrgIds ARRAY_CONTAINS_ANY",
+                        List.of("root-01", "team-01", "team-02")
+                )
+        ),
+        ConditionBucket.of(
+                "organization/root-02",
+                Condition.filter(
+                        "assignedOrgIds ARRAY_CONTAINS_ANY",
+                        List.of("root-02", "team-02", "team-03")
+                )
+        )
+);
+
+var aggregate = MultiBucketAggregate.of(
+        BucketAggregateFunction.SUM,
+        "salary",
+        buckets
+);
+
+List<MultiBucketAggregateResult> results = db.aggregateMultiBucket(
+        "Members",
+        aggregate,
+        sharedCondition,
+        "Members"
+);
+```
+
+The result order is the same as the input bucket order. A record may contribute
+to multiple buckets. `bucketId` is never used as a query alias; java-cosmos uses
+safe internal aliases and maps them back after execution.
+
+Example result:
+
+```json
+[
+  {
+    "bucketId": "organization/root-01",
+    "matched": 3,
+    "value": 1500000
+  },
+  {
+    "bucketId": "organization/root-02",
+    "matched": 1,
+    "value": null
+  }
+]
+```
+
+`matched` is the number of records satisfying both `sharedCondition` and the
+bucket condition. A caller that only needs a boolean can use
+`result.matched > 0`. It is independent from `value`, so `matched > 0` together
+with `value == null` means that records matched but none had a valid numeric
+value in the target field.
+
+Supported functions and empty-value behavior:
+
+| Function | `value` |
+| --- | --- |
+| `COUNT` | Number of matched records; the target field is ignored |
+| `SUM` | Sum of non-null numeric values, or `null` when there is no valid value |
+| `AVG` | Average of non-null numeric values, or `null` when there is no valid value |
+| `MIN` | Minimum non-null numeric value, or `null` when there is no valid value |
+| `MAX` | Maximum non-null numeric value, or `null` when there is no valid value |
+
+For a cross-partition Cosmos DB query, set the option on the shared condition:
+
+```java
+var sharedCondition = Condition.filter("status", "active")
+        .crossPartition(true);
+
+var results = db.aggregateMultiBucket(
+        "Members",
+        aggregate,
+        sharedCondition
+);
+```
+
+The shared condition contributes only its filter to the aggregate query.
+`sort`, `offset`, `limit`, and selected `fields` are ignored. Bucket conditions
+support nested `$AND`, `$OR`, and `$NOT` expressions and the normal comparison,
+string, null-check, and array operators. Raw SQL, joins, `$EXPRESSION`, and
+`$ELEM_MATCH` are not accepted by this API.
+
+The request is rejected before database access when bucket IDs are blank or
+duplicated, an `ARRAY_CONTAINS_ANY`/`ARRAY_CONTAINS_ALL` value is empty, a
+non-`COUNT` target field is blank, an unsupported condition is used, or the
+compiled request exceeds the configured complexity limits. The API never
+returns partial bucket results.
+
+PostgreSQL uses one `FILTER (WHERE ...)` aggregate query. Cosmos DB uses one
+conditional multi-column aggregate query. MongoDB uses one `$facet` aggregation
+pipeline. All three implementations execute one database request and never
+fall back to one query per bucket.
+
 ### Increment
 
 ```java

@@ -16,7 +16,10 @@ import com.microsoft.azure.documentdb.SqlParameter;
 import com.microsoft.azure.documentdb.SqlParameterCollection;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
+import io.github.thunderz99.cosmos.condition.BucketAggregateFunction;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.condition.ConditionBucket;
+import io.github.thunderz99.cosmos.condition.MultiBucketAggregate;
 import io.github.thunderz99.cosmos.condition.SubConditionType;
 import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CheckBox;
@@ -1560,6 +1563,30 @@ class CosmosDatabaseImplTest {
             assertThat(result.get(1).get("ageSum")).isEqualTo(expect.get(lastName2));
 
         }
+    }
+
+    @Test
+    void aggregateMultiBucket_should_work() throws Exception {
+        MultiBucketAggregateTestSupport.assertMultiBucketAggregateWorks(db, coll, "Users");
+    }
+
+    @Test
+    void aggregateMultiBucket_should_work_across_partitions() throws Exception {
+        var aggregate = MultiBucketAggregate.of(
+                BucketAggregateFunction.COUNT,
+                null,
+                List.of(
+                        ConditionBucket.of(
+                                "Hanks", Condition.filter("fullName.last", "Hanks")),
+                        ConditionBucket.of(
+                                "Henry", Condition.filter("fullName.last", "Henry"))
+                ));
+
+        var results = db.aggregateMultiBucket(coll, aggregate,
+                Condition.filter("age >=", 12).crossPartition(true));
+
+        assertThat(results).extracting(result -> result.matched).containsExactly(2L, 2L);
+        assertThat(results).extracting(result -> result.value).containsExactly(2L, 2L);
     }
 
     @Test

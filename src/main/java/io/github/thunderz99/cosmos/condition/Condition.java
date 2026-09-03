@@ -11,6 +11,7 @@ import com.microsoft.azure.documentdb.SqlParameterCollection;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.util.Checker;
+import io.github.thunderz99.cosmos.util.FieldNameUtil;
 import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -442,6 +443,63 @@ public class Condition {
 
         return new CosmosSqlQuerySpec(queryText.toString(), params);
 
+    }
+
+    /**
+     * Generate a Cosmos DB query spec that aggregates multiple independent condition buckets.
+     * Only this condition's filter and cross-partition execution option are relevant; paging,
+     * sorting, and selected fields are intentionally ignored.
+     *
+     * @param aggregate multi-bucket aggregate request
+     * @return query spec containing one conditional aggregate query
+     */
+    public CosmosSqlQuerySpec toQuerySpecForMultiBucketAggregate(MultiBucketAggregate aggregate) {
+        MultiBucketAggregateValidator.validate(aggregate, this);
+
+        var params = new ArrayList<CosmosSqlParameter>();
+        var paramIndex = new AtomicInteger(0);
+        var sharedPredicate = compileBarePredicate(this, params, paramIndex);
+        var selectColumns = new ArrayList<String>();
+
+        String formattedField = null;
+        if (aggregate.function != BucketAggregateFunction.COUNT) {
+            var normalizedField = MultiBucketAggregateValidator.normalizeField(aggregate.field);
+            formattedField = getFormattedKey(FieldNameUtil.convertToDotFieldName(normalizedField));
+        }
+
+        for (var i = 0; i < aggregate.buckets.size(); i++) {
+            var predicate = compileBarePredicate(aggregate.buckets.get(i).condition, params, paramIndex);
+            if (StringUtils.isBlank(predicate)) {
+                predicate = "true";
+            }
+
+            var alias = "b" + i;
+            selectColumns.add("SUM((%s) ? 1 : 0) AS %s_matched".formatted(predicate, alias));
+            if (aggregate.function != BucketAggregateFunction.COUNT) {
+                var valuePredicate = "(%s) AND IS_NUMBER(%s)".formatted(predicate, formattedField);
+                selectColumns.add("SUM((%s) ? 1 : 0) AS %s_value_count"
+                        .formatted(valuePredicate, alias));
+                selectColumns.add("%s((%s) ? %s : undefined) AS %s"
+                        .formatted(aggregate.function, valuePredicate, formattedField, alias));
+            }
+        }
+
+        var queryText = new StringBuilder("SELECT ")
+                .append(String.join(", ", selectColumns))
+                .append(" FROM c");
+        if (StringUtils.isNotBlank(sharedPredicate)) {
+            queryText.append(" WHERE ").append(sharedPredicate);
+        }
+
+        MultiBucketAggregateValidator.checkCompiledRequest(queryText.toString(), params);
+        return new CosmosSqlQuerySpec(queryText.toString(), params);
+    }
+
+    private static String compileBarePredicate(Condition condition, List<CosmosSqlParameter> params,
+                                               AtomicInteger paramIndex) {
+        var conditionIndex = new AtomicInteger(0);
+        var filterQuery = condition.generateFilterQuery("", params, conditionIndex, paramIndex, "c");
+        return removeConnectPart(filterQuery.queryText.toString());
     }
 
 
