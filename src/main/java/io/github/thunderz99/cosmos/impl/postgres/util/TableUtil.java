@@ -489,7 +489,7 @@ public class TableUtil {
             newMap.put(ID, id);
 
             // like Object.assign(m1, m2) in javascript, but support nested merge.
-            var merged = MapUtil.merge(existRecord.data, newMap);
+            var merged = MapUtil.merge(existRecord.data, newMap, option.replaceEmptyMap);
 
             var data = JsonUtil.toJson(merged);
 

@@ -3079,6 +3079,38 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void updatePartial_should_replace_nested_empty_map_when_enabled() throws Exception {
+        var partition = "SheetContents";
+        var id = "replace_nested_empty_map_" + RandomStringUtils.randomAlphanumeric(6);
+        var data = Map.of(
+                "id", id,
+                "values", Map.of(
+                        "rules", Map.of("source", "target"),
+                        "sibling", "keep"));
+
+        try {
+            var original = db.upsert(coll, data, partition).toMap();
+            var etag = original.get(CosmosImpl.ETAG).toString();
+            var partialData = new LinkedHashMap<String, Object>();
+            partialData.put("values", Map.of("rules", Map.of()));
+            partialData.put(CosmosImpl.ETAG, etag);
+            var option = PartialUpdateOption.checkETag(true).replaceEmptyMap(true);
+
+            var updated = db.updatePartial(coll, id, partialData, partition, option).toMap();
+            var values = (Map<String, Object>) updated.get("values");
+
+            assertThat((Map<String, Object>) values.get("rules")).isEmpty();
+            assertThat(values).containsEntry("sibling", "keep");
+            assertThat(updated.get(CosmosImpl.ETAG)).isNotEqualTo(etag);
+            assertThatThrownBy(() -> db.updatePartial(coll, id, partialData, partition, option))
+                    .isInstanceOfSatisfying(CosmosException.class,
+                            e -> assertThat(e.getStatusCode()).isEqualTo(412));
+        } finally {
+            db.delete(coll, id, partition);
+        }
+    }
+
+    @Test
     void updatePartial_should_work_for_empty_key() throws Exception {
         var id1 = "empty_key_updatePartial_01" + RandomStringUtils.randomAlphanumeric(6);
 

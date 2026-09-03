@@ -409,7 +409,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         if (!hasEmptyKey) {
             // ---------- fast path: normal $set with flattened keys ----------
-            var flatMap = MapUtil.toFlatMapWithPeriod(patchData);
+            var flatMap = MapUtil.toFlatMapWithPeriod(patchData, option.replaceEmptyMap);
 
             if (option.checkETag && StringUtils.isNotEmpty(incomingEtag)) {
                 document = RetryUtil.executeWithRetry(() -> container.findOneAndUpdate(
@@ -451,7 +451,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             // NEVER allow replacing _id
             merged.put("_id", current.get("_id"));
 
-            merged = MapUtil.merge(merged, patchData);
+            merged = MapUtil.merge(merged, patchData, option.replaceEmptyMap);
 
             var replacement = new Document(merged);
 
