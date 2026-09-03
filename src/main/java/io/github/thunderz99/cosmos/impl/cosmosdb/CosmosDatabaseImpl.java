@@ -10,6 +10,7 @@ import com.google.common.base.Preconditions;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.BatchPatchOperation;
 import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
@@ -1141,6 +1142,28 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         ).collect(Collectors.toList());
     }
 
+    /**
+     * Patch batch documents atomically in one logical partition.
+     *
+     * @param coll      collection name
+     * @param data      patch operations grouped by document id
+     * @param partition partition name shared by every target document
+     * @return updated CosmosDocument instances
+     * @throws Exception CosmosException when the transactional batch fails
+     */
+    @Override
+    public List<CosmosDocument> batchPatch(String coll, List<BatchPatchOperation> data, String partition) throws Exception {
+        doCheckBeforeBatchPatch(coll, data, partition);
+
+        var batch = CosmosBatch.createCosmosBatch(new PartitionKey(partition));
+        data.forEach(operation -> batch.patchItemOperation(
+                operation.id,
+                operation.operations.getCosmosPatchOperations()));
+
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+        return doBatchWithRetry(container, batch);
+    }
+
 
     static void doCheckBeforeBatch(String coll, List<?> data, String partition) {
         Checker.checkNotBlank(coll, "coll");
@@ -1149,6 +1172,24 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
         checkBatchMaxOperations(data);
         checkValidId(data);
+    }
+
+    static void doCheckBeforeBatchPatch(String coll, List<BatchPatchOperation> data, String partition) {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(data, "batchPatch data " + coll + " " + partition);
+
+        for (var operation : data) {
+            Checker.checkNotNull(operation, "batchPatch operation");
+            Checker.checkNotBlank(operation.id, "batchPatch operation id");
+            checkValidId(operation.id);
+            Checker.checkNotNull(operation.operations, "batchPatch operation patch operations");
+            Preconditions.checkArgument(operation.operations.size() <= PatchOperations.LIMIT,
+                    "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10",
+                    operation.operations.size());
+        }
+
+        checkBatchMaxOperations(data);
     }
 
     static void doCheckBeforeBulk(String coll, List<?> data, String partition) {

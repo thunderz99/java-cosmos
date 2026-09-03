@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.dto.BatchPatchOperation;
 import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
@@ -1067,6 +1068,29 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         return ids.stream().map(id -> new CosmosDocument(Map.of("id", id))).toList();
     }
 
+    /**
+     * Patch batch documents in one PostgreSQL transaction.
+     *
+     * @param coll      collection name
+     * @param data      patch operations grouped by document id
+     * @param partition partition name shared by every target document
+     * @return updated CosmosDocument instances
+     * @throws Exception CosmosException when any patch fails and the transaction is rolled back
+     */
+    @Override
+    public List<CosmosDocument> batchPatch(String coll, List<BatchPatchOperation> data, String partition) throws Exception {
+        doCheckBeforeBatchPatch(coll, data, partition);
+
+        coll = TableUtil.checkAndNormalizeValidEntityName(coll);
+        final var normalizedColl = coll;
+
+        return RetryUtil.executeWithRetry(() -> {
+            try (var conn = this.dataSource.getConnection()) {
+                return TableUtil.batchPatchRecords(conn, normalizedColl, partition, data);
+            }
+        }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, RetryUtil.BATCH_EXECUTION_MAX_RETRIES);
+    }
+
 
     static void doCheckBeforeBatch(String coll, List<?> data, String partition) {
         Checker.checkNotBlank(coll, "coll");
@@ -1075,6 +1099,24 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         checkBatchMaxOperations(data);
         checkValidId(data);
+    }
+
+    static void doCheckBeforeBatchPatch(String coll, List<BatchPatchOperation> data, String partition) {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+        Checker.checkNotEmpty(data, "batchPatch data " + coll + " " + partition);
+
+        for (var operation : data) {
+            Checker.checkNotNull(operation, "batchPatch operation");
+            Checker.checkNotBlank(operation.id, "batchPatch operation id");
+            checkValidId(operation.id);
+            Checker.checkNotNull(operation.operations, "batchPatch operation patch operations");
+            Preconditions.checkArgument(operation.operations.size() <= PatchOperations.LIMIT,
+                    "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10",
+                    operation.operations.size());
+        }
+
+        checkBatchMaxOperations(data);
     }
 
     static void doCheckBeforeBulk(String coll, List<?> data, String partition) {

@@ -240,6 +240,23 @@ The main difference between Partial update and Patch is that:
 * Partial update is focused at insert/replace fields' values. And is able to support updating 10 more fields in one call.
 * Patch is focused to implementing a method similar to JSON Patch, which supports more complicated ops like "Add, Set, Replace, Remove, Increment". And is not able to support ops exceeding 10 in one patch call.
 
+### Batch Patch
+
+Batch patch applies document-specific patch operations in a single transaction. All target documents must belong to the supplied partition. If any document is missing or any patch fails, the complete batch is rolled back and an exception is thrown.
+
+```java
+var patchList = List.of(
+        BatchPatchOperation.of("id001", PatchOperations.create().set("/status", "ENABLED")),
+        BatchPatchOperation.of("id002", PatchOperations.create()
+                .set("/status", "DISABLED")
+                .increment("/version", 1))
+);
+
+List<CosmosDocument> updated = db.batchPatch("Collection1", patchList, "Users");
+```
+
+A batch can contain at most 100 documents, and each document can contain at most 10 patch operations. MongoDB transactions require a deployment that supports transactions, such as a replica set or sharded cluster.
+
 ### Bulk Patch
 
 Bulk patch is a non-transactional bulk operation for patch updates.

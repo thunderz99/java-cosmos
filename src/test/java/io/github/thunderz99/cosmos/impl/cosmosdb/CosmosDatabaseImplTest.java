@@ -3733,6 +3733,31 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void batchPatch_should_patch_multiple_documents() throws Exception {
+        BatchPatchContractTestSupport.assertMultipleDocumentsArePatched(db, coll, "Users");
+    }
+
+    @Test
+    void batchPatch_should_apply_different_operations_per_document() throws Exception {
+        BatchPatchContractTestSupport.assertDifferentOperationsAreApplied(db, coll, "Users");
+    }
+
+    @Test
+    void batchPatch_should_rollback_all_updates_when_one_document_is_missing() throws Exception {
+        BatchPatchContractTestSupport.assertAllUpdatesAreRolledBack(db, coll, "Users");
+    }
+
+    @Test
+    void batchPatch_should_reject_more_than_one_hundred_documents() {
+        BatchPatchContractTestSupport.assertMoreThanOneHundredDocumentsAreRejected(db, coll, "Users");
+    }
+
+    @Test
+    void batchPatch_should_reject_more_than_ten_operations_per_document() {
+        BatchPatchContractTestSupport.assertMoreThanTenPatchOperationsAreRejected(db, coll, "Users");
+    }
+
+    @Test
     void bulkCreate_should_work() throws Exception {
         int size = 120;
         var userList = new ArrayList<>(size);

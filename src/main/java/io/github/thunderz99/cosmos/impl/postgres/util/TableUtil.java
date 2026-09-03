@@ -3,6 +3,8 @@ package io.github.thunderz99.cosmos.impl.postgres.util;
 import com.google.common.collect.Maps;
 import io.github.thunderz99.cosmos.CosmosDocument;
 import io.github.thunderz99.cosmos.CosmosException;
+import io.github.thunderz99.cosmos.dto.BatchPatchOperation;
+import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
@@ -808,6 +810,46 @@ public class TableUtil {
             throw e;
         } finally {
             conn.setAutoCommit(true);
+        }
+    }
+
+    /**
+     * Patch records in a single transaction.
+     * Every patch is executed on the same connection so any failure rolls back all preceding updates.
+     *
+     * @param conn       database connection used for the complete transaction
+     * @param schemaName schema containing the target table
+     * @param tableName  target table name
+     * @param operations patch operations grouped by record id
+     * @return updated documents in input order
+     * @throws Exception when any patch, commit, or rollback operation fails
+     */
+    public static List<CosmosDocument> batchPatchRecords(Connection conn, String schemaName, String tableName,
+                                                          List<BatchPatchOperation> operations) throws Exception {
+        var originalAutoCommit = conn.getAutoCommit();
+
+        try {
+            conn.setAutoCommit(false);
+            var documents = new ArrayList<CosmosDocument>(operations.size());
+            for (var operation : operations) {
+                var record = patchRecord(conn, schemaName, tableName, operation.id, operation.operations);
+                documents.add(getCosmosDocument(record));
+            }
+            conn.commit();
+            return documents;
+        } catch (Exception e) {
+            try {
+                conn.rollback();
+                log.warn("Transaction rolled back after batch patch failed in table '{}.{}'. records size:{}.",
+                        schemaName, tableName, operations.size());
+            } catch (SQLException rollbackException) {
+                e.addSuppressed(rollbackException);
+                log.error("Failed to roll back batch patch transaction in table '{}.{}'. records size:{}.",
+                        schemaName, tableName, operations.size(), rollbackException);
+            }
+            throw e;
+        } finally {
+            conn.setAutoCommit(originalAutoCommit);
         }
     }
 
