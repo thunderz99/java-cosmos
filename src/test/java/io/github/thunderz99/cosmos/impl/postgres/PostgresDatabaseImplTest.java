@@ -1944,6 +1944,11 @@ public class PostgresDatabaseImplTest {
     }
 
     @Test
+    void aggregateMultiBucket_should_work() throws Exception {
+        MultiBucketAggregateTestSupport.assertMultiBucketAggregateWorks(db, host, "Users");
+    }
+
+    @Test
     void aggregate_should_work_grouping_by_id() throws Exception {
         // test aggregate(group by "id")
         {

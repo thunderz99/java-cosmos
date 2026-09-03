@@ -4,10 +4,12 @@ import java.util.List;
 
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.condition.MultiBucketAggregate;
 import io.github.thunderz99.cosmos.dto.BatchPatchOperation;
 import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
+import io.github.thunderz99.cosmos.dto.MultiBucketAggregateResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 
@@ -391,6 +393,29 @@ public interface CosmosDatabase {
      */
     default public CosmosDocumentList aggregate(String coll, Aggregate aggregate, Condition cond) throws Exception {
         return aggregate(coll, aggregate, cond, coll);
+    }
+
+    /**
+     * Aggregate multiple independent condition buckets in one database request.
+     *
+     * @param coll collection name
+     * @param aggregate aggregate function, target field, and condition buckets
+     * @param sharedCondition condition applied to all buckets
+     * @param partition partition name
+     * @return one result per input bucket, in input order
+     * @throws Exception database client exception
+     */
+    default List<MultiBucketAggregateResult> aggregateMultiBucket(String coll, MultiBucketAggregate aggregate,
+                                                                  Condition sharedCondition, String partition) throws Exception {
+        throw new UnsupportedOperationException("aggregateMultiBucket is not supported by this database implementation");
+    }
+
+    /**
+     * Aggregate multiple independent condition buckets using the collection as the default partition.
+     */
+    default List<MultiBucketAggregateResult> aggregateMultiBucket(String coll, MultiBucketAggregate aggregate,
+                                                                  Condition sharedCondition) throws Exception {
+        return aggregateMultiBucket(coll, aggregate, sharedCondition, coll);
     }
 
     /**

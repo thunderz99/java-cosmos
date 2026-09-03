@@ -14,12 +14,16 @@ import com.mongodb.client.model.*;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.condition.BucketAggregateFunction;
+import io.github.thunderz99.cosmos.condition.MultiBucketAggregate;
+import io.github.thunderz99.cosmos.condition.MultiBucketAggregateValidator;
 import io.github.thunderz99.cosmos.dto.BatchPatchOperation;
 import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.FilterOptions;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.dto.MultiBucketAggregateResult;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.apache.commons.collections4.CollectionUtils;
@@ -28,6 +32,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.bson.BsonObjectId;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.bson.types.Decimal128;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -974,6 +979,102 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // Return the results as CosmosDocumentList
         return new CosmosDocumentList(results);
+    }
+
+    @Override
+    public List<MultiBucketAggregateResult> aggregateMultiBucket(String coll, MultiBucketAggregate aggregate,
+                                                                 Condition sharedCondition, String partition) throws Exception {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+
+        var effectiveSharedCondition = sharedCondition == null ? Condition.filter() : sharedCondition;
+        MultiBucketAggregateValidator.validate(aggregate, effectiveSharedCondition);
+
+        var pipeline = new ArrayList<Bson>();
+        var sharedFilter = ConditionUtil.toBsonFilter(effectiveSharedCondition);
+        if (sharedFilter != null && !sharedFilter.toBsonDocument().isEmpty()) {
+            pipeline.add(Aggregates.match(sharedFilter));
+        }
+
+        String targetField = null;
+        if (aggregate.function != BucketAggregateFunction.COUNT) {
+            targetField = MultiBucketAggregateValidator.normalizeField(aggregate.field);
+        }
+
+        var facets = new ArrayList<Facet>();
+        for (var i = 0; i < aggregate.buckets.size(); i++) {
+            var alias = "b" + i;
+            var bucketFilter = ConditionUtil.toBsonFilter(aggregate.buckets.get(i).condition);
+            if (bucketFilter == null) {
+                bucketFilter = new Document();
+            }
+            facets.add(new Facet(alias + "_matched",
+                    Aggregates.match(bucketFilter),
+                    Aggregates.count("value")));
+
+            if (aggregate.function != BucketAggregateFunction.COUNT) {
+                var numericBucketFilter = Filters.and(bucketFilter, Filters.type(targetField, "number"));
+                facets.add(new Facet(alias,
+                        Aggregates.match(numericBucketFilter),
+                        Aggregates.group(null, createValueAccumulator(aggregate.function, targetField)),
+                        Aggregates.project(Projections.fields(Projections.excludeId(), Projections.include("value")))));
+            }
+        }
+        pipeline.add(Aggregates.facet(facets));
+
+        var compiledPipeline = pipeline.stream()
+                .map(stage -> stage.toBsonDocument().toJson())
+                .collect(Collectors.joining("\n"));
+        MultiBucketAggregateValidator.checkCompiledRequest(compiledPipeline, List.of());
+
+        var container = this.client.getDatabase(coll).getCollection(partition);
+        var rows = container.aggregate(pipeline).into(new ArrayList<>());
+        var flatRows = flattenFacetResult(aggregate, rows);
+        return MultiBucketAggregateResultUtil.fromFlatRows(aggregate, flatRows);
+    }
+
+    private static BsonField createValueAccumulator(BucketAggregateFunction function, String field) {
+        return switch (function) {
+            case SUM -> Accumulators.sum("value", "$" + field);
+            case AVG -> Accumulators.avg("value", "$" + field);
+            case MIN -> Accumulators.min("value", "$" + field);
+            case MAX -> Accumulators.max("value", "$" + field);
+            case COUNT -> throw new IllegalArgumentException("COUNT does not require a value accumulator");
+        };
+    }
+
+    private static List<Map<String, Object>> flattenFacetResult(MultiBucketAggregate aggregate,
+                                                                 List<Document> rows) {
+        if (rows.size() != 1) {
+            throw new IllegalStateException("MongoDB multi-bucket aggregate expected exactly one result row but got "
+                    + rows.size());
+        }
+
+        var row = rows.get(0);
+        var flat = new LinkedHashMap<String, Object>();
+        for (var i = 0; i < aggregate.buckets.size(); i++) {
+            var alias = "b" + i;
+            flat.put(alias + "_matched", readFacetValue(row, alias + "_matched", 0L));
+            if (aggregate.function != BucketAggregateFunction.COUNT) {
+                flat.put(alias, readFacetValue(row, alias, null));
+            }
+        }
+        return List.of(flat);
+    }
+
+    private static Object readFacetValue(Document row, String alias, Object emptyValue) {
+        if (!row.containsKey(alias)) {
+            throw new IllegalStateException("Missing MongoDB aggregate facet: " + alias);
+        }
+        var values = row.getList(alias, Document.class);
+        if (values == null || values.isEmpty()) {
+            return emptyValue;
+        }
+        if (values.size() != 1 || !values.get(0).containsKey("value")) {
+            throw new IllegalStateException("Invalid MongoDB aggregate facet result: " + alias);
+        }
+        var value = values.get(0).get("value");
+        return value instanceof Decimal128 decimal ? decimal.bigDecimalValue() : value;
     }
 
     /**

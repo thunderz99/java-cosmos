@@ -10,11 +10,13 @@ import com.google.common.base.Preconditions;
 import io.github.thunderz99.cosmos.*;
 import io.github.thunderz99.cosmos.condition.Aggregate;
 import io.github.thunderz99.cosmos.condition.Condition;
+import io.github.thunderz99.cosmos.condition.MultiBucketAggregate;
 import io.github.thunderz99.cosmos.dto.BatchPatchOperation;
 import io.github.thunderz99.cosmos.dto.BulkPatchOperation;
 import io.github.thunderz99.cosmos.dto.CosmosBatchResponseWrapper;
 import io.github.thunderz99.cosmos.dto.CosmosBulkResult;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
+import io.github.thunderz99.cosmos.dto.MultiBucketAggregateResult;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
 import io.github.thunderz99.cosmos.util.*;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
@@ -894,6 +896,29 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         }
 
         return ret;
+    }
+
+    @Override
+    public List<MultiBucketAggregateResult> aggregateMultiBucket(String coll, MultiBucketAggregate aggregate,
+                                                                 Condition sharedCondition, String partition) throws Exception {
+        Checker.checkNotBlank(coll, "coll");
+        Checker.checkNotBlank(partition, "partition");
+
+        var effectiveSharedCondition = sharedCondition == null ? Condition.filter() : sharedCondition;
+        var querySpec = effectiveSharedCondition.toQuerySpecForMultiBucketAggregate(aggregate);
+        var queryRequestOptions = new CosmosQueryRequestOptions();
+        if (!effectiveSharedCondition.crossPartition) {
+            queryRequestOptions.setPartitionKey(new PartitionKey(partition));
+        }
+
+        var container = this.clientV4.getDatabase(db).getContainer(coll);
+        var docs = RetryUtil.executeWithRetry(() -> container.queryItems(
+                querySpec.toSqlQuerySpecV4(), queryRequestOptions, mapInstance.getClass()));
+        @SuppressWarnings("unchecked")
+        var maps = docs.stream()
+                .map(map -> (Map<String, Object>) map)
+                .collect(Collectors.toList());
+        return MultiBucketAggregateResultUtil.fromFlatRows(aggregate, maps);
     }
 
     /**
