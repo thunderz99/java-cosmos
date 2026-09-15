@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Types;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -81,6 +82,10 @@ public class TableUtil {
         }
     }
 
+    private static void acquireTransactionAdvisoryLock(Statement stmt, long lockKey) throws SQLException {
+        stmt.execute("SELECT pg_advisory_xact_lock(%d)".formatted(lockKey));
+    }
+
     /**
      * Creates a table with the specified name and schema if it does not already exist.
      *
@@ -114,16 +119,11 @@ public class TableUtil {
             // create table and index in one transaction
             conn.setAutoCommit(false);
 
-            var lockAcquired = false;
-            // Acquire the advisory lock using the generated key
-            try(var rs = stmt.executeQuery("SELECT pg_try_advisory_lock(%d)".formatted(lockKey))){
-                if (rs.next()) {
-                    lockAcquired = rs.getBoolean(1);
-                }
-            }
+            // Wait for concurrent initialization. The lock is released only when this transaction ends.
+            acquireTransactionAdvisoryLock(stmt, lockKey);
 
-            if (!lockAcquired) {
-                // lock not acquired. so do nothing and return
+            // Another transaction may have created the table while this transaction waited for the lock.
+            if (tableExist(conn, schemaName, tableName)) {
                 conn.commit();
                 return "";
             }
@@ -171,9 +171,6 @@ public class TableUtil {
             if (log.isInfoEnabled()) {
                 log.info("Index({}) on column '{}' of table '{}.{}' created successfully.", indexName, DATA, schemaName, tableName);
             }
-
-            // Release the advisory lock
-            stmt.execute("SELECT pg_advisory_unlock(" + lockKey + ")");
 
             conn.commit();
 
@@ -1733,17 +1730,9 @@ public class TableUtil {
             // check namespace uniqueness and create index in one transaction
             conn.setAutoCommit(false);
 
-            var lockAcquired = false;
+            acquireTransactionAdvisoryLock(stmt, lockKey);
 
-            // Acquire the advisory lock using the generated key
-            try (var rs = stmt.executeQuery("SELECT pg_try_advisory_lock(%d)".formatted(lockKey))) {
-                if (rs.next()) {
-                    lockAcquired = rs.getBoolean(1);
-                }
-            }
-
-            if (!lockAcquired) {
-                // lock not acquired. so do nothing and return
+            if (indexExistsByName(conn, schemaName, tableName, indexName)) {
                 conn.commit();
                 return "";
             }
@@ -1853,18 +1842,7 @@ public class TableUtil {
         try (var stmt = conn.createStatement()) {
             conn.setAutoCommit(false);
 
-            var lockAcquired = false;
-            // Acquire the advisory lock using the generated key
-            try (var rs = stmt.executeQuery("SELECT pg_try_advisory_lock(" + lockKey + ")")) {
-                if (rs.next()) {
-                    lockAcquired = rs.getBoolean(1);
-                }
-            }
-
-            if (!lockAcquired) {
-                conn.commit();
-                return "";
-            }
+            acquireTransactionAdvisoryLock(stmt, lockKey);
 
             // Ensure type (name) uniqueness in the target schema
             var pgTypeSQL = """
@@ -1992,17 +1970,9 @@ public class TableUtil {
 
             conn.setAutoCommit(false);
 
-            var lockAcquired = false;
+            acquireTransactionAdvisoryLock(stmt, lockKey);
 
-            // Acquire the advisory lock using the generated key
-            try (var rs = stmt.executeQuery("SELECT pg_try_advisory_lock(%d)".formatted(lockKey))) {
-                if (rs.next()) {
-                    lockAcquired = rs.getBoolean(1);
-                }
-            }
-
-            if (!lockAcquired) {
-                // lock not acquired. so do nothing and return
+            if (indexExistsByName(conn, schemaName, tableName, indexName)) {
                 conn.commit();
                 return "";
             }
