@@ -26,9 +26,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -1131,23 +1134,28 @@ public class TableUtilTest {
     @Test
     void createTableIfNotExist_should_work_in_multi_thread() throws Exception {
 
-        var tableName = "table1_multi_thread_test";
+        var tableName = "table1_multi_thread_test_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+        var start = new CountDownLatch(1);
         try {
             List<Future<String>> futures = new ArrayList<>();
 
-            int threadCount = 100;
+            int threadCount = 10;
 
             for (int i = 0; i < threadCount; i++) {
                 futures.add(SINGLE_TASK_EXECUTOR.submit(() -> {
 
                     try (var conn = cosmos.getDataSource().getConnection()) {
-                        return TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                        start.await();
+                        var created = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                        assertThat(TableUtil.tableExist(conn, schemaName, tableName)).isTrue();
+                        return created;
                     } catch (SQLException e) {
                         throw new RuntimeException(e);
                     }
 
                 }));
             }
+            start.countDown();
 
             List<String> results = new ArrayList<>();
 
@@ -1159,8 +1167,8 @@ public class TableUtilTest {
 
             results = results.stream().filter(StringUtils::isNotEmpty).toList();
 
-            // only few threads execute "CREATE TABLE IF NOT EXISTS"
-            assertThat(results).hasSizeLessThan(5);
+            // Exactly one thread creates the table. Every other thread returns only after it is visible.
+            assertThat(results).hasSize(1);
         } finally {
             try (var conn = cosmos.getDataSource().getConnection()) {
                 TableUtil.dropTableIfExists(conn, schemaName, tableName);
@@ -1170,10 +1178,145 @@ public class TableUtilTest {
     }
 
     @Test
-    @SuppressWarnings("removal")
-    void createIndexIfNotExist_should_work_in_multi_thread() throws Exception {
+    void createTableIfNotExist_should_wait_for_concurrent_creation_to_commit() throws Exception {
+        var tableName = "table_wait_for_commit_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+        var lockKey = (formattedSchemaName + "." + formattedTableName).hashCode();
+        var workerPid = new AtomicInteger();
+        var workerStarted = new CountDownLatch(1);
 
-        var tableName = "table2_multi_thread_test";
+        try (var creatorConn = cosmos.getDataSource().getConnection()) {
+            creatorConn.setAutoCommit(false);
+            acquireTransactionAdvisoryLock(creatorConn, lockKey);
+            createTableAndDefaultIndex(creatorConn, formattedTableName);
+
+            var future = SINGLE_TASK_EXECUTOR.submit(() -> {
+                try (var conn = cosmos.getDataSource().getConnection()) {
+                    workerPid.set(getBackendPid(conn));
+                    workerStarted.countDown();
+                    var created = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                    assertThat(TableUtil.tableExist(conn, schemaName, tableName)).isTrue();
+                    return created;
+                }
+            });
+
+            assertThat(workerStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            waitUntilBlockedOnAdvisoryLock(workerPid.get());
+            assertThat(future.isDone()).isFalse();
+
+            creatorConn.commit();
+            assertThat(future.get(5, TimeUnit.SECONDS)).isEmpty();
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void createTableIfNotExist_should_continue_after_concurrent_creation_rolls_back() throws Exception {
+        var tableName = "table_wait_for_rollback_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+        var lockKey = (formattedSchemaName + "." + formattedTableName).hashCode();
+        var workerPid = new AtomicInteger();
+        var workerStarted = new CountDownLatch(1);
+
+        try (var creatorConn = cosmos.getDataSource().getConnection()) {
+            creatorConn.setAutoCommit(false);
+            acquireTransactionAdvisoryLock(creatorConn, lockKey);
+
+            var future = SINGLE_TASK_EXECUTOR.submit(() -> {
+                try (var conn = cosmos.getDataSource().getConnection()) {
+                    workerPid.set(getBackendPid(conn));
+                    workerStarted.countDown();
+                    var created = TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+                    assertThat(TableUtil.tableExist(conn, schemaName, tableName)).isTrue();
+                    return created;
+                }
+            });
+
+            assertThat(workerStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            waitUntilBlockedOnAdvisoryLock(workerPid.get());
+            assertThat(future.isDone()).isFalse();
+
+            creatorConn.rollback();
+            assertThat(future.get(5, TimeUnit.SECONDS))
+                    .isEqualTo(formattedSchemaName + "." + formattedTableName);
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    private static void acquireTransactionAdvisoryLock(Connection conn, long lockKey) throws SQLException {
+        try (var pstmt = conn.prepareStatement("SELECT pg_advisory_xact_lock(?)")) {
+            pstmt.setLong(1, lockKey);
+            pstmt.executeQuery();
+        }
+    }
+
+    private static void createTableAndDefaultIndex(Connection conn, String formattedTableName) throws SQLException {
+        try (var stmt = conn.createStatement()) {
+            stmt.execute("""
+                    CREATE TABLE %s.%s (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        data JSONB NOT NULL
+                    )
+                    """.formatted(formattedSchemaName, formattedTableName));
+            stmt.execute("CREATE INDEX %s ON %s.%s USING GIN (data)".formatted(
+                    TableUtil.getIndexName(formattedTableName, TableUtil.DATA),
+                    formattedSchemaName,
+                    formattedTableName));
+        }
+    }
+
+    private static int getBackendPid(Connection conn) throws SQLException {
+        try (var stmt = conn.createStatement(); var rs = stmt.executeQuery("SELECT pg_backend_pid()")) {
+            rs.next();
+            return rs.getInt(1);
+        }
+    }
+
+    private static boolean hasAdvisoryLock(Connection conn) throws SQLException {
+        try (var stmt = conn.createStatement();
+             var rs = stmt.executeQuery("""
+                     SELECT 1
+                     FROM pg_locks
+                     WHERE pid = pg_backend_pid()
+                       AND locktype = 'advisory'
+                     """)) {
+            return rs.next();
+        }
+    }
+
+    private static void waitUntilBlockedOnAdvisoryLock(int backendPid) throws Exception {
+        var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        try (var conn = cosmos.getDataSource().getConnection();
+             var pstmt = conn.prepareStatement("""
+                     SELECT 1
+                     FROM pg_locks
+                     WHERE pid = ?
+                       AND locktype = 'advisory'
+                       AND NOT granted
+                     """)) {
+            pstmt.setInt(1, backendPid);
+            while (System.nanoTime() < deadline) {
+                try (var rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        return;
+                    }
+                }
+                Thread.sleep(10);
+            }
+        }
+        throw new AssertionError("The worker did not wait for the advisory lock");
+    }
+
+    @Test
+    void createIndexIfNotExist4SingleField_should_work_in_multi_thread() throws Exception {
+
+        var tableName = "table2_multi_thread_test_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
         var fieldName = "_expireAt";
 
         try(var conn = cosmos.getDataSource().getConnection()) {
@@ -1189,7 +1332,8 @@ public class TableUtilTest {
                 futures.add(SINGLE_TASK_EXECUTOR.submit(() -> {
 
                     try (var conn = cosmos.getDataSource().getConnection()) {
-                        return TableUtil.createIndexIfNotExists(conn, schemaName, tableName, fieldName, IndexOption.unique(false).fieldType("bigint"));
+                        return TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName,
+                                PGIndexField.of(fieldName, PGFieldType.BIGINT), new IndexOption());
                     } catch (SQLException e) {
                         throw new RuntimeException(e);
                     }
@@ -1215,6 +1359,34 @@ public class TableUtilTest {
             }
         }
 
+    }
+
+    @Test
+    @SuppressWarnings("removal")
+    void createIndexMethods_should_not_leave_advisory_locks_on_the_connection() throws Exception {
+        var tableName = "index_lock_release_test_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+
+        try (var conn = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+
+            TableUtil.createIndexIfNotExists(conn, schemaName, tableName, "legacyField", new IndexOption());
+            assertThat(hasAdvisoryLock(conn)).isFalse();
+
+            var rawIndexName = TableUtil.checkAndNormalizeValidEntityName("idx_raw_lock_release");
+            var rawSQL = "CREATE INDEX %s ON %s.%s ((data->>'rawField'))".formatted(
+                    rawIndexName, formattedSchemaName, formattedTableName);
+            TableUtil.createIndexIfNotExistRawSQL(conn, schemaName, rawSQL);
+            assertThat(hasAdvisoryLock(conn)).isFalse();
+
+            TableUtil.createIndexIfNotExist4SingleField(conn, schemaName, tableName,
+                    PGIndexField.of("currentField", PGFieldType.TEXT), new IndexOption());
+            assertThat(hasAdvisoryLock(conn)).isFalse();
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
     }
 
     @Test
