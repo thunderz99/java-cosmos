@@ -63,4 +63,21 @@ class MultiBucketAggregateResultUtilTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("is null although b0_value_count is 1");
     }
+
+    @Test
+    void fromFlatRows_should_require_exactly_one_row() {
+        var aggregate = MultiBucketAggregate.of(BucketAggregateFunction.COUNT, null,
+                List.of(ConditionBucket.of("count", Condition.filter())));
+
+        assertThatThrownBy(() -> MultiBucketAggregateResultUtil.fromFlatRows(aggregate, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Multi-bucket aggregate expected exactly one result row but got 0");
+        assertThatThrownBy(() -> MultiBucketAggregateResultUtil.fromFlatRows(aggregate, List.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Multi-bucket aggregate expected exactly one result row but got 0");
+        assertThatThrownBy(() -> MultiBucketAggregateResultUtil.fromFlatRows(aggregate,
+                List.of(java.util.Map.of(), java.util.Map.of())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Multi-bucket aggregate expected exactly one result row but got 2");
+    }
 }
