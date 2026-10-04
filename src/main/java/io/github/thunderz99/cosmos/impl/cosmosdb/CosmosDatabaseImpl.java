@@ -82,7 +82,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         Checker.checkNotNull(data, "create data " + coll + " " + partition);
 
 
-        Map<String, Object> objectMap = JsonUtil.toMap(data);
+        Map<String, Object> objectMap = sanitizeDocument("create", coll, partition, data);
 
         // add partition info
         objectMap.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -264,7 +264,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotNull(data, "update data " + coll + " " + partition);
 
-        var map = JsonUtil.toMap(data);
+        var map = sanitizeDocument("update", coll, partition, data);
         var id = getId(map);
 
         Checker.checkNotBlank(id, "id");
@@ -354,7 +354,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
         checkValidId(id);
 
-        var patchData = JsonUtil.toMap(data);
+        var patchData = sanitizeDocument("updatePartial", coll, partition, id, data);
 
         // Remove partition key from patchData, because it is not needed for a patch action.
         patchData.remove(Cosmos.getDefaultPartitionKey());
@@ -522,7 +522,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotNull(data, "upsert data " + coll + " " + partition);
 
-        var map = JsonUtil.toMap(data);
+        var map = sanitizeDocument("upsert", coll, partition, data);
         var id = map.getOrDefault("id", "").toString();
         Checker.checkNotBlank(id, "id");
         checkValidId(id);
@@ -1084,10 +1084,12 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
+        var sanitizedOperations = sanitizePatchOperations("patch", coll, partition, id, operations);
+
         var response = RetryUtil.executeWithRetry(() -> container.patchItem(
                 id,
                 new PartitionKey(partition),
-                operations.getCosmosPatchOperations(),
+                sanitizedOperations.getCosmosPatchOperations(),
                 LinkedHashMap.class
         ));
 
@@ -1115,7 +1117,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         var container = this.clientV4.getDatabase(db).getContainer(coll);
         CosmosBatch batch = CosmosBatch.createCosmosBatch(partitionKey);
         data.forEach(it -> {
-            var map = JsonUtil.toMap(it);
+            var map = sanitizeDocument("batchCreate", coll, partition, it);
             map.put(Cosmos.getDefaultPartitionKey(), partition);
             batch.createItemOperation(map);
         });
@@ -1140,7 +1142,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         var container = this.clientV4.getDatabase(db).getContainer(coll);
         CosmosBatch batch = CosmosBatch.createCosmosBatch(partitionKey);
         data.forEach(it -> {
-            var map = JsonUtil.toMap(it);
+            var map = sanitizeDocument("batchUpsert", coll, partition, it);
             map.put(Cosmos.getDefaultPartitionKey(), partition);
             batch.upsertItemOperation(map);
         });
@@ -1192,9 +1194,11 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
         doCheckBeforeBatchPatch(coll, data, partition);
 
         var batch = CosmosBatch.createCosmosBatch(new PartitionKey(partition));
-        data.forEach(operation -> batch.patchItemOperation(
-                operation.id,
-                operation.operations.getCosmosPatchOperations()));
+        data.forEach(operation -> {
+            var sanitizedOperations = sanitizePatchOperations(
+                    "batchPatch", coll, partition, operation.id, operation.operations);
+            batch.patchItemOperation(operation.id, sanitizedOperations.getCosmosPatchOperations());
+        });
 
         var container = this.clientV4.getDatabase(db).getContainer(coll);
         return doBatchWithRetry(container, batch);
@@ -1270,7 +1274,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
         var partitionKey = new PartitionKey(partition);
         var operations = data.stream().map(it -> {
-                    var map = JsonUtil.toMap(it);
+                    var map = sanitizeDocument("bulkCreate", coll, partition, it);
             map.put(Cosmos.getDefaultPartitionKey(), partition);
                     return CosmosBulkOperations.getCreateItemOperation(map, partitionKey);
                 }
@@ -1303,7 +1307,7 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
 
         var partitionKey = new PartitionKey(partition);
         var operations = data.stream().map(it -> {
-                    var map = JsonUtil.toMap(it);
+                    var map = sanitizeDocument("bulkUpsert", coll, partition, it);
             map.put(Cosmos.getDefaultPartitionKey(), partition);
                     return CosmosBulkOperations.getUpsertItemOperation(map, partitionKey);
                 }
@@ -1371,6 +1375,11 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
     public CosmosBulkResult bulkPatch(String coll, List<String> ids, PatchOperations operations, String partition) throws Exception {
         doCheckBeforeBulkPatch(coll, ids, operations, partition);
 
+        var sanitized = PersistenceDataSanitizer.sanitizePatchOperations(operations);
+        ids.forEach(id -> PersistenceDataSanitizer.logIfChanged(
+                log, "bulkPatch", coll, partition, id, sanitized));
+        var sanitizedOperations = sanitized.value();
+
         var partitionKey = new PartitionKey(partition);
         var container = this.clientV4.getDatabase(db).getContainer(coll);
 
@@ -1382,7 +1391,8 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
             var to = Math.min(from + BULK_PATCH_CHUNK_SIZE, ids.size());
             var chunkIds = ids.subList(from, to);
             var itemOperations = chunkIds.stream()
-                    .map(id -> CosmosBulkOperations.getPatchItemOperation(id, partitionKey, operations.getCosmosPatchOperations()))
+                    .map(id -> CosmosBulkOperations.getPatchItemOperation(
+                            id, partitionKey, sanitizedOperations.getCosmosPatchOperations()))
                     .collect(Collectors.toList());
 
             var chunkResult = RetryUtil.executeBulkWithRetry(coll, itemOperations,
@@ -1421,7 +1431,11 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
             var to = Math.min(from + BULK_PATCH_CHUNK_SIZE, data.size());
             var chunkData = data.subList(from, to);
             var operations = chunkData.stream()
-                    .map(it -> CosmosBulkOperations.getPatchItemOperation(it.id, partitionKey, it.operations.getCosmosPatchOperations()))
+                    .map(it -> CosmosBulkOperations.getPatchItemOperation(
+                            it.id,
+                            partitionKey,
+                            sanitizePatchOperations("bulkPatch", coll, partition, it.id, it.operations)
+                                    .getCosmosPatchOperations()))
                     .collect(Collectors.toList());
 
             var chunkResult = RetryUtil.executeBulkWithRetry(coll, operations,
@@ -1477,6 +1491,26 @@ public class CosmosDatabaseImpl implements CosmosDatabase {
                 "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10",
                 operations.size());
         checkValidId(ids);
+    }
+
+    private static Map<String, Object> sanitizeDocument(String operation, String coll, String partition, Object data) {
+        return sanitizeDocument(operation, coll, partition, null, data);
+    }
+
+    private static Map<String, Object> sanitizeDocument(String operation, String coll, String partition,
+                                                        String documentId, Object data) {
+        var sanitized = PersistenceDataSanitizer.sanitizeDocument(data);
+        var map = sanitized.value();
+        var id = documentId == null ? Objects.toString(map.get("id"), "") : documentId;
+        PersistenceDataSanitizer.logIfChanged(log, operation, coll, partition, id, sanitized);
+        return map;
+    }
+
+    private static PatchOperations sanitizePatchOperations(String operation, String coll, String partition,
+                                                            String id, PatchOperations operations) {
+        var sanitized = PersistenceDataSanitizer.sanitizePatchOperations(operations);
+        PersistenceDataSanitizer.logIfChanged(log, operation, coll, partition, id, sanitized);
+        return sanitized.value();
     }
 
     /**

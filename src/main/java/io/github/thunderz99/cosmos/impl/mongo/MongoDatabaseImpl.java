@@ -95,7 +95,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotNull(data, "create data " + coll + " " + partition);
 
-        Map<String, Object> map = JsonUtil.toMap(data);
+        Map<String, Object> map = sanitizeDocument("create", coll, partition, data);
 
         // add partition info
         map.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -305,7 +305,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         Checker.checkNotBlank(partition, "partition");
         Checker.checkNotNull(data, "update data " + coll + " " + partition);
 
-        var map = JsonUtil.toMap(data);
+        var map = sanitizeDocument("update", coll, partition, data);
         var id = getId(map);
 
         Checker.checkNotBlank(id, "id");
@@ -390,7 +390,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         checkValidId(id);
 
         // 1) materialize patch as Map (mutable)
-        var patchData = JsonUtil.toMap(data);
+        var patchData = sanitizeDocument("updatePartial", coll, partition, id, data);
 
         addTimestamp(patchData);
         addExpireAt4Mongo(patchData);
@@ -513,7 +513,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
      */
     public CosmosDocument upsert(String coll, Object data, String partition) throws Exception {
 
-        var map = JsonUtil.toMap(data);
+        var map = sanitizeDocument("upsert", coll, partition, data);
         var id = map.getOrDefault("id", "").toString();
 
         Checker.checkNotBlank(id, "id");
@@ -1177,9 +1177,10 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         Preconditions.checkArgument(operations.size() <= PatchOperations.LIMIT, "Size of operations should be less or equal to 10. We got: %d, which exceed the limit 10", operations.size());
 
-        // Set timestamp
-        operations.set("/_ts", TimestampUtil.getTimestampInDouble());
-        var patchData = JsonPatchUtil.toMongoPatchData(operations);
+        // Set timestamp on a sanitized copy so caller-owned operations remain unchanged.
+        var operationsWithTs = sanitizePatchOperations("patch", coll, partition, id, operations)
+                .set("/_ts", TimestampUtil.getTimestampInDouble());
+        var patchData = JsonPatchUtil.toMongoPatchData(operationsWithTs);
 
         var container = this.client.getDatabase(coll).getCollection(partition);
 
@@ -1212,7 +1213,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
         // Prepare documents for insertion
         for (Object obj : data) {
-            var map = JsonUtil.toMap(obj);
+            var map = sanitizeDocument("batchCreate", coll, partition, obj);
 
             // Add partition info
             map.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -1283,7 +1284,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         var documents = new ArrayList<Document>();
 
         for (Object obj : data) {
-            Map<String, Object> map = JsonUtil.toMap(obj);
+            Map<String, Object> map = sanitizeDocument("batchUpsert", coll, partition, obj);
 
             // Add partition info
             map.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -1418,8 +1419,8 @@ public class MongoDatabaseImpl implements CosmosDatabase {
 
             try {
                 for (var operation : data) {
-                    // Do not mutate caller-owned PatchOperations when adding MongoDB's persisted timestamp.
-                    var operationsWithTs = operation.operations.copy().set("/_ts", timestamp);
+                    var operationsWithTs = sanitizePatchOperations(
+                            "batchPatch", coll, partition, operation.id, operation.operations).set("/_ts", timestamp);
                     var update = Updates.combine(JsonPatchUtil.toMongoPatchData(operationsWithTs));
                     var document = container.findOneAndUpdate(
                             session,
@@ -1532,7 +1533,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         var documentsMap = new LinkedHashMap<String, Document>();
 
         for (Object obj : data) {
-            Map<String, Object> map = JsonUtil.toMap(obj);
+            Map<String, Object> map = sanitizeDocument("bulkCreate", coll, partition, obj);
 
             // add partition info
             map.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -1601,7 +1602,7 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         var documentsMap = new LinkedHashMap<String, Document>();
 
         for (Object obj : data) {
-            Map<String, Object> map = JsonUtil.toMap(obj);
+            Map<String, Object> map = sanitizeDocument("bulkUpsert", coll, partition, obj);
 
             // Add partition info
             map.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -1716,8 +1717,11 @@ public class MongoDatabaseImpl implements CosmosDatabase {
     public CosmosBulkResult bulkPatch(String coll, List<String> ids, PatchOperations operations, String partition) throws Exception {
         doCheckBeforeBulkPatch(coll, ids, operations, partition);
 
+        var sanitized = PersistenceDataSanitizer.sanitizePatchOperations(operations);
+        ids.forEach(id -> PersistenceDataSanitizer.logIfChanged(
+                log, "bulkPatch", coll, partition, id, sanitized));
         // Keep the same timestamp for this bulk execution to avoid per-item mutation.
-        var operationsWithTs = operations.copy().set("/_ts", TimestampUtil.getTimestampInDouble());
+        var operationsWithTs = sanitized.value().set("/_ts", TimestampUtil.getTimestampInDouble());
         var patchData = JsonPatchUtil.toMongoPatchData(operationsWithTs);
 
         var container = this.client.getDatabase(coll).getCollection(partition);
@@ -1782,8 +1786,9 @@ public class MongoDatabaseImpl implements CosmosDatabase {
             // while bulkWrite only exposes aggregated counters and does not map unmatched items by id.
             for (var operation : chunkData) {
                 try {
-                    // Keep per-item operation immutable by copying before adding timestamp.
-                    var operationsWithTs = operation.operations.copy().set("/_ts", TimestampUtil.getTimestampInDouble());
+                    var operationsWithTs = sanitizePatchOperations(
+                            "bulkPatch", coll, partition, operation.id, operation.operations)
+                            .set("/_ts", TimestampUtil.getTimestampInDouble());
                     var patchData = JsonPatchUtil.toMongoPatchData(operationsWithTs);
                     var update = Updates.combine(patchData);
 
@@ -1820,6 +1825,26 @@ public class MongoDatabaseImpl implements CosmosDatabase {
         if (data.size() > MAX_BATCH_NUMBER_OF_OPERATION) {
             throw new IllegalArgumentException("The number of data operations should not exceed %d.".formatted(MAX_BATCH_NUMBER_OF_OPERATION));
         }
+    }
+
+    private static Map<String, Object> sanitizeDocument(String operation, String coll, String partition, Object data) {
+        return sanitizeDocument(operation, coll, partition, null, data);
+    }
+
+    private static Map<String, Object> sanitizeDocument(String operation, String coll, String partition,
+                                                        String documentId, Object data) {
+        var sanitized = PersistenceDataSanitizer.sanitizeDocument(data);
+        var map = sanitized.value();
+        var id = documentId == null ? Objects.toString(map.get("id"), "") : documentId;
+        PersistenceDataSanitizer.logIfChanged(log, operation, coll, partition, id, sanitized);
+        return map;
+    }
+
+    private static PatchOperations sanitizePatchOperations(String operation, String coll, String partition,
+                                                            String id, PatchOperations operations) {
+        var sanitized = PersistenceDataSanitizer.sanitizePatchOperations(operations);
+        PersistenceDataSanitizer.logIfChanged(log, operation, coll, partition, id, sanitized);
+        return sanitized.value();
     }
 
 

@@ -146,6 +146,11 @@ class CosmosDatabaseImplTest {
     }
 
     @Test
+    void nul_should_be_removed_across_persistence_paths() throws Exception {
+        NulSanitizationContractTestSupport.assertNulIsRemovedAcrossPersistencePaths(db, host, "Users");
+    }
+
+    @Test
     void read_invalid_id_should_work() throws Exception {
         {
             // readSuppressing404 should return null
