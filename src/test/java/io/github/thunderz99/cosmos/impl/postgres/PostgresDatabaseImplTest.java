@@ -182,6 +182,11 @@ public class PostgresDatabaseImplTest {
     }
 
     @Test
+    void nul_should_be_removed_across_persistence_paths() throws Exception {
+        NulSanitizationContractTestSupport.assertNulIsRemovedAcrossPersistencePaths(db, host, "Users");
+    }
+
+    @Test
     void getId_should_work() {
         String testId = "getId_should_work_id";
         var user = new User(testId, "firstName", "lastName");

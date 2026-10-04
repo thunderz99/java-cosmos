@@ -120,7 +120,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         coll = TableUtil.checkAndNormalizeValidEntityName(coll);
 
-        Map<String, Object> map = JsonUtil.toMap(data);
+        Map<String, Object> map = sanitizeDocument("create", coll, partition, data);
 
         // add partition info
         map.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -352,7 +352,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         coll = TableUtil.checkAndNormalizeValidEntityName(coll);
 
-        var map = JsonUtil.toMap(data);
+        var map = sanitizeDocument("update", coll, partition, data);
         var id = getId(map);
         Checker.checkNotBlank(id, "id");
         checkValidId(id);
@@ -433,7 +433,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         coll = TableUtil.checkAndNormalizeValidEntityName(coll);
 
-        var map = JsonUtil.toMap(data);
+        var map = sanitizeDocument("updatePartial", coll, partition, id, data);
         Checker.checkNotBlank(id, "id");
         checkValidId(id);
 
@@ -498,7 +498,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         coll = TableUtil.checkAndNormalizeValidEntityName(coll);
 
-        var map = JsonUtil.toMap(data);
+        var map = sanitizeDocument("upsert", coll, partition, data);
         var id = map.getOrDefault("id", "").toString();
         Checker.checkNotBlank(id, "id");
         checkValidId(id);
@@ -914,6 +914,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         //operations.set("/_ts", TimestampUtil.getTimestampInDouble());
 
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
+        var sanitizedOperations = sanitizePatchOperations("patch", coll, partition, id, operations);
 
         PostgresRecord record = null;
         final var _coll = coll;
@@ -921,7 +922,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         final var _id = id;
         record = RetryUtil.executeWithRetry(() -> {
             try (var conn = this.dataSource.getConnection()) {
-                return TableUtil.patchRecord(conn, _coll, _partition, _id, operations);
+                return TableUtil.patchRecord(conn, _coll, _partition, _id, sanitizedOperations);
             }
         });
 
@@ -952,7 +953,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         var records = new ArrayList<PostgresRecord>();
 
         for(var datum : data) {
-            Map<String, Object> map = JsonUtil.toMap(datum);
+            Map<String, Object> map = sanitizeDocument("batchCreate", coll, partition, datum);
 
             // add partition info
             map.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -1009,7 +1010,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         var records = new ArrayList<PostgresRecord>();
 
         for (var datum : data) {
-            Map<String, Object> map = JsonUtil.toMap(datum);
+            Map<String, Object> map = sanitizeDocument("batchUpsert", coll, partition, datum);
 
             // add partition info
             map.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -1106,10 +1107,16 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         coll = TableUtil.checkAndNormalizeValidEntityName(coll);
         final var normalizedColl = coll;
+        var sanitizedData = data.stream()
+                .map(operation -> BatchPatchOperation.of(
+                        operation.id,
+                        sanitizePatchOperations(
+                                "batchPatch", normalizedColl, partition, operation.id, operation.operations)))
+                .toList();
 
         return RetryUtil.executeWithRetry(() -> {
             try (var conn = this.dataSource.getConnection()) {
-                return TableUtil.batchPatchRecords(conn, normalizedColl, partition, data);
+                return TableUtil.batchPatchRecords(conn, normalizedColl, partition, sanitizedData);
             }
         }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, RetryUtil.BATCH_EXECUTION_MAX_RETRIES);
     }
@@ -1193,7 +1200,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         var records = new ArrayList<PostgresRecord>();
 
         for(var datum : data) {
-            Map<String, Object> map = JsonUtil.toMap(datum);
+            Map<String, Object> map = sanitizeDocument("bulkCreate", coll, partition, datum);
 
             // add partition info
             map.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -1253,7 +1260,7 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         var records = new ArrayList<PostgresRecord>();
 
         for(var datum : data) {
-            Map<String, Object> map = JsonUtil.toMap(datum);
+            Map<String, Object> map = sanitizeDocument("bulkUpsert", coll, partition, datum);
 
             // add partition info
             map.put(Cosmos.getDefaultPartitionKey(), partition);
@@ -1354,15 +1361,20 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
 
         coll = TableUtil.checkAndNormalizeValidEntityName(coll);
         var collectionLink = LinkFormatUtil.getCollectionLink(coll, partition);
-
         final var _coll = coll;
+
+        var sanitized = PersistenceDataSanitizer.sanitizePatchOperations(operations);
+        ids.forEach(id -> PersistenceDataSanitizer.logIfChanged(
+                log, "bulkPatch", _coll, partition, id, sanitized));
+        var sanitizedOperations = sanitized.value();
+
         // Do not retry bulkPatch at wrapper level (maxRetries = 0):
         // patch operations can be non-idempotent (e.g. increment), so retrying the whole batch may apply
         // successful items twice and break per-id success/failure classification.
         var ret = RetryUtil.executeWithRetry(() -> {
             try (var conn = this.dataSource.getConnection()) {
                 // use chunked bulk patch for same operations to reduce SQL round trips.
-                return TableUtil.bulkPatchRecords(conn, _coll, partition, ids, operations);
+                return TableUtil.bulkPatchRecords(conn, _coll, partition, ids, sanitizedOperations);
             }
         }, RetryUtil.BATCH_EXECUTION_DEFAULT_WAIT_TIME, 0);
 
@@ -1398,7 +1410,10 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
             try (var conn = this.dataSource.getConnection()) {
                 for (var operation : data) {
                     try {
-                        var record = TableUtil.patchRecord(conn, _coll, partition, operation.id, operation.operations);
+                        var sanitizedOperations = sanitizePatchOperations(
+                                "bulkPatch", _coll, partition, operation.id, operation.operations);
+                        var record = TableUtil.patchRecord(
+                                conn, _coll, partition, operation.id, sanitizedOperations);
                         ret.successList.add(getCosmosDocument(record));
                     } catch (CosmosException ce) {
                         ret.fatalList.add(ce);
@@ -1424,6 +1439,26 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
         if (data.size() > MAX_BATCH_NUMBER_OF_OPERATION) {
             throw new IllegalArgumentException("The number of data operations should not exceed %d.".formatted(MAX_BATCH_NUMBER_OF_OPERATION));
         }
+    }
+
+    private static Map<String, Object> sanitizeDocument(String operation, String coll, String partition, Object data) {
+        return sanitizeDocument(operation, coll, partition, null, data);
+    }
+
+    private static Map<String, Object> sanitizeDocument(String operation, String coll, String partition,
+                                                        String documentId, Object data) {
+        var sanitized = PersistenceDataSanitizer.sanitizeDocument(data);
+        var map = sanitized.value();
+        var id = documentId == null ? Objects.toString(map.get("id"), "") : documentId;
+        PersistenceDataSanitizer.logIfChanged(log, operation, coll, partition, id, sanitized);
+        return map;
+    }
+
+    private static PatchOperations sanitizePatchOperations(String operation, String coll, String partition,
+                                                            String id, PatchOperations operations) {
+        var sanitized = PersistenceDataSanitizer.sanitizePatchOperations(operations);
+        PersistenceDataSanitizer.logIfChanged(log, operation, coll, partition, id, sanitized);
+        return sanitized.value();
     }
 
 
