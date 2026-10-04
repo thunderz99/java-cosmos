@@ -38,6 +38,9 @@ import java.util.stream.Collectors;
 public class TableUtil {
     private static final Logger log = LoggerFactory.getLogger(TableUtil.class);
 
+    /** Default lock wait for PostgreSQL table and index initialization, in milliseconds. */
+    public static final int DEFAULT_INITIALIZATION_LOCK_TIMEOUT_MS = 30_000;
+
     /**
      * id column. pk
      */
@@ -82,8 +85,24 @@ public class TableUtil {
         }
     }
 
-    private static void acquireTransactionAdvisoryLock(Statement stmt, long lockKey) throws SQLException {
+    private static void acquireTransactionAdvisoryLock(Statement stmt, long lockKey, int lockTimeoutMs) throws SQLException {
+        checkInitializationLockTimeoutMs(lockTimeoutMs);
+        // SET LOCAL expires at commit/rollback, so pooled connections retain their prior setting.
+        // It applies to each lock acquisition in this initialization transaction, including DDL.
+        stmt.execute("SET LOCAL lock_timeout = '%dms'".formatted(lockTimeoutMs));
         stmt.execute("SELECT pg_advisory_xact_lock(%d)".formatted(lockKey));
+    }
+
+    /**
+     * Reject a disabled or negative initialization lock timeout before opening a transaction.
+     *
+     * @param lockTimeoutMs timeout in milliseconds
+     * @throws IllegalArgumentException if the timeout is not positive
+     */
+    public static void checkInitializationLockTimeoutMs(int lockTimeoutMs) {
+        if (lockTimeoutMs <= 0) {
+            throw new IllegalArgumentException("initializationLockTimeoutMs must be greater than 0");
+        }
     }
 
     /**
@@ -94,6 +113,17 @@ public class TableUtil {
      * @throws SQLException if a database error occurs
      */
     public static String createTableIfNotExists(Connection conn, String schemaName, String tableName) throws SQLException {
+        return createTableIfNotExists(conn, schemaName, tableName, DEFAULT_INITIALIZATION_LOCK_TIMEOUT_MS);
+    }
+
+    /**
+     * Creates a table if absent, limiting each lock wait in the initialization transaction.
+     * The setting is restored automatically when the transaction commits or rolls back.
+     *
+     * @param lockTimeoutMs positive PostgreSQL lock wait timeout in milliseconds
+     */
+    public static String createTableIfNotExists(Connection conn, String schemaName, String tableName, int lockTimeoutMs) throws SQLException {
+        checkInitializationLockTimeoutMs(lockTimeoutMs);
 
         if (tableExist(conn, schemaName, tableName)) {
             // already exists
@@ -120,7 +150,7 @@ public class TableUtil {
             conn.setAutoCommit(false);
 
             // Wait for concurrent initialization. The lock is released only when this transaction ends.
-            acquireTransactionAdvisoryLock(stmt, lockKey);
+            acquireTransactionAdvisoryLock(stmt, lockKey, lockTimeoutMs);
 
             // Another transaction may have created the table while this transaction waited for the lock.
             if (tableExist(conn, schemaName, tableName)) {
@@ -1699,6 +1729,17 @@ public class TableUtil {
      */
     @Deprecated(since = "0.8.18", forRemoval = true)
     public static String createIndexIfNotExists(Connection conn, String schemaName, String tableName, String fieldName, IndexOption indexOption) throws SQLException {
+        return createIndexIfNotExists(conn, schemaName, tableName, fieldName, indexOption, DEFAULT_INITIALIZATION_LOCK_TIMEOUT_MS);
+    }
+
+    /**
+     * Deprecated index creation API with an explicit initialization lock timeout.
+     *
+     * @param lockTimeoutMs positive PostgreSQL lock wait timeout in milliseconds
+     */
+    @Deprecated(since = "0.8.18", forRemoval = true)
+    public static String createIndexIfNotExists(Connection conn, String schemaName, String tableName, String fieldName, IndexOption indexOption, int lockTimeoutMs) throws SQLException {
+        checkInitializationLockTimeoutMs(lockTimeoutMs);
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
@@ -1730,7 +1771,7 @@ public class TableUtil {
             // check namespace uniqueness and create index in one transaction
             conn.setAutoCommit(false);
 
-            acquireTransactionAdvisoryLock(stmt, lockKey);
+            acquireTransactionAdvisoryLock(stmt, lockKey, lockTimeoutMs);
 
             if (indexExistsByName(conn, schemaName, tableName, indexName)) {
                 conn.commit();
@@ -1812,6 +1853,16 @@ public class TableUtil {
      * @throws SQLException on DB error or if SQL is invalid
      */
     public static String createIndexIfNotExistRawSQL(Connection conn, String schemaName, String rawSQL) throws SQLException {
+        return createIndexIfNotExistRawSQL(conn, schemaName, rawSQL, DEFAULT_INITIALIZATION_LOCK_TIMEOUT_MS);
+    }
+
+    /**
+     * Creates a raw SQL index if absent, with an explicit initialization lock timeout.
+     *
+     * @param lockTimeoutMs positive PostgreSQL lock wait timeout in milliseconds
+     */
+    public static String createIndexIfNotExistRawSQL(Connection conn, String schemaName, String rawSQL, int lockTimeoutMs) throws SQLException {
+        checkInitializationLockTimeoutMs(lockTimeoutMs);
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         Checker.checkNotBlank(rawSQL, "rawSQL");
@@ -1842,7 +1893,7 @@ public class TableUtil {
         try (var stmt = conn.createStatement()) {
             conn.setAutoCommit(false);
 
-            acquireTransactionAdvisoryLock(stmt, lockKey);
+            acquireTransactionAdvisoryLock(stmt, lockKey, lockTimeoutMs);
 
             // Ensure type (name) uniqueness in the target schema
             var pgTypeSQL = """
@@ -1927,7 +1978,16 @@ public class TableUtil {
      * @throws SQLException if a database error occurs
      */
     public static String createIndexIfNotExist4SingleField(Connection conn, String schemaName, String tableName, PGIndexField field, IndexOption indexOption) throws SQLException {
-        return createIndexIfNotExist4MultiFields(conn, schemaName, tableName, List.of(field), indexOption);
+        return createIndexIfNotExist4SingleField(conn, schemaName, tableName, field, indexOption, DEFAULT_INITIALIZATION_LOCK_TIMEOUT_MS);
+    }
+
+    /**
+     * Creates a single-field index if absent, with an explicit initialization lock timeout.
+     *
+     * @param lockTimeoutMs positive PostgreSQL lock wait timeout in milliseconds
+     */
+    public static String createIndexIfNotExist4SingleField(Connection conn, String schemaName, String tableName, PGIndexField field, IndexOption indexOption, int lockTimeoutMs) throws SQLException {
+        return createIndexIfNotExist4MultiFields(conn, schemaName, tableName, List.of(field), indexOption, lockTimeoutMs);
     }
 
     /**
@@ -1942,6 +2002,16 @@ public class TableUtil {
      * @throws SQLException if a database error occurs
      */
     public static String createIndexIfNotExist4MultiFields(Connection conn, String schemaName, String tableName, List<PGIndexField> fields, IndexOption indexOption) throws SQLException {
+        return createIndexIfNotExist4MultiFields(conn, schemaName, tableName, fields, indexOption, DEFAULT_INITIALIZATION_LOCK_TIMEOUT_MS);
+    }
+
+    /**
+     * Creates a multi-field index if absent, with an explicit initialization lock timeout.
+     *
+     * @param lockTimeoutMs positive PostgreSQL lock wait timeout in milliseconds
+     */
+    public static String createIndexIfNotExist4MultiFields(Connection conn, String schemaName, String tableName, List<PGIndexField> fields, IndexOption indexOption, int lockTimeoutMs) throws SQLException {
+        checkInitializationLockTimeoutMs(lockTimeoutMs);
 
         schemaName = checkAndNormalizeValidEntityName(schemaName);
         tableName = checkAndNormalizeValidEntityName(tableName);
@@ -1970,7 +2040,7 @@ public class TableUtil {
 
             conn.setAutoCommit(false);
 
-            acquireTransactionAdvisoryLock(stmt, lockKey);
+            acquireTransactionAdvisoryLock(stmt, lockKey, lockTimeoutMs);
 
             if (indexExistsByName(conn, schemaName, tableName, indexName)) {
                 conn.commit();

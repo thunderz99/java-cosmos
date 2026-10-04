@@ -7,6 +7,7 @@ import io.github.thunderz99.cosmos.impl.mongo.MongoImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
 import io.github.thunderz99.cosmos.impl.postgres.dto.PostgresHikariOptions;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGSortUtil;
+import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
 import io.github.thunderz99.cosmos.util.Checker;
 import org.apache.commons.lang3.StringUtils;
 
@@ -54,6 +55,9 @@ public class CosmosBuilder {
      * Optional custom HikariCP settings for postgres.
      */
     PostgresHikariOptions postgresHikariOptions;
+
+    /** Per-client PostgreSQL initialization lock wait; ordinary queries are unaffected. */
+    int postgresInitializationLockTimeoutMs = TableUtil.DEFAULT_INITIALIZATION_LOCK_TIMEOUT_MS;
 
     /**
      * Specify the dbType( "cosmosdb" or "mongodb" or "postgres")
@@ -174,6 +178,19 @@ public class CosmosBuilder {
     }
 
     /**
+     * Set the maximum wait for each lock acquired while initializing PostgreSQL tables or indexes.
+     * The default is 30 seconds. The value is applied only within each initialization transaction.
+     *
+     * @param timeoutMs positive lock wait timeout in milliseconds
+     * @return this builder
+     */
+    public CosmosBuilder withPostgresInitializationLockTimeoutMs(int timeoutMs) {
+        TableUtil.checkInitializationLockTimeoutMs(timeoutMs);
+        this.postgresInitializationLockTimeoutMs = timeoutMs;
+        return this;
+    }
+
+    /**
      * Build the instance representing a Cosmos instance.
      *
      * @return Cosmos instance
@@ -191,7 +208,8 @@ public class CosmosBuilder {
         }
 
         if (StringUtils.equals(dbType, POSTGRES)) {
-            return new PostgresImpl(connectionString, expireAtEnabled, etagEnabled, collate, postgresHikariOptions);
+            return new PostgresImpl(connectionString, expireAtEnabled, etagEnabled, collate,
+                    postgresHikariOptions, postgresInitializationLockTimeoutMs);
         }
 
         throw new IllegalArgumentException("Not supported dbType: " + dbType);

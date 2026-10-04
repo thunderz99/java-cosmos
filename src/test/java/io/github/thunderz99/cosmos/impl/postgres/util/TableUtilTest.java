@@ -1,10 +1,12 @@
 package io.github.thunderz99.cosmos.impl.postgres.util;
 
 import com.google.common.collect.Maps;
+import io.github.thunderz99.cosmos.CosmosBuilder;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosSqlParameter;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 import io.github.thunderz99.cosmos.dto.PartialUpdateOption;
+import io.github.thunderz99.cosmos.impl.postgres.PostgresDatabaseImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImpl;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresImplTest;
 import io.github.thunderz99.cosmos.impl.postgres.PostgresRecord;
@@ -1249,10 +1251,106 @@ public class TableUtilTest {
         }
     }
 
+    @Test
+    void createTableIfNotExist_should_rollback_on_configured_lock_timeout() throws Exception {
+        var tableName = "table_lock_timeout_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+        var lockKey = (formattedSchemaName + "." + formattedTableName).hashCode();
+
+        try (var holder = cosmos.getDataSource().getConnection();
+             var waiter = cosmos.getDataSource().getConnection()) {
+            assertThat(cosmos.getInitializationLockTimeoutMs())
+                    .isEqualTo(TableUtil.DEFAULT_INITIALIZATION_LOCK_TIMEOUT_MS);
+            var originalLockTimeout = getLockTimeout(waiter);
+            holder.setAutoCommit(false);
+            acquireTransactionAdvisoryLock(holder, lockKey);
+
+            assertThatThrownBy(() -> TableUtil.createTableIfNotExists(waiter, schemaName, tableName, 200))
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(error -> assertThat(((SQLException) error).getSQLState()).isEqualTo("55P03"));
+
+            assertThat(waiter.getAutoCommit()).isTrue();
+            assertThat(getLockTimeout(waiter)).isEqualTo(originalLockTimeout);
+            assertThat(TableUtil.tableExist(waiter, schemaName, tableName)).isFalse();
+            holder.rollback();
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void builder_lock_timeout_should_reach_database_table_initialization() throws Exception {
+        var tableName = "builder_lock_timeout_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+        var lockKey = (formattedSchemaName + "." + formattedTableName).hashCode();
+        var configuredCosmos = (PostgresImpl) new CosmosBuilder()
+                .withDatabaseType(CosmosBuilder.POSTGRES)
+                .withConnectionString(EnvUtil.getOrDefault("POSTGRES_CONNECTION_STRING", PostgresImplTest.LOCAL_CONNECTION_STRING))
+                .withPostgresInitializationLockTimeoutMs(200)
+                .build();
+
+        try (var holder = cosmos.getDataSource().getConnection()) {
+            var db = (PostgresDatabaseImpl) configuredCosmos.getDatabase(dbName);
+            assertThat(configuredCosmos.getInitializationLockTimeoutMs()).isEqualTo(200);
+            holder.setAutoCommit(false);
+            acquireTransactionAdvisoryLock(holder, lockKey);
+
+            assertThatThrownBy(() -> db.createTableIfNotExists(schemaName, tableName))
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(error -> assertThat(((SQLException) error).getSQLState()).isEqualTo("55P03"));
+            holder.rollback();
+        } finally {
+            configuredCosmos.closeClient();
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
+    @Test
+    void createIndex_should_rollback_on_configured_lock_timeout() throws Exception {
+        var tableName = "index_lock_timeout_" + RandomStringUtils.randomAlphanumeric(6).toUpperCase();
+        var formattedTableName = TableUtil.checkAndNormalizeValidEntityName(tableName);
+        var fieldName = "lockTimeoutField";
+        var indexName = TableUtil.getIndexName(formattedTableName, fieldName);
+        var lockKey = (formattedSchemaName + "." + formattedTableName + "." + indexName).hashCode();
+
+        try (var holder = cosmos.getDataSource().getConnection();
+             var waiter = cosmos.getDataSource().getConnection()) {
+            TableUtil.createTableIfNotExists(waiter, schemaName, tableName);
+            var originalLockTimeout = getLockTimeout(waiter);
+            holder.setAutoCommit(false);
+            acquireTransactionAdvisoryLock(holder, lockKey);
+
+            assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4SingleField(waiter, schemaName, tableName,
+                    PGIndexField.of(fieldName, PGFieldType.BIGINT), new IndexOption(), 200))
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(error -> assertThat(((SQLException) error).getSQLState()).isEqualTo("55P03"));
+
+            assertThat(waiter.getAutoCommit()).isTrue();
+            assertThat(getLockTimeout(waiter)).isEqualTo(originalLockTimeout);
+            assertThat(TableUtil.indexExistsByName(waiter, schemaName, tableName, indexName)).isFalse();
+            holder.rollback();
+        } finally {
+            try (var conn = cosmos.getDataSource().getConnection()) {
+                TableUtil.dropTableIfExists(conn, schemaName, tableName);
+            }
+        }
+    }
+
     private static void acquireTransactionAdvisoryLock(Connection conn, long lockKey) throws SQLException {
         try (var pstmt = conn.prepareStatement("SELECT pg_advisory_xact_lock(?)")) {
             pstmt.setLong(1, lockKey);
             pstmt.executeQuery();
+        }
+    }
+
+    private static String getLockTimeout(Connection conn) throws SQLException {
+        try (var stmt = conn.createStatement(); var rs = stmt.executeQuery("SHOW lock_timeout")) {
+            rs.next();
+            return rs.getString(1);
         }
     }
 
