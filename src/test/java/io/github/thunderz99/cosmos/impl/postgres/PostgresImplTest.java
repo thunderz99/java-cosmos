@@ -1,5 +1,6 @@
 package io.github.thunderz99.cosmos.impl.postgres;
 
+import io.github.thunderz99.cosmos.CosmosBuilder;
 import io.github.thunderz99.cosmos.impl.mongo.MongoImpl;
 import io.github.thunderz99.cosmos.impl.postgres.dto.PostgresHikariOptions;
 import io.github.thunderz99.cosmos.impl.postgres.dto.QueryContext;
@@ -160,6 +161,16 @@ public class PostgresImplTest {
         assertThatThrownBy(() -> options.withHikariProperty("x", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("value");
+    }
+
+    @Test
+    void builder_should_reject_nonpositive_initialization_lock_timeout() {
+        assertThatThrownBy(() -> new CosmosBuilder().withPostgresInitializationLockTimeoutMs(0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("initializationLockTimeoutMs");
+        assertThatThrownBy(() -> new CosmosBuilder().withPostgresInitializationLockTimeoutMs(-1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("initializationLockTimeoutMs");
     }
 
     @Test

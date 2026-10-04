@@ -42,6 +42,8 @@ public class PostgresImpl implements Cosmos {
 
     HikariDataSource dataSource;
 
+    private final int initializationLockTimeoutMs;
+
     String account;
 
     public String collate;
@@ -76,6 +78,20 @@ public class PostgresImpl implements Cosmos {
      */
     public PostgresImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled,
                         String collate, PostgresHikariOptions hikariOptions) {
+        this(connectionString, expireAtEnabled, etagEnabled, collate, hikariOptions,
+                TableUtil.DEFAULT_INITIALIZATION_LOCK_TIMEOUT_MS);
+    }
+
+    /**
+     * Build a PostgreSQL client with a per-client initialization lock timeout.
+     *
+     * @param initializationLockTimeoutMs positive lock wait timeout in milliseconds
+     */
+    public PostgresImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled,
+                        String collate, PostgresHikariOptions hikariOptions, int initializationLockTimeoutMs) {
+
+        TableUtil.checkInitializationLockTimeoutMs(initializationLockTimeoutMs);
+        this.initializationLockTimeoutMs = initializationLockTimeoutMs;
 
         var pair = parseToHikariConfig(connectionString, hikariOptions);
         var config = pair.getLeft();
@@ -91,6 +107,11 @@ public class PostgresImpl implements Cosmos {
 
         Runtime.getRuntime().addShutdownHook(new Thread(this::closeClient));
 
+    }
+
+    /** Lock wait timeout used by this client's PostgreSQL table initialization. */
+    public int getInitializationLockTimeoutMs() {
+        return initializationLockTimeoutMs;
     }
 
     /**

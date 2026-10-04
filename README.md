@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.8.35</version>
+    <version>0.8.36</version>
 </dependency>
 ```
 
@@ -743,6 +743,40 @@ var cosmos = new CosmosBuilder()
     .withCustomHikariSettings(hikariOptions)
     .build();
 ```
+
+### PostgreSQL initialization lock timeout
+
+Table and index initialization waits for a transaction-level advisory lock before checking again
+whether another client created the object. The default lock wait timeout is **30 seconds**.
+To choose a different value for a PostgreSQL client, set a positive number of milliseconds:
+
+```java
+var cosmos = (PostgresImpl) new CosmosBuilder()
+    .withDatabaseType("postgres")
+    .withConnectionString(postgresConnectionString)
+    .withPostgresInitializationLockTimeoutMs(10_000)
+    .build();
+```
+
+The client setting is used by `PostgresDatabaseImpl.createTableIfNotExists`. Code that calls
+`TableUtil` directly can pass the same value to its timeout overloads. Existing calls without
+the extra argument continue to use the 30-second default:
+
+```java
+try (var conn = cosmos.getDataSource().getConnection()) {
+    TableUtil.createTableIfNotExists(
+        conn, schemaName, tableName, cosmos.getInitializationLockTimeoutMs());
+    TableUtil.createIndexIfNotExist4MultiFields(
+        conn, schemaName, tableName, indexFields, indexOption,
+        cosmos.getInitializationLockTimeoutMs());
+}
+```
+
+The timeout is set with PostgreSQL `SET LOCAL` inside each initialization transaction. It
+expires on commit or rollback and does not change the pooled connection's session setting.
+It limits **each lock acquisition**, including locks needed by index DDL; it is not a total
+transaction or connection-pool wait deadline. If a lock wait times out, initialization rolls
+back and the SQL exception is passed to the caller. No automatic retry is performed.
 
 ### PostgreSQL typed index creation
 

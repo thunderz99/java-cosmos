@@ -75,7 +75,8 @@ public class PostgresDatabaseImpl implements CosmosDatabase {
     public String createTableIfNotExists(String schemaName, String tableName) throws Exception {
 
         try(var conn = dataSource.getConnection()) {
-            TableUtil.createTableIfNotExists(conn, schemaName, tableName);
+            TableUtil.createTableIfNotExists(conn, schemaName, tableName,
+                    ((PostgresImpl) cosmosAccount).getInitializationLockTimeoutMs());
             return tableName;
         }
     }
