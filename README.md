@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.8.37.1</version>
+    <version>0.8.38</version>
 </dependency>
 ```
 
@@ -716,6 +716,26 @@ var db = cosmos.getDatabase("Database1");
 db.upsert("Database1", new User("id011","Tom","Banks"), "Collection1");
                 
 ```
+
+### Client lifecycle and graceful shutdown
+
+All database types register a JVM shutdown hook by default. Applications that manage
+their own shutdown order can disable it and close the client after all tasks,
+cleanup and final database writes have completed:
+
+```java
+var cosmos = new CosmosBuilder()
+    .withDatabaseType(dbType)
+    .withConnectionString(connectionString)
+    .withRegisterShutdownHook(false)
+    .build();
+
+// After database-dependent work has finished:
+cosmos.closeClient();
+```
+
+See [Client lifecycle](docs/client-lifecycle.md) for concurrent closing, failure
+handling and application responsibilities.
 
 ### PostgreSQL HikariCP settings
 
