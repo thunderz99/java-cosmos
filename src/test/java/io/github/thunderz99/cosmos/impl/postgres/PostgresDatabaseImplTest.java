@@ -182,8 +182,14 @@ public class PostgresDatabaseImplTest {
     }
 
     @Test
-    void nul_should_be_removed_across_persistence_paths() throws Exception {
-        NulSanitizationContractTestSupport.assertNulIsRemovedAcrossPersistencePaths(db, host, "Users");
+    void literal_nul_text_and_controls_should_be_preserved_across_persistence_paths() throws Exception {
+        PersistenceStringContractTestSupport.assertStringsArePreservedAcrossPersistencePaths(
+                db, host, "Users", "literal \\u0000\nline2\r\tend");
+    }
+
+    @Test
+    void nul_should_be_rejected_across_persistence_paths() throws Exception {
+        PostgresNulPersistenceTestSupport.assertNulIsRejectedAcrossPersistencePaths(db, host, "Users");
     }
 
     @Test
