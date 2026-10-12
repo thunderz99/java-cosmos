@@ -1,6 +1,7 @@
 package io.github.thunderz99.cosmos.util;
 
 import com.azure.cosmos.implementation.patch.PatchOperationCore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.slf4j.Logger;
 
@@ -25,6 +26,7 @@ import java.util.UUID;
 public final class PersistenceDataSanitizer {
 
     private static final char NUL = '\u0000';
+    private static final ObjectMapper PATCH_VALUE_MAPPER = JsonUtil.getObjectMapper();
 
     private PersistenceDataSanitizer() {
     }
@@ -44,6 +46,9 @@ public final class PersistenceDataSanitizer {
 
     /**
      * Create a sanitized copy of patch operations. The supplied operations are never modified.
+     *
+     * <p>Limitation: POJOs nested inside map, collection, or Java array patch values are passed through unchanged;
+     * strings in those POJOs are not sanitized. A POJO supplied directly as a patch value is normalized first.</p>
      *
      * @param operations source patch operations
      * @return sanitized operations and removal details
@@ -96,7 +101,8 @@ public final class PersistenceDataSanitizer {
             return sanitizeValue(value, path, removals);
         }
 
-        return sanitizeValue(JsonUtil.toMap(value), path, removals);
+        // A serialized patch value can be a scalar, array, or object; do not require a JSON object.
+        return sanitizeValue(PATCH_VALUE_MAPPER.convertValue(value, Object.class), path, removals);
     }
 
     private static Map<String, Object> sanitizeMap(Map<String, Object> map, String path, List<Removal> removals) {
