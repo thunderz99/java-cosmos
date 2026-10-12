@@ -1,11 +1,28 @@
 package io.github.thunderz99.cosmos.v4;
 
+import com.azure.cosmos.implementation.RequestOptions;
+import com.azure.cosmos.implementation.patch.PatchUtil;
+import com.fasterxml.jackson.databind.node.TextNode;
+import io.github.thunderz99.cosmos.util.JsonUtil;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PatchOperationsTest {
+
+    @Test
+    void cosmos_patch_serialization_should_preserve_nul_and_scalar_values() throws Exception {
+        var value = "A\u0000B literal \\u0000\nline2\r\tend";
+        var operations = PatchOperations.create().set("/value", TextNode.valueOf(value));
+
+        var bytes = PatchUtil.serializeCosmosPatchToByteArray(
+                operations.getCosmosPatchOperations(), new RequestOptions());
+        var json = JsonUtil.getObjectMapper().readTree(bytes);
+
+        assertThat(json.at("/operations/0/value").asText()).isEqualTo(value);
+        assertThat(operations.size()).isEqualTo(1);
+    }
 
     @Test
     void PatchOperations_should_work() {

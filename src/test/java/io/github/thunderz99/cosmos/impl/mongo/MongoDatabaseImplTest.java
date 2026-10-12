@@ -150,8 +150,9 @@ class MongoDatabaseImplTest {
     }
 
     @Test
-    void nul_should_be_removed_across_persistence_paths() throws Exception {
-        NulSanitizationContractTestSupport.assertNulIsRemovedAcrossPersistencePaths(db, host, "Users");
+    void nul_should_be_preserved_across_persistence_paths() throws Exception {
+        PersistenceStringContractTestSupport.assertStringsArePreservedAcrossPersistencePaths(
+                db, host, "Users", "A\u0000B");
     }
 
     @Test

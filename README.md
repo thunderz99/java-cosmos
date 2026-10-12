@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.8.37.1</version>
+    <version>0.8.37.2</version>
 </dependency>
 ```
 
@@ -716,6 +716,10 @@ var db = cosmos.getDatabase("Database1");
 db.upsert("Database1", new User("id011","Tom","Banks"), "Collection1");
                 
 ```
+
+String values are passed to the database without removing U+0000 (NUL). PostgreSQL rejects real NUL
+in `jsonb`, so a write containing it fails. Literal text such as `\u0000` (a backslash followed by
+`u0000`), line breaks, carriage returns, and tabs are preserved.
 
 ### PostgreSQL HikariCP settings
 

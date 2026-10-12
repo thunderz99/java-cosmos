@@ -1,8 +1,14 @@
 package io.github.thunderz99.cosmos.util;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.fasterxml.jackson.databind.node.BooleanNode;
+import com.fasterxml.jackson.databind.node.IntNode;
+import com.fasterxml.jackson.databind.node.NullNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import io.github.thunderz99.cosmos.dto.CheckBox;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.junit.jupiter.api.Test;
@@ -13,6 +19,50 @@ import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 
 class JsonPatchUtilTest {
+
+    @Test
+    void getNormalizedValue_should_preserve_json_scalars() {
+        assertThat(JsonPatchUtil.getNormalizedValue(TextNode.valueOf("plain"))).isEqualTo("plain");
+        assertThat(JsonPatchUtil.getNormalizedValue(IntNode.valueOf(42))).isEqualTo(42);
+        assertThat(JsonPatchUtil.getNormalizedValue(BooleanNode.TRUE)).isEqualTo(true);
+        assertThat(JsonPatchUtil.getNormalizedValue(NullNode.getInstance())).isNull();
+        assertThat(JsonPatchUtil.getNormalizedValue(URI.create("https://example.com/profile")))
+                .isEqualTo("https://example.com/profile");
+        assertThat(JsonPatchUtil.getNormalizedValue(new ScalarValue("plain"))).isEqualTo("plain");
+    }
+
+    @Test
+    void patch_conversion_should_preserve_nul_and_literal_text() {
+        var value = "A\u0000B literal \\u0000\nline2\r\tend";
+        var array = JsonUtil.getObjectMapper().createArrayNode().add(value);
+        var operations = PatchOperations.create()
+                .set("/scalar", new ScalarValue(value))
+                .set("/items", array)
+                .set("/aliases", new String[]{value});
+
+        var postgres = JsonPatchUtil.toPostgresPatchData(operations);
+        assertThat(postgres.getParameters().get(0).getValue()).isEqualTo(value);
+        assertThat(postgres.getParameters().get(1).getValue()).isEqualTo(List.of(value));
+        assertThat(postgres.getParameters().get(2).getValue()).isEqualTo(List.of(value));
+
+        var mongo = JsonPatchUtil.toMongoPatchData(operations);
+        assertThat(mongo.get(0).getDocument("$set").getString("scalar").getValue()).isEqualTo(value);
+        assertThat(mongo.get(1).getDocument("$set").getArray("items").get(0).asString().getValue()).isEqualTo(value);
+        assertThat(mongo.get(2).getDocument("$set").getArray("aliases").get(0).asString().getValue()).isEqualTo(value);
+    }
+
+    static class ScalarValue {
+        private final String value;
+
+        ScalarValue(String value) {
+            this.value = value;
+        }
+
+        @JsonValue
+        public String getValue() {
+            return value;
+        }
+    }
 
     @Test
     void getNormalizedValue_should_work() {
