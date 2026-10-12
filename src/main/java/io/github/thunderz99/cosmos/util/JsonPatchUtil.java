@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.azure.cosmos.implementation.patch.PatchOperationCore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.primitives.Primitives;
 import com.mongodb.client.model.PushOptions;
 import com.mongodb.client.model.Updates;
@@ -26,6 +27,8 @@ import org.bson.BsonDocument;
  * A util to process conversions used for patch data generation and etc
  */
 public class JsonPatchUtil {
+
+    private static final ObjectMapper VALUE_MAPPER = JsonUtil.getObjectMapper();
 
     /**
      * A regex pattern for "/address/country/city/2" for json path representing an array field and index
@@ -82,7 +85,7 @@ public class JsonPatchUtil {
     }
 
     /**
-     * convert rawValue(pojo / list of pojo) to normalizedValue(map / list of map) for patch operation
+     * Convert patch values to JSON-compatible scalars, maps, or lists without changing string contents.
      *
      * @param value
      */
@@ -102,7 +105,7 @@ public class JsonPatchUtil {
             return collection.stream().map(item -> getNormalizedValue(item)).collect(Collectors.toList());
         }
 
-        return JsonUtil.toMap(value);
+        return VALUE_MAPPER.convertValue(value, Object.class);
 
     }
 

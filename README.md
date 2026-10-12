@@ -717,6 +717,11 @@ db.upsert("Database1", new User("id011","Tom","Banks"), "Collection1");
                 
 ```
 
+String values are passed to the database without removing U+0000 (NUL). PostgreSQL rejects real NUL
+in `jsonb`, so a write containing it fails. Literal text such as `\u0000` (a backslash followed by
+`u0000`), line breaks, carriage returns, and tabs are preserved.
+
+
 ### Client lifecycle and graceful shutdown
 
 All database types register a JVM shutdown hook by default. Applications that manage
