@@ -13,6 +13,7 @@ import io.github.thunderz99.cosmos.CosmosDatabase;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosContainerResponse;
 import io.github.thunderz99.cosmos.dto.UniqueKeyPolicy;
+import io.github.thunderz99.cosmos.impl.ClientLifecycle;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.ConnectionStringUtil;
 import io.github.thunderz99.cosmos.util.LinkFormatUtil;
@@ -41,6 +42,8 @@ public class CosmosImpl implements Cosmos {
 
     CosmosClient client;
 
+    private final ClientLifecycle lifecycle;
+
     String account;
 
     public static final String COSMOS_SDK_V4_ENABLE = "COSMOS_SDK_V4_ENABLE";
@@ -52,6 +55,14 @@ public class CosmosImpl implements Cosmos {
     }
 
     public CosmosImpl(String connectionString, List<String> preferredRegions) {
+        this(connectionString, preferredRegions, true);
+    }
+
+    /**
+     * Create a client with optional automatic JVM shutdown hook registration.
+     * When disabled, the caller owns the timing of {@link #closeClient()}.
+     */
+    public CosmosImpl(String connectionString, List<String> preferredRegions, boolean registerShutdownHook) {
 
         Pair<String, String> pair = ConnectionStringUtil.parseConnectionString(connectionString);
         var endpoint = pair.getLeft();
@@ -66,11 +77,16 @@ public class CosmosImpl implements Cosmos {
                 .contentResponseOnWriteEnabled(true)
                 .buildClient();
 
-        this.account = extractAccountName(endpoint);
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            this.closeClient();
-        }));
+        this.lifecycle = new ClientLifecycle(this.client::close);
+        try {
+            this.account = extractAccountName(endpoint);
+            if (registerShutdownHook) {
+                lifecycle.registerShutdownHook();
+            }
+        } catch (RuntimeException | Error failure) {
+            lifecycle.closeOnInitializationFailure(failure);
+            throw failure;
+        }
 
     }
 
@@ -280,7 +296,7 @@ public class CosmosImpl implements Cosmos {
      */
     @Override
     public void closeClient() {
-        this.getClient().close();
+        lifecycle.close();
     }
 
 }

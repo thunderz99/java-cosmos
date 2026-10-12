@@ -9,6 +9,7 @@ import io.github.thunderz99.cosmos.CosmosDatabase;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosContainerResponse;
 import io.github.thunderz99.cosmos.dto.UniqueKeyPolicy;
+import io.github.thunderz99.cosmos.impl.ClientLifecycle;
 import io.github.thunderz99.cosmos.impl.postgres.dto.PostgresHikariOptions;
 import io.github.thunderz99.cosmos.impl.postgres.util.PGSortUtil;
 import io.github.thunderz99.cosmos.impl.postgres.util.TableUtil;
@@ -41,6 +42,8 @@ public class PostgresImpl implements Cosmos {
     private static final Logger log = LoggerFactory.getLogger(PostgresImpl.class);
 
     HikariDataSource dataSource;
+
+    private final ClientLifecycle lifecycle;
 
     private final int initializationLockTimeoutMs;
 
@@ -89,6 +92,17 @@ public class PostgresImpl implements Cosmos {
      */
     public PostgresImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled,
                         String collate, PostgresHikariOptions hikariOptions, int initializationLockTimeoutMs) {
+        this(connectionString, expireAtEnabled, etagEnabled, collate, hikariOptions,
+                initializationLockTimeoutMs, true);
+    }
+
+    /**
+     * Create a client with optional automatic JVM shutdown hook registration.
+     * When disabled, the caller owns the timing of {@link #closeClient()}.
+     */
+    public PostgresImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled,
+                        String collate, PostgresHikariOptions hikariOptions, int initializationLockTimeoutMs,
+                        boolean registerShutdownHook) {
 
         TableUtil.checkInitializationLockTimeoutMs(initializationLockTimeoutMs);
         this.initializationLockTimeoutMs = initializationLockTimeoutMs;
@@ -98,14 +112,19 @@ public class PostgresImpl implements Cosmos {
         this.account = pair.getRight();
 
         this.dataSource = new HikariDataSource(config);
-
-        preFlightChecks(this.dataSource);
-
-        this.expireAtEnabled = expireAtEnabled;
-        this.etagEnabled = etagEnabled;
-        this.collate = collate;
-
-        Runtime.getRuntime().addShutdownHook(new Thread(this::closeClient));
+        this.lifecycle = new ClientLifecycle(this.dataSource::close);
+        try {
+            preFlightChecks(this.dataSource);
+            this.expireAtEnabled = expireAtEnabled;
+            this.etagEnabled = etagEnabled;
+            this.collate = collate;
+            if (registerShutdownHook) {
+                lifecycle.registerShutdownHook();
+            }
+        } catch (RuntimeException | Error failure) {
+            lifecycle.closeOnInitializationFailure(failure);
+            throw failure;
+        }
 
     }
 
@@ -360,7 +379,7 @@ public class PostgresImpl implements Cosmos {
      */
     @Override
     public void closeClient() {
-        this.getDataSource().close();
+        lifecycle.close();
     }
 
 }

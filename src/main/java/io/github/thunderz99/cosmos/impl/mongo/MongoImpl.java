@@ -15,6 +15,7 @@ import io.github.thunderz99.cosmos.CosmosDatabase;
 import io.github.thunderz99.cosmos.CosmosException;
 import io.github.thunderz99.cosmos.dto.CosmosContainerResponse;
 import io.github.thunderz99.cosmos.dto.UniqueKeyPolicy;
+import io.github.thunderz99.cosmos.impl.ClientLifecycle;
 import io.github.thunderz99.cosmos.util.Checker;
 import io.github.thunderz99.cosmos.util.LinkFormatUtil;
 import org.apache.commons.lang3.StringUtils;
@@ -41,6 +42,8 @@ public class MongoImpl implements Cosmos {
 
     MongoClient client;
 
+    private final ClientLifecycle lifecycle;
+
     String account;
 
     /**
@@ -55,10 +58,19 @@ public class MongoImpl implements Cosmos {
 
 
     public MongoImpl(String connectionString) {
-        new MongoImpl(connectionString, false, false);
+        this(connectionString, false, false);
     }
 
     public MongoImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled) {
+        this(connectionString, expireAtEnabled, etagEnabled, true);
+    }
+
+    /**
+     * Create a client with optional automatic JVM shutdown hook registration.
+     * When disabled, the caller owns the timing of {@link #closeClient()}.
+     */
+    public MongoImpl(String connectionString, boolean expireAtEnabled, boolean etagEnabled,
+                     boolean registerShutdownHook) {
 
         var settings = MongoClientSettings.builder()
                 .applyToClusterSettings(builder -> builder.applyConnectionString(new ConnectionString(connectionString)))
@@ -67,20 +79,24 @@ public class MongoImpl implements Cosmos {
                 .build();
 
         var mongoClient = MongoClients.create(connectionString);
-        log.info("mongodb Connection successful: " + preFlightChecks(mongoClient));
-        log.info("mongodb Print list of databases:");
-
         this.client = mongoClient;
-        this.account = extractAccountName(connectionString);
-        this.expireAtEnabled = expireAtEnabled;
-        this.etagEnabled = etagEnabled;
+        this.lifecycle = new ClientLifecycle(mongoClient::close);
+        try {
+            log.info("mongodb Connection successful: " + preFlightChecks(mongoClient));
+            log.info("mongodb Print list of databases:");
+            this.account = extractAccountName(connectionString);
+            this.expireAtEnabled = expireAtEnabled;
+            this.etagEnabled = etagEnabled;
 
-        var databases = this.client.listDatabases().into(new ArrayList<>());
-        databases.forEach(db -> log.info(db.toJson()));
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            this.closeClient();
-        }));
+            var databases = this.client.listDatabases().into(new ArrayList<>());
+            databases.forEach(db -> log.info(db.toJson()));
+            if (registerShutdownHook) {
+                lifecycle.registerShutdownHook();
+            }
+        } catch (RuntimeException | Error failure) {
+            lifecycle.closeOnInitializationFailure(failure);
+            throw failure;
+        }
 
     }
 
@@ -295,7 +311,7 @@ public class MongoImpl implements Cosmos {
      */
     @Override
     public void closeClient() {
-        this.getClient().close();
+        lifecycle.close();
     }
     
 }

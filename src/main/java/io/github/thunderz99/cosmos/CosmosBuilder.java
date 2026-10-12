@@ -51,6 +51,8 @@ public class CosmosBuilder {
 
     boolean etagEnabled = false;
 
+    boolean registerShutdownHook = true;
+
     /**
      * Optional custom HikariCP settings for postgres.
      */
@@ -200,20 +202,34 @@ public class CosmosBuilder {
         Checker.checkNotBlank(connectionString, "connectionString");
 
         if (StringUtils.equals(dbType, COSMOSDB)) {
-            return new CosmosImpl(connectionString, preferredRegions);
+            return new CosmosImpl(connectionString, preferredRegions, registerShutdownHook);
         }
 
         if (StringUtils.equals(dbType, MONGODB)) {
-            return new MongoImpl(connectionString, expireAtEnabled, etagEnabled);
+            return new MongoImpl(connectionString, expireAtEnabled, etagEnabled, registerShutdownHook);
         }
 
         if (StringUtils.equals(dbType, POSTGRES)) {
             return new PostgresImpl(connectionString, expireAtEnabled, etagEnabled, collate,
-                    postgresHikariOptions, postgresInitializationLockTimeoutMs);
+                    postgresHikariOptions, postgresInitializationLockTimeoutMs, registerShutdownHook);
         }
 
         throw new IllegalArgumentException("Not supported dbType: " + dbType);
 
+    }
+
+    /**
+     * Control automatic JVM shutdown hook registration for all database types.
+     * Defaults to true. When disabled, the caller must invoke {@link Cosmos#closeClient()}
+     * after all database-dependent work, including task cleanup, has completed.
+     * This option does not wait for tasks or control other JVM shutdown hooks.
+     *
+     * @param registerShutdownHook whether to register the automatic shutdown hook
+     * @return this builder
+     */
+    public CosmosBuilder withRegisterShutdownHook(boolean registerShutdownHook) {
+        this.registerShutdownHook = registerShutdownHook;
+        return this;
     }
 
 

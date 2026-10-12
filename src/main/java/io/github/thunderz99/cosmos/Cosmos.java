@@ -101,7 +101,12 @@ public interface Cosmos {
 
 
     /**
-     * Close the internal database client safely
+     * Close the internal database client. The caller must first finish all work that
+     * uses this account, including work through its database handles.
+     * Concurrent calls wait for the current close attempt. After a successful close,
+     * subsequent calls have no effect. A failed close is propagated and may be retried;
+     * the underlying resource may already be partially closed.
+     * This method does not drain operations or wait for business tasks.
      */
     public void closeClient();
 
