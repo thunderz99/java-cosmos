@@ -2,11 +2,22 @@ package io.github.thunderz99.cosmos.util;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.core.read.ListAppender;
+import com.azure.cosmos.implementation.RequestOptions;
 import com.azure.cosmos.implementation.patch.PatchOperationCore;
+import com.azure.cosmos.implementation.patch.PatchUtil;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.BooleanNode;
+import com.fasterxml.jackson.databind.node.DecimalNode;
+import com.fasterxml.jackson.databind.node.IntNode;
+import com.fasterxml.jackson.databind.node.NullNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import io.github.thunderz99.cosmos.v4.PatchOperations;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
+import java.net.URI;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -139,6 +150,83 @@ class PersistenceDataSanitizerTest {
         assertThat(profile.getResource()).isEqualTo(Map.of("name", "AB"));
         assertThat(aliases.getResource()).isEqualTo(List.of("CD", "plain"));
         assertThat(result.removedCount()).isEqualTo(2);
+    }
+
+    @Test
+    void sanitizePatchOperationsShouldPreserveJsonScalarSerialization() throws Exception {
+        var values = List.of(
+                TextNode.valueOf("plain"),
+                IntNode.valueOf(42),
+                DecimalNode.valueOf(new BigDecimal("12.34")),
+                BooleanNode.TRUE,
+                BooleanNode.FALSE,
+                NullNode.getInstance(),
+                URI.create("https://example.com/profile"),
+                new ScalarValue("plain"));
+
+        for (var value : values) {
+            var source = PatchOperations.create().set("/value", value);
+
+            var result = PersistenceDataSanitizer.sanitizePatchOperations(source);
+
+            assertThat(result.changed()).isFalse();
+            assertThat(cosmosPatchJson(result.value())).isEqualTo(cosmosPatchJson(source));
+        }
+    }
+
+    @Test
+    void sanitizePatchOperationsShouldRemoveOnlyRealNulFromSerializedStrings() throws Exception {
+        for (var value : List.of(TextNode.valueOf("A\u0000B"), new ScalarValue("A\u0000B"))) {
+            var source = PatchOperations.create()
+                    .set("/name", value)
+                    .add("/literal", TextNode.valueOf("literal \\u0000"))
+                    .replace("/controls", TextNode.valueOf("line1\nline2\r\tend"));
+
+            var result = PersistenceDataSanitizer.sanitizePatchOperations(source);
+
+            assertThat(result.removals()).containsExactly(new PersistenceDataSanitizer.Removal("/name", 1));
+            assertThat(cosmosPatchJson(result.value())).isEqualTo(cosmosPatchJson(PatchOperations.create()
+                    .set("/name", "AB")
+                    .add("/literal", "literal \\u0000")
+                    .replace("/controls", "line1\nline2\r\tend")));
+            assertThat(((PatchOperationCore<?>) source.getPatchOperations().get(0)).getResource()).isSameAs(value);
+            assertThat(cosmosPatchJson(source).at("/operations/0/value").asText()).isEqualTo("A\u0000B");
+        }
+    }
+
+    @Test
+    void sanitizePatchOperationsShouldHandleJsonArrayValues() throws Exception {
+        var sourceValue = JsonUtil.getObjectMapper().createArrayNode();
+        sourceValue.add("A\u0000B");
+        sourceValue.addObject().put("name", "C\u0000D");
+        var source = PatchOperations.create().set("/items", sourceValue);
+
+        var result = PersistenceDataSanitizer.sanitizePatchOperations(source);
+
+        assertThat(result.removals()).containsExactly(
+                new PersistenceDataSanitizer.Removal("/items/0", 1),
+                new PersistenceDataSanitizer.Removal("/items/1/name", 1));
+        assertThat(cosmosPatchJson(result.value())).isEqualTo(cosmosPatchJson(PatchOperations.create()
+                .set("/items", List.of("AB", Map.of("name", "CD")))));
+        assertThat(sourceValue.get(0).asText()).isEqualTo("A\u0000B");
+    }
+
+    private static JsonNode cosmosPatchJson(PatchOperations operations) throws Exception {
+        var bytes = PatchUtil.serializeCosmosPatchToByteArray(operations.getCosmosPatchOperations(), new RequestOptions());
+        return JsonUtil.getObjectMapper().readTree(bytes);
+    }
+
+    static class ScalarValue {
+        private final String value;
+
+        ScalarValue(String value) {
+            this.value = value;
+        }
+
+        @JsonValue
+        public String getValue() {
+            return value;
+        }
     }
 
     static class Profile {
