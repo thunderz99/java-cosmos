@@ -2045,7 +2045,9 @@ public class TableUtil {
      * Creates an ordinary index under a transaction-level advisory lock.
      *
      * <p>When entering with auto-commit enabled, failed lock attempts are rolled back before
-     * polling again so waiting snapshots do not block a concurrent index builder. Creation
+     * polling again so waiting snapshots do not block a concurrent index builder. When
+     * entering inside a caller transaction, lock contention fails immediately instead of
+     * retaining a snapshot while waiting or rolling back the transaction to retry. Creation
      * commits on success, rolls back on failure, and restores the original auto-commit setting.</p>
      *
      * @param conn the database connection
@@ -2056,33 +2058,34 @@ public class TableUtil {
      * @param lockKey the advisory lock key shared by creators of the same index
      * @param lockTimeoutMs positive PostgreSQL lock wait timeout in milliseconds
      * @return schema.indexName if created, or an empty string if a valid index already exists
-     * @throws SQLException if the lock wait times out, the existing index is invalid,
-     *                      or a database error occurs
+     * @throws SQLException with SQLSTATE 55P03 if the lock wait times out or a caller
+     *                      transaction encounters lock contention; also if the existing
+     *                      index is invalid or a database error occurs
      */
     static String createOrdinaryIndex(Connection conn, String schemaName, String tableName,
                                       String indexName, String sql, long lockKey, int lockTimeoutMs) throws SQLException {
         var previousAutoCommit = conn.getAutoCommit();
         try (var stmt = conn.createStatement()) {
             conn.setAutoCommit(false);
-            if (previousAutoCommit) {
-                // A blocking lock wait can retain an old snapshot needed by a concurrent
-                // builder. Roll back only our own failed lock attempts before polling again.
-                long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(lockTimeoutMs);
-                while (true) {
-                    stmt.execute("SET LOCAL lock_timeout = '%dms'".formatted(lockTimeoutMs));
-                    boolean acquired;
-                    try (var rs = stmt.executeQuery("SELECT pg_try_advisory_xact_lock(%d)".formatted(lockKey))) {
-                        rs.next();
-                        acquired = rs.getBoolean(1);
-                    }
-                    if (acquired) {
-                        break;
-                    }
-                    conn.rollback();
-                    waitForIndexLock(deadline, lockTimeoutMs);
+            // A blocking lock wait can retain an old snapshot needed by a concurrent
+            // builder. Roll back only our own failed lock attempts before polling again.
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(lockTimeoutMs);
+            while (true) {
+                stmt.execute("SET LOCAL lock_timeout = '%dms'".formatted(lockTimeoutMs));
+                boolean acquired;
+                try (var rs = stmt.executeQuery("SELECT pg_try_advisory_xact_lock(%d)".formatted(lockKey))) {
+                    rs.next();
+                    acquired = rs.getBoolean(1);
                 }
-            } else {
-                acquireTransactionAdvisoryLock(stmt, lockKey, lockTimeoutMs);
+                if (acquired) {
+                    break;
+                }
+                if (!previousAutoCommit) {
+                    throw new SQLException("Index advisory lock is busy; cannot wait inside a caller transaction. "
+                            + "Retry index creation using autoCommit=true outside the caller transaction", "55P03");
+                }
+                conn.rollback();
+                waitForIndexLock(deadline, lockTimeoutMs);
             }
             if (validIndexExists(conn, schemaName, tableName, indexName)) {
                 conn.commit();

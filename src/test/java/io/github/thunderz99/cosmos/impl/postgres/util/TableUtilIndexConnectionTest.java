@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -82,6 +83,52 @@ class TableUtilIndexConnectionTest {
         verify(conn, org.mockito.Mockito.times(2)).commit();
         verify(conn, never()).rollback();
         verify(conn, never()).prepareStatement("SELECT set_config('lock_timeout', ?, false)");
+    }
+
+    @Test
+    void ordinary_caller_transaction_fails_fast_when_index_lock_is_busy() throws Exception {
+        when(conn.getAutoCommit()).thenReturn(false);
+        var lock = mock(ResultSet.class);
+        when(stmt.executeQuery(startsWith("SELECT pg_try_advisory_xact_lock("))).thenReturn(lock);
+        when(lock.next()).thenReturn(true);
+        when(lock.getBoolean(1)).thenReturn(false);
+
+        assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4SingleField(
+                conn, "schema", "table", new PGIndexField("email"), new IndexOption()))
+                .isInstanceOf(SQLException.class).hasMessageContaining("caller transaction")
+                .extracting(e -> ((SQLException) e).getSQLState()).isEqualTo("55P03");
+
+        verify(stmt, times(1)).executeQuery(startsWith("SELECT pg_try_advisory_xact_lock("));
+        verify(stmt, never()).execute(startsWith("SELECT pg_advisory_xact_lock("));
+        verify(stmt, never()).execute(startsWith("CREATE "));
+        verify(conn, never()).commit();
+        // Preserve ordinary creation's existing rollback-on-failure contract, without retrying.
+        verify(conn, times(1)).rollback();
+        verify(conn, never()).setAutoCommit(true);
+    }
+
+    @Test
+    void ordinary_caller_transaction_creates_index_when_lock_is_available() throws Exception {
+        when(conn.getAutoCommit()).thenReturn(false);
+        var lock = mock(ResultSet.class);
+        when(stmt.executeQuery(startsWith("SELECT pg_try_advisory_xact_lock("))).thenReturn(lock);
+        when(lock.next()).thenReturn(true);
+        when(lock.getBoolean(1)).thenReturn(true);
+        when(indexResult.next()).thenReturn(false, false, true);
+        when(indexResult.getString("tablename")).thenReturn("table");
+        when(indexResult.getBoolean("indisvalid")).thenReturn(true);
+
+        assertThat(TableUtil.createIndexIfNotExist4SingleField(
+                conn, "schema", "table", new PGIndexField("email"), new IndexOption()))
+                .isEqualTo("schema.idx_table_email_1");
+
+        verify(stmt).execute("SET LOCAL lock_timeout = '30000ms'");
+        verify(stmt).executeQuery(startsWith("SELECT pg_try_advisory_xact_lock("));
+        verify(stmt, never()).execute(startsWith("SELECT pg_advisory_xact_lock("));
+        verify(stmt).execute(startsWith("CREATE  INDEX  IF NOT EXISTS"));
+        verify(conn).commit();
+        verify(conn, never()).rollback();
+        verify(conn, never()).setAutoCommit(true);
     }
 
     @Test

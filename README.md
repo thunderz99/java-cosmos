@@ -864,6 +864,10 @@ are unchanged. This option does not configure the raw SQL API or automatic table
   typed index creators. Use a direct connection or session pooling. PgBouncer transaction
   or statement pooling is unsupported because the session lock and settings must stay on
   the same server connection throughout the call.
+* Ordinary typed index creation with `autoCommit=false` fails immediately with SQLSTATE
+  `55P03` if the advisory lock is busy, following its existing rollback-on-failure behavior.
+  Waiting inside that transaction could deadlock a concurrent builder. Use `autoCommit=true`
+  outside caller transactions when lock waiting is needed.
 * The timeout overload (30 seconds by default) applies to each lock acquisition, including
   the advisory lock and index DDL. Concurrent creation temporarily changes the session's
   `lock_timeout` and restores its previous value, releasing the advisory lock on success,

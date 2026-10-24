@@ -191,6 +191,40 @@ class TableUtilConcurrentIndexTest {
         assertRepeatedCreators(false);
     }
 
+    @Test
+    void ordinary_caller_transaction_does_not_block_a_concurrent_creator() throws Exception {
+        long lockKey = (quoted(SCHEMA) + "." + quoted(table) + "." + index("race")).hashCode();
+        try (var holder = cosmos.getDataSource().getConnection(); var stmt = holder.createStatement()) {
+            // Reserve the concurrent creator's session lock before its index becomes visible.
+            stmt.execute("SELECT pg_advisory_lock(" + lockKey + ")");
+            try {
+                // Make a regression report 57014 promptly instead of hanging on the old blocking lock.
+                execute("SET statement_timeout = '250ms'");
+                conn.setAutoCommit(false);
+                assertThatThrownBy(() -> TableUtil.createIndexIfNotExist4SingleField(
+                        conn, SCHEMA, table, new PGIndexField("race"), new IndexOption(), 5_000))
+                        .isInstanceOf(SQLException.class).hasMessageContaining("caller transaction")
+                        .extracting(e -> ((SQLException) e).getSQLState()).isEqualTo("55P03");
+                assertThat(conn.getAutoCommit()).isFalse();
+
+                // The failed ordinary attempt has released its snapshot, so creation can finish.
+                // Do not issue queries on conn before the build: autoCommit=false would start
+                // another transaction whose snapshot could block the expression index build.
+                assertThat(TableUtil.createIndexIfNotExist4SingleField(
+                        holder, SCHEMA, table, new PGIndexField("race"), concurrent(), 5_000)).isNotEmpty();
+                assertThat(definition("race")).contains("USING btree");
+                assertThat(scalar("SHOW lock_timeout")).isEqualTo("7s");
+                assertThat(hasAdvisoryLock(conn)).isFalse();
+            } finally {
+                conn.rollback();
+                conn.setAutoCommit(true);
+                execute("RESET statement_timeout");
+                stmt.execute("SELECT pg_advisory_unlock(" + lockKey + ")");
+            }
+        }
+        assertCleanConnection();
+    }
+
     private void assertRepeatedCreators(boolean includeOrdinary) throws Exception {
         var executor = Executors.newFixedThreadPool(6);
         var start = new CountDownLatch(1);
