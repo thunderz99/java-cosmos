@@ -28,6 +28,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -1724,6 +1725,7 @@ public class TableUtil {
      * @param tableName  the table name
      * @param fieldName  the field name representing a JSON path. e.g.   address.city.street
      * @param indexOption     the index options
+     *                        ({@code concurrently=true} requires an auto-commit, session-pinned connection)
      * @return schema.indexName if created, or "" if index already exists
      * @throws SQLException if a database error occurs
      */
@@ -1752,91 +1754,11 @@ public class TableUtil {
         // e.g.  idx_table1_address_city_street_1
         var indexName = getIndexName(tableName, fieldName);
 
-        if (indexExistsByName(conn, schemaName, tableName, indexName)) {
-            // already exists
-            return "";
-        }
-
-        // create index
-        var previousAutoCommit = conn.getAutoCommit();
-
-        var qualifiedName = "%s.%s.%s".formatted(schemaName, tableName, indexName);
-
-        // Generate the lock key by hashing the qualified name
-        long lockKey = qualifiedName.hashCode();
-
-
-        try(var stmt = conn.createStatement()) {
-
-            // check namespace uniqueness and create index in one transaction
-            conn.setAutoCommit(false);
-
-            acquireTransactionAdvisoryLock(stmt, lockKey, lockTimeoutMs);
-
-            if (indexExistsByName(conn, schemaName, tableName, indexName)) {
-                conn.commit();
-                return "";
-            }
-
-            // check type name uniqueness
-            var pgTypeSQL = """
-                    SELECT c.oid, c.relname, n.nspname
-                    FROM pg_class c
-                    JOIN pg_namespace n ON n.oid = c.relnamespace
-                    WHERE c.relname = '%s'
-                      AND n.nspname = '%s'
-                    """.formatted(removeQuotes(indexName), removeQuotes(schemaName));
-
-            var typeExists = false;
-            try(var rs = stmt.executeQuery(pgTypeSQL)){
-                if (rs.next()) {
-                    typeExists = true;
-                }
-            }
-
-            if(typeExists){
-                // type name already exists. do nothing and return
-                conn.commit();
-                return "";
-            }
-
-            // create index
-            // Construct JSON path expression
-            // data->'address'->'city'->>'street'
-            var jsonPathExpression = buildIndexExpression(fieldName, indexOption);
-            var indexMethod = getIndexMethod(indexOption);
-
-            var createIndexSQL = """
-                    CREATE %s INDEX IF NOT EXISTS %s
-                      ON %s.%s USING %s ((%s));
-                    """
-                    .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, indexMethod, jsonPathExpression);
-
-            stmt.execute(createIndexSQL);
-            if (log.isInfoEnabled()) {
-                log.info("Index({}) on column '{}' with field '{}' of table '{}.{}' created successfully.", indexName, DATA, fieldName, schemaName, tableName);
-            }
-
-            conn.commit();
-        } catch (SQLException e) {
-            // Roll back the transaction if an error occurs
-            if (conn != null) {
-                conn.rollback();
-            }
-            var message = e.getMessage();
-            if(StringUtils.contains(message, "pg_type_typname_nsp_index")
-                    && StringUtils.contains(message, "duplicate key value violates unique constraint") ) {
-                log.warn("index type name {}.{}.{} already exist. skip index creation. msg:{}", schemaName, tableName, indexName, e.getMessage());
-                // return "" if already exists
-                return "";
-            } else {
-                throw e;
-            }
-        } finally {
-            conn.setAutoCommit(previousAutoCommit);
-        }
-
-        return "%s.%s".formatted(schemaName, indexName);
+        Checker.checkNotNull(indexOption, "indexOption");
+        var sql = "CREATE %s INDEX %s IF NOT EXISTS %s ON %s.%s USING %s ((%s))"
+                .formatted(indexOption.unique ? "UNIQUE" : "", indexOption.concurrently ? "CONCURRENTLY" : "",
+                        indexName, schemaName, tableName, getIndexMethod(indexOption), buildIndexExpression(fieldName, indexOption));
+        return createIndexWithOptions(conn, schemaName, tableName, indexName, sql, indexOption, lockTimeoutMs);
     }
 
     /**
@@ -1974,6 +1896,7 @@ public class TableUtil {
      * @param tableName  the table name
      * @param field      the field to be indexed, with a name and type. e.g. new IndexField("lastName", "text")
      * @param indexOption the index options
+     *                    ({@code concurrently=true} requires an auto-commit, session-pinned connection)
      * @return schema.indexName if created, or "" if index already exists
      * @throws SQLException if a database error occurs
      */
@@ -1998,6 +1921,7 @@ public class TableUtil {
      * @param tableName  the table name
      * @param fields     the list of fields to be indexed, each with a name and type. e.g. [new IndexField("lastName", "text"), new IndexField("age", "integer")]
      * @param indexOption     the index options
+     *                        ({@code concurrently=true} requires an auto-commit, session-pinned connection)
      * @return schema.indexName if created, or "" if index already exists
      * @throws SQLException if a database error occurs
      */
@@ -2023,84 +1947,280 @@ public class TableUtil {
         var joinedFieldNames = fields.stream().map(f -> f.fieldName).collect(Collectors.joining("_"));
         var indexName = getIndexName(tableName, joinedFieldNames);
 
-        if (indexExistsByName(conn, schemaName, tableName, indexName)) {
-            // already exists
-            return "";
+        Checker.checkNotNull(indexOption, "indexOption");
+        var sql = "CREATE %s INDEX %s IF NOT EXISTS %s ON %s.%s USING %s (%s)"
+                .formatted(indexOption.unique ? "UNIQUE" : "", indexOption.concurrently ? "CONCURRENTLY" : "",
+                        indexName, schemaName, tableName, getIndexMethod(indexOption), buildIndexExpression(fields, indexOption));
+        return createIndexWithOptions(conn, schemaName, tableName, indexName, sql, indexOption, lockTimeoutMs);
+    }
+
+    /**
+     * Checks whether a valid index with the given name exists on the expected table.
+     *
+     * <p>A failed concurrent build can leave an INVALID index. Such an index, or a name
+     * used by another relation, is reported as an error instead of a successful no-op.</p>
+     *
+     * @param conn the database connection
+     * @param schemaName the normalized schema name, optionally quoted
+     * @param tableName the normalized table name, optionally quoted
+     * @param indexName the normalized index name, optionally quoted
+     * @return true if the index exists and is valid, or false if the name is unused
+     * @throws SQLException if the index is invalid, the name belongs to another relation,
+     *                      or a database error occurs
+     */
+    static boolean validIndexExists(Connection conn, String schemaName, String tableName, String indexName) throws SQLException {
+        var sql = """
+                SELECT i.indisvalid, t.relname AS tablename
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                LEFT JOIN pg_index i ON i.indexrelid = c.oid
+                LEFT JOIN pg_class t ON t.oid = i.indrelid
+                WHERE n.nspname = ? AND c.relname = ?
+                """;
+        try (var stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, removeQuotes(schemaName));
+            stmt.setString(2, removeQuotes(indexName));
+            try (var rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    return false;
+                }
+                if (!removeQuotes(tableName).equals(rs.getString("tablename"))) {
+                    throw new SQLException("Index name %s.%s is already used by another relation".formatted(schemaName, indexName), "42P07");
+                }
+                if (!rs.getBoolean("indisvalid")) {
+                    throw new SQLException("Index %s.%s is INVALID; inspect and DROP INDEX CONCURRENTLY or REINDEX INDEX CONCURRENTLY before retrying"
+                            .formatted(schemaName, indexName), "55000");
+                }
+                return true;
+            }
+        }
+    }
+
+    /**
+     * Creates an index using the transaction or session lock strategy selected by the options.
+     *
+     * <p>Concurrent creation requires an auto-commit connection pinned to one PostgreSQL
+     * session. It releases its session lock and restores the previous lock timeout on exit.</p>
+     *
+     * @param conn the database connection
+     * @param schemaName the normalized schema name, optionally quoted
+     * @param tableName the normalized table name, optionally quoted
+     * @param indexName the normalized index name, optionally quoted
+     * @param sql the CREATE INDEX statement matching the supplied options
+     * @param option the index options selecting ordinary or concurrent creation
+     * @param lockTimeoutMs positive PostgreSQL lock wait timeout in milliseconds
+     * @return schema.indexName if created, or an empty string if a valid index already exists
+     * @throws SQLException if concurrent creation is requested inside a caller transaction,
+     *                      the existing index is invalid, or creation or cleanup fails
+     */
+    static String createIndexWithOptions(Connection conn, String schemaName, String tableName,
+                                         String indexName, String sql, IndexOption option, int lockTimeoutMs) throws SQLException {
+        var autoCommit = conn.getAutoCommit();
+        if (option.concurrently && !autoCommit) {
+            throw new SQLException("CREATE INDEX CONCURRENTLY requires autoCommit=true; use a separate connection outside the caller transaction", "25001");
         }
 
-        // create index
+        long lockKey = "%s.%s.%s".formatted(schemaName, tableName, indexName).hashCode();
+        if (!option.concurrently) {
+            // Preserve the existing no-op behavior inside a caller-owned transaction.
+            if (!autoCommit && validIndexExists(conn, schemaName, tableName, indexName)) {
+                return "";
+            }
+            return createOrdinaryIndex(conn, schemaName, tableName, indexName, sql, lockKey, lockTimeoutMs);
+        }
+        try (var lock = new ConcurrentIndexLock(conn, lockKey); var stmt = conn.createStatement()) {
+            lock.acquire(stmt, lockTimeoutMs);
+            if (validIndexExists(conn, schemaName, tableName, indexName)) {
+                return "";
+            }
+            stmt.execute(sql);
+            // IF NOT EXISTS alone can silently skip an INVALID index left by another creator.
+            requireValidIndex(conn, schemaName, tableName, indexName);
+            log.info("Index({}.{}) on table '{}.{}' created concurrently.", schemaName, indexName, schemaName, tableName);
+            return "%s.%s".formatted(schemaName, indexName);
+        }
+    }
+
+    /**
+     * Creates an ordinary index under a transaction-level advisory lock.
+     *
+     * <p>When entering with auto-commit enabled, failed lock attempts are rolled back before
+     * polling again so waiting snapshots do not block a concurrent index builder. When
+     * entering inside a caller transaction, lock contention fails immediately instead of
+     * retaining a snapshot while waiting or rolling back the transaction to retry. Creation
+     * commits on success, rolls back on failure, and restores the original auto-commit setting.</p>
+     *
+     * @param conn the database connection
+     * @param schemaName the normalized schema name, optionally quoted
+     * @param tableName the normalized table name, optionally quoted
+     * @param indexName the normalized index name, optionally quoted
+     * @param sql the ordinary CREATE INDEX statement
+     * @param lockKey the advisory lock key shared by creators of the same index
+     * @param lockTimeoutMs positive PostgreSQL lock wait timeout in milliseconds
+     * @return schema.indexName if created, or an empty string if a valid index already exists
+     * @throws SQLException with SQLSTATE 55P03 if the lock wait times out or a caller
+     *                      transaction encounters lock contention; also if the existing
+     *                      index is invalid or a database error occurs
+     */
+    static String createOrdinaryIndex(Connection conn, String schemaName, String tableName,
+                                      String indexName, String sql, long lockKey, int lockTimeoutMs) throws SQLException {
         var previousAutoCommit = conn.getAutoCommit();
-
-        var qualifiedName = "%s.%s.%s".formatted(schemaName, tableName, indexName);
-
-        // Generate the lock key by hashing the qualified name
-        long lockKey = qualifiedName.hashCode();
-
-        try(var stmt = conn.createStatement()) {
-
+        try (var stmt = conn.createStatement()) {
             conn.setAutoCommit(false);
-
-            acquireTransactionAdvisoryLock(stmt, lockKey, lockTimeoutMs);
-
-            if (indexExistsByName(conn, schemaName, tableName, indexName)) {
-                conn.commit();
-                return "";
-            }
-
-            // check type name uniqueness
-            var pgTypeSQL = """
-                    SELECT c.oid, c.relname, n.nspname
-                    FROM pg_class c
-                    JOIN pg_namespace n ON n.oid = c.relnamespace
-                    WHERE c.relname = '%s'
-                      AND n.nspname = '%s'
-                    """.formatted(removeQuotes(indexName), removeQuotes(schemaName));
-
-            var typeExists = false;
-            try(var rs = stmt.executeQuery(pgTypeSQL)){
-                if (rs.next()) {
-                    typeExists = true;
+            // A blocking lock wait can retain an old snapshot needed by a concurrent
+            // builder. Roll back only our own failed lock attempts before polling again.
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(lockTimeoutMs);
+            while (true) {
+                stmt.execute("SET LOCAL lock_timeout = '%dms'".formatted(lockTimeoutMs));
+                boolean acquired;
+                try (var rs = stmt.executeQuery("SELECT pg_try_advisory_xact_lock(%d)".formatted(lockKey))) {
+                    rs.next();
+                    acquired = rs.getBoolean(1);
                 }
+                if (acquired) {
+                    break;
+                }
+                if (!previousAutoCommit) {
+                    throw new SQLException("Index advisory lock is busy; cannot wait inside a caller transaction. "
+                            + "Retry index creation using autoCommit=true outside the caller transaction", "55P03");
+                }
+                conn.rollback();
+                waitForIndexLock(deadline, lockTimeoutMs);
             }
-
-            if(typeExists){
-                // type name already exists. do nothing and return
+            if (validIndexExists(conn, schemaName, tableName, indexName)) {
                 conn.commit();
                 return "";
             }
-
-            var indexMethod = getIndexMethod(indexOption);
-            var jsonPathExpression = buildIndexExpression(fields, indexOption);
-
-            var createIndexSQL = """
-                    CREATE %s INDEX IF NOT EXISTS %s
-                      ON %s.%s USING %s (%s);
-                    """
-                    .formatted(indexOption.unique ? "UNIQUE" : "", indexName, schemaName, tableName, indexMethod, jsonPathExpression);
-
-            stmt.execute(createIndexSQL);
-            if (log.isInfoEnabled()) {
-                log.info("Index({}) on column '{}' with fields '{}' of table '{}.{}' created successfully.", indexName, DATA, joinedFieldNames, schemaName, tableName);
-            }
-
+            stmt.execute(sql);
+            requireValidIndex(conn, schemaName, tableName, indexName);
             conn.commit();
+            log.info("Index({}.{}) on table '{}.{}' created successfully.", schemaName, indexName, schemaName, tableName);
+            return "%s.%s".formatted(schemaName, indexName);
         } catch (SQLException e) {
-            // Roll back the transaction if an error occurs
-            if (conn != null) {
+            try {
                 conn.rollback();
+            } catch (SQLException rollbackError) {
+                e.addSuppressed(rollbackError);
             }
-            var message = e.getMessage();
-            if(StringUtils.contains(message, "pg_type_typname_nsp_index")
-                    && StringUtils.contains(message, "duplicate key value violates unique constraint") ) {
-                log.warn("index type name {}.{}.{} already exist. skip index creation. msg:{}", schemaName, tableName, indexName, e.getMessage());
-            } else {
-                throw e;
-            }
+            throw e;
         } finally {
             conn.setAutoCommit(previousAutoCommit);
         }
+    }
 
-        return "%s.%s".formatted(schemaName, indexName);
+    /**
+     * Pauses between nonblocking lock attempts while honoring the deadline and interruption.
+     *
+     * @param deadline the lock wait deadline measured using {@link System#nanoTime()}
+     * @param lockTimeoutMs the configured timeout in milliseconds, included in timeout errors
+     * @throws SQLException with SQLSTATE 55P03 if the deadline has expired, or 57014 if
+     *                      interrupted; interruption preserves the thread's interrupt status
+     */
+    static void waitForIndexLock(long deadline, int lockTimeoutMs) throws SQLException {
+        long remaining = deadline - System.nanoTime();
+        if (remaining <= 0) {
+            throw new SQLException("Timed out waiting for index advisory lock after " + lockTimeoutMs + "ms", "55P03");
+        }
+        try {
+            Thread.sleep(Math.min(25, Math.max(1, TimeUnit.NANOSECONDS.toMillis(remaining))));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new SQLException("Interrupted waiting for index advisory lock", "57014", e);
+        }
+    }
+
+    /**
+     * Verifies that a successful DDL execution left a valid index on the expected table.
+     *
+     * @param conn the database connection
+     * @param schemaName the normalized schema name, optionally quoted
+     * @param tableName the normalized table name, optionally quoted
+     * @param indexName the normalized index name, optionally quoted
+     * @throws SQLException if the index is missing or invalid, the name belongs to another
+     *                      relation, or a database error occurs
+     */
+    static void requireValidIndex(Connection conn, String schemaName, String tableName, String indexName) throws SQLException {
+        if (!validIndexExists(conn, schemaName, tableName, indexName)) {
+            throw new SQLException("Index creation did not produce index %s.%s".formatted(schemaName, indexName));
+        }
+    }
+
+    /**
+     * A session lock survives the separate transactions used by CREATE INDEX CONCURRENTLY.
+     * Never commit, roll back, or change autoCommit on the caller's connection.
+     */
+    private static final class ConcurrentIndexLock implements AutoCloseable {
+        private final Connection conn;
+        private final long lockKey;
+        private final String previousLockTimeout;
+        private boolean acquired;
+
+        /** Save session state before changing any settings or acquiring the lock. */
+        private ConcurrentIndexLock(Connection conn, long lockKey) throws SQLException {
+            this.conn = conn;
+            this.lockKey = lockKey;
+            try (var stmt = conn.createStatement(); var rs = stmt.executeQuery("SHOW lock_timeout")) {
+                rs.next();
+                this.previousLockTimeout = rs.getString(1);
+            }
+        }
+
+        /** Acquire the session lock without retaining an old snapshot while waiting. */
+        private void acquire(Statement stmt, int lockTimeoutMs) throws SQLException {
+            setLockTimeout(lockTimeoutMs + "ms");
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(lockTimeoutMs);
+            while (true) {
+                // A blocking SELECT pg_advisory_lock can itself retain a snapshot needed by
+                // CREATE INDEX CONCURRENTLY. Each failed try must end its auto-commit statement.
+                try (var rs = stmt.executeQuery("SELECT pg_try_advisory_lock(%d)".formatted(lockKey))) {
+                    rs.next();
+                    acquired = rs.getBoolean(1);
+                }
+                if (acquired) {
+                    return;
+                }
+                waitForIndexLock(deadline, lockTimeoutMs);
+            }
+        }
+
+        /** Apply a session setting using a bound parameter, including when restoring it. */
+        private void setLockTimeout(String timeout) throws SQLException {
+            try (var stmt = conn.prepareStatement("SELECT set_config('lock_timeout', ?, false)")) {
+                stmt.setString(1, timeout);
+                stmt.execute();
+            }
+        }
+
+        /** Release only our lock, restore the timeout, and discard the connection on failure. */
+        @Override
+        public void close() throws SQLException {
+            SQLException failure = null;
+            if (acquired) {
+                try (var stmt = conn.createStatement()) {
+                    stmt.execute("SELECT pg_advisory_unlock(%d)".formatted(lockKey));
+                } catch (SQLException e) {
+                    failure = e;
+                }
+            }
+            try {
+                setLockTimeout(previousLockTimeout);
+            } catch (SQLException e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+            if (failure != null) {
+                // A pool must not reuse a session whose lock or setting could not be cleaned up.
+                try {
+                    conn.abort(Runnable::run);
+                } catch (SQLException e) {
+                    failure.addSuppressed(e);
+                }
+                throw failure;
+            }
+        }
     }
 
     /**
