@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-    <version>0.8.38</version>
+<version>0.8.39</version>
 </dependency>
 ```
 
@@ -797,7 +797,7 @@ try (var conn = cosmos.getDataSource().getConnection()) {
 }
 ```
 
-The timeout is set with PostgreSQL `SET LOCAL` inside each initialization transaction. It
+For ordinary index creation, the timeout is set with PostgreSQL `SET LOCAL` inside each initialization transaction. It
 expires on commit or rollback and does not change the pooled connection's session setting.
 It limits **each lock acquisition**, including locks needed by index DDL; it is not a total
 transaction or connection-pool wait deadline. If a lock wait times out, initialization rolls
@@ -832,6 +832,61 @@ Notes:
 * `GIN` currently supports single-field typed indexes only.
 * `unique + GIN` is not supported.
 * `GIN` typed indexes use the JSONB expression directly, so `fieldType(...)` casts are not supported in this mode.
+
+### Optional PostgreSQL concurrent index creation
+
+`IndexOption.concurrently` defaults to `false`; omitting it or using `.concurrently(false)`
+keeps ordinary index creation. To allow writes during a build on an existing table, opt in:
+
+```java
+try (var conn = ((PostgresImpl) cosmos).getDataSource().getConnection()) {
+    // Requires autoCommit=true and the same PostgreSQL session for the entire call.
+    TableUtil.createIndexIfNotExist4SingleField(
+            conn, "Database1", "Collection1", new PGIndexField("targetIdList"),
+            new IndexOption().gin().concurrently(true));
+
+    TableUtil.createIndexIfNotExist4MultiFields(
+            conn, "Database1", "Collection1",
+            List.of(new PGIndexField("departmentId"), new PGIndexField("employeeId")),
+            IndexOption.unique(true).concurrently(true));
+}
+```
+
+The single-field, composite-field, and deprecated `createIndexIfNotExists` APIs honor the
+option. Index names, expressions, types, uniqueness and supported BTREE/GIN combinations
+are unchanged. This option does not configure the raw SQL API or automatic table indexes.
+
+* PostgreSQL forbids `CREATE INDEX CONCURRENTLY` inside a transaction block. The method
+  rejects `autoCommit=false` with SQLSTATE `25001`, including when the index already exists;
+  it never commits or rolls back the caller's transaction. Obtain a separate connection
+  outside application transactions and do not issue manual `BEGIN` on it.
+* A session-level advisory lock coordinates creators of the same index, including ordinary
+  typed index creators. Use a direct connection or session pooling. PgBouncer transaction
+  or statement pooling is unsupported because the session lock and settings must stay on
+  the same server connection throughout the call.
+* The timeout overload (30 seconds by default) applies to each lock acquisition, including
+  the advisory lock and index DDL. Concurrent creation temporarily changes the session's
+  `lock_timeout` and restores its previous value, releasing the advisory lock on success,
+  skip, or failure. Cleanup errors are propagated; a connection whose cleanup fails is
+  aborted to prevent pool reuse. There is no automatic retry.
+* Errors from the build are propagated. A failed concurrent build can leave an `INVALID`
+  index. Both ordinary and concurrent `IndexOption` APIs reject an existing invalid index
+  with SQLSTATE `55000`, rather than treating its name as a successful build. Inspect the
+  failure and fix its cause (for example, duplicate values), then explicitly drop the index
+  outside a transaction and retry, or use PostgreSQL's `REINDEX INDEX CONCURRENTLY` where
+  applicable. The library does not automatically drop or repair indexes.
+
+```sql
+-- Use the exact quoted schema/index name from the error, after investigating the failure.
+DROP INDEX CONCURRENTLY "Database1"."idx_Collection1_targetIdList_1";
+```
+
+Concurrent creation is synchronous: the call waits for PostgreSQL to finish, and can wait
+for existing writers or older transactions. It may take longer and use more resources than
+ordinary creation. Callers still schedule builds and limit task concurrency; PostgreSQL
+permits only one concurrent build per table at a time. See the
+[PostgreSQL concurrent index documentation](https://www.postgresql.org/docs/current/sql-createindex.html#SQL-CREATEINDEX-CONCURRENTLY)
+for further restrictions and recovery details.
 
 ### $ELEM_MATCH queries to match fields in  array type field
 

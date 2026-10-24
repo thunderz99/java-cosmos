@@ -12,6 +12,12 @@ public class IndexOption {
     public boolean unique = false;
 
     /**
+     * Build the index with CONCURRENTLY. Default is false.
+     * Requires an auto-commit connection pinned to one PostgreSQL session for the whole call.
+     */
+    public boolean concurrently = false;
+
+    /**
      * PostgreSQL index method. default is BTREE.
      */
     public IndexMethod indexMethod = IndexMethod.BTREE;
@@ -44,6 +50,17 @@ public class IndexOption {
      */
     public IndexOption fieldType(String fieldType) {
         this.fieldType = fieldType;
+        return this;
+    }
+
+    /**
+     * Choose concurrent index creation without changing the index definition.
+     *
+     * @param concurrently whether to use CREATE INDEX CONCURRENTLY
+     * @return this option
+     */
+    public IndexOption concurrently(boolean concurrently) {
+        this.concurrently = concurrently;
         return this;
     }
 
