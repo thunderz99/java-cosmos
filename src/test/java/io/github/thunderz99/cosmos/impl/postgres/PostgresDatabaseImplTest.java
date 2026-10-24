@@ -4342,9 +4342,12 @@ public class PostgresDatabaseImplTest {
             var thirtyDaysInSeconds = 30 * 24 * 60 * 60;
             Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", thirtyDaysInSeconds));
 
+            var before = System.currentTimeMillis();
             var expireAt = mdb.addExpireAt(map);
+            var after = System.currentTimeMillis();
 
-            assertThat(expireAt).isNotNull().isBetween(Instant.now().plusSeconds(thirtyDaysInSeconds), Instant.now().plusSeconds(thirtyDaysInSeconds + 1));
+            assertThat(expireAt).isNotNull();
+            assertThat(expireAt.getTime()).isBetween(before + 1000L * thirtyDaysInSeconds, after + 1000L * thirtyDaysInSeconds);
             assertThat(map.get(PostgresDatabaseImpl.EXPIRE_AT)).isEqualTo(expireAt.getTime()/1000L);
 
         }
@@ -4354,9 +4357,12 @@ public class PostgresDatabaseImplTest {
             var longPeriod = (Integer.MAX_VALUE - 1) / 1000;
             Map<String, Object> map = new LinkedHashMap<>(Map.of("id", "id1", "ttl", longPeriod));
 
+            var before = System.currentTimeMillis();
             var expireAt = mdb.addExpireAt(map);
+            var after = System.currentTimeMillis();
 
-            assertThat(expireAt).isNotNull().isBetween(Instant.now().plusSeconds(longPeriod), Instant.now().plusSeconds(longPeriod + 1));
+            assertThat(expireAt).isNotNull();
+            assertThat(expireAt.getTime()).isBetween(before + 1000L * longPeriod, after + 1000L * longPeriod);
             assertThat(map.get(PostgresDatabaseImpl.EXPIRE_AT)).isEqualTo(expireAt.getTime()/1000L);
 
         }
