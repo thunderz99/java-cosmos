@@ -27,6 +27,7 @@ class PGMultiBucketUtilTest {
                 .contains("COUNT(*) FILTER (WHERE (data->'fullName'->>'last' = @param001_fullName__last)) AS \"b0_matched\"")
                 .contains("AVG(NULLIF(data->>'age','')::numeric) FILTER (WHERE ((data->'fullName'->>'last' = @param001_fullName__last)) AND jsonb_typeof(data->'age') = 'number') AS \"b0\"")
                 .contains("AS \"b1_matched\"")
+                .contains("data->'skills' @> ANY(ARRAY[@param002_skills__0::jsonb, @param002_skills__1::jsonb]::jsonb[])")
                 .contains("FROM schema1.table1")
                 .endsWith("WHERE (data->>'mail' LIKE @param000_mail)")
                 .doesNotContain("LIMIT 1");

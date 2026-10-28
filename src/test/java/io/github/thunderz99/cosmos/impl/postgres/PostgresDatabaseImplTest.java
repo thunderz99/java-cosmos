@@ -2624,6 +2624,108 @@ public class PostgresDatabaseImplTest {
     }
 
     @Test
+    void array_contains_any_should_preserve_types_and_empty_values() throws Exception {
+        var escaped = "quote\" slash\\ apostrophe'";
+        var integerId = "arrayContainsAny_integer";
+        var stringId = "arrayContainsAny_string";
+        var escapedId = "arrayContainsAny_escaped";
+        var emptyId = "arrayContainsAny_empty";
+        var missingId = "arrayContainsAny_missing";
+        var nullId = "arrayContainsAny_null";
+        var ids = List.of(integerId, stringId, escapedId, emptyId, missingId, nullId);
+
+        try {
+            db.upsert(host, Map.of("id", integerId, "values", List.of(3),
+                    "tags", List.of(Map.of("info", Map.of("id", 3)))), "Users");
+            db.upsert(host, Map.of("id", stringId, "values", List.of("3"),
+                    "tags", List.of(Map.of("info", Map.of("id", "3")))), "Users");
+            db.upsert(host, Map.of("id", escapedId, "values", List.of(escaped),
+                    "tags", List.of(Map.of("info", Map.of("id", escaped)))), "Users");
+            db.upsert(host, Map.of("id", emptyId, "values", List.of(), "tags", List.of()), "Users");
+            db.upsert(host, Map.of("id", missingId), "Users");
+            var nullDocument = new LinkedHashMap<String, Object>();
+            nullDocument.put("id", nullId);
+            nullDocument.put("values", null);
+            nullDocument.put("tags", null);
+            db.upsert(host, nullDocument, "Users");
+
+            for (var key : List.of("values ARRAY_CONTAINS_ANY", "tags ARRAY_CONTAINS_ANY info.id")) {
+                assertArrayContainsAnyMatches(key, ids, 3, integerId);
+                assertArrayContainsAnyMatches(key, ids, List.of("3"), stringId);
+                assertArrayContainsAnyMatches(key, ids, List.of(3, "3", "miss"), integerId, stringId);
+                assertArrayContainsAnyMatches(key, ids, escaped, escapedId);
+                assertArrayContainsAnyMatches(key, ids, List.of("miss"));
+                assertArrayContainsAnyMatches(key, ids, List.of());
+            }
+        } finally {
+            for (var id : ids) {
+                db.delete(host, id, "Users");
+            }
+        }
+    }
+
+    /**
+     * Verify matching documents and COUNT through the normal parameter binding path.
+     */
+    void assertArrayContainsAnyMatches(String key, List<String> ids, Object candidates,
+                                      String... expectedIds) throws Exception {
+        var condition = Condition.filter("id", ids, key, candidates);
+        assertThat(db.find(host, condition, "Users").toMap()).extracting(item -> item.get("id"))
+                .containsExactlyInAnyOrder((Object[]) expectedIds);
+        assertThat(db.count(host, condition, "Users")).isEqualTo(expectedIds.length);
+    }
+
+    @Test
+    void array_contains_any_join_should_handle_large_lists_in_filter_and_projection() throws Exception {
+        var id = "arrayContainsAny_largeJoin";
+        var candidates = new ArrayList<Object>();
+        IntStream.range(0, 74).forEach(i -> candidates.add("miss-" + i));
+        candidates.add(11);
+
+        try {
+            db.upsert(host, Map.of("id", id, "rooms", List.of(
+                    Map.of("name", "number", "no", List.of(11),
+                            "tags", List.of(Map.of("info", Map.of("id", 11), "extra", true))),
+                    Map.of("name", "string", "no", List.of("11"),
+                            "tags", List.of(Map.of("info", Map.of("id", "11")))),
+                    Map.of("name", "miss", "no", List.of(99), "tags", List.of()))), "Users");
+
+            for (var key : List.of("rooms.no ARRAY_CONTAINS_ANY", "rooms.tags ARRAY_CONTAINS_ANY info.id")) {
+                for (var returnAll : List.of(true, false)) {
+                    for (var projectFields : List.of(true, false)) {
+                        var condition = Condition.filter("id", id, key, candidates)
+                                .join(Set.of("rooms")).returnAllSubArray(returnAll);
+                        if (projectFields) {
+                            condition.fields("id", "rooms");
+                        }
+
+                        var results = db.find(host, condition, "Users").toMap();
+                        assertThat(results).hasSize(1);
+                        var rooms = JsonUtil.toListOfMap(JsonUtil.toJson(results.get(0).get("rooms")));
+                        assertThat(rooms).extracting(room -> room.get("name"))
+                                .containsExactlyElementsOf(returnAll ? List.of("number", "string", "miss") : List.of("number"));
+                        assertThat(db.count(host, condition, "Users")).isEqualTo(1);
+                    }
+                }
+
+                var emptyCondition = Condition.filter("id", id, key, List.of())
+                        .join(Set.of("rooms")).returnAllSubArray(false);
+                assertThat(db.find(host, emptyCondition, "Users").toMap()).isEmpty();
+            }
+
+            var iteratorCondition = Condition.filter("id", id, "rooms.tags ARRAY_CONTAINS_ANY info.id", candidates)
+                    .join(Set.of("rooms")).returnAllSubArray(false);
+            var iterator = db.findToIterator(host, iteratorCondition, "Users").getMapIterator();
+            assertThat(iterator.hasNext()).isTrue();
+            assertThat(JsonUtil.toListOfMap(JsonUtil.toJson(iterator.next().get("rooms"))))
+                    .extracting(room -> room.get("name")).containsExactly("number");
+            assertThat(iterator.hasNext()).isFalse();
+        } finally {
+            db.delete(host, id, "Users");
+        }
+    }
+
+    @Test
     void find_should_work_with_join_using_array_contains_any() throws Exception {
 
         var id1 = "joinTestArrayContainsAnyId";

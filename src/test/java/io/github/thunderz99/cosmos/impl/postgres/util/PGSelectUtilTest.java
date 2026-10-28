@@ -5,10 +5,42 @@ import io.github.thunderz99.cosmos.condition.Condition;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class PGSelectUtilTest {
+
+    @Test
+    void join_projection_should_keep_large_any_parameter_names_distinct() {
+        var candidates = IntStream.range(0, 75).mapToObj(i -> "org-" + i).collect(Collectors.toList());
+        for (var key : List.of("rooms.no ARRAY_CONTAINS_ANY", "rooms.tags ARRAY_CONTAINS_ANY info.id")) {
+            var condition = Condition.filter(key, candidates).join(Set.of("rooms")).returnAllSubArray(false);
+            var query = PGConditionUtil.toQuerySpec("schema1", condition, "table1");
+            var placeholders = Pattern.compile("@[A-Za-z0-9_]+").matcher(query.queryText).results()
+                    .map(match -> match.group()).collect(Collectors.toList());
+
+            assertThat(query.params).hasSize(150);
+            assertThat(placeholders).containsExactlyInAnyOrderElementsOf(query.params.stream()
+                    .map(parameter -> parameter.name).collect(Collectors.toList()));
+            assertThat(query.queryText).doesNotContain(" OR ");
+            assertThat(query.queryText.split("@> ANY", -1)).hasSize(3);
+        }
+    }
+
+    @Test
+    void join_projection_should_keep_empty_any_false_in_both_clauses() {
+        var condition = Condition.filter("rooms.no ARRAY_CONTAINS_ANY", List.of())
+                .join(Set.of("rooms")).returnAllSubArray(false);
+        var query = PGConditionUtil.toQuerySpec("schema1", condition, "table1");
+
+        assertThat(query.queryText.split("1=0", -1)).hasSize(3);
+        assertThat(query.queryText).doesNotContain("ANY(");
+        assertThat(query.params).isEmpty();
+    }
 
 
     @Test
