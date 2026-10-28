@@ -2,6 +2,8 @@ package io.github.thunderz99.cosmos.impl.postgres.util;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import io.github.thunderz99.cosmos.condition.Condition;
@@ -200,7 +202,9 @@ public class PGSelectUtil {
 
                     var newParam = new CosmosSqlParameter(newParamName, param.getValue());
                     params4Select.add(newParam);
-                    subQueryText = StringUtils.replace(subQueryText, paramName, newParamName);
+                    // Match a complete placeholder: __1 must not rename __10 in large ANY lists.
+                    subQueryText = subQueryText.replaceAll(Pattern.quote(paramName) + "(?![A-Za-z0-9_])",
+                            Matcher.quoteReplacement(newParamName));
                 }
 
                 whereSubQueryList.add(subQueryText);

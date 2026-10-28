@@ -99,7 +99,7 @@ public class PGSubQueryExpression4Join implements Expression {
          *  // EXISTS (
          *       SELECT 1
          *       FROM jsonb_array_elements(data->'rooms') AS j1
-         *       WHERE (j1->'no' ??| @param000_no)
+         *       WHERE (j1->'no' @> ANY(ARRAY[@param000_no__0::jsonb, @param000_no__1::jsonb]::jsonb[]))
          *     )
          */
 
@@ -107,7 +107,9 @@ public class PGSubQueryExpression4Join implements Expression {
          *  // EXISTS (
          *       SELECT 1
          *       FROM jsonb_array_elements(data->'floors') AS j2
-         *       WHERE (j2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR data->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+         *       WHERE (j2->'rooms' @> ANY(ARRAY[
+         *         jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)),
+         *         jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1))]::jsonb[]))
          *     )
          */
 
