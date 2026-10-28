@@ -93,18 +93,23 @@ public class PGSubQueryExpression implements Expression {
      * <pre>
      * INPUT: "items", "", "@items_009", ["id001", "id002", "id005"], params
      * OUTPUT:
-     * " data->'items' ??| @items_009"
+     * " (data->'items' @> ANY(ARRAY[@items_009__0::jsonb, @items_009__1::jsonb,
+     *                         @items_009__2::jsonb]::jsonb[]))"
      *
      *
      * INPUT: "items", "id", "@items_id_010", ["id001", "id002", "id005"], params
      * OUTPUT:
-     * "  (data->'items' @> jsonb_build_array(jsonb_build_object('name', @tags_name_010__0)
-     * OR data->'items' @> jsonb_build_array(jsonb_build_object('name', @tags_name_010__1)
-     * OR data->'items' @> jsonb_build_array(jsonb_build_object('name', @tags_name_010__2)
-     * "
+     * " (data->'items' @> ANY(ARRAY[
+     *      jsonb_build_array(jsonb_build_object('id', @items_id_010__0)),
+     *      jsonb_build_array(jsonb_build_object('id', @items_id_010__1)),
+     *      jsonb_build_array(jsonb_build_object('id', @items_id_010__2))]::jsonb[]))"
      *
      *  and add paramsValue into params
      * </pre>
+     *
+     * <p>Evaluate the JSON field once per predicate, including when the field is under a
+     * join alias. Repeating the field in OR branches would repeatedly fetch and decompress
+     * the containing document. ANY still compares candidates using JSONB containment.</p>
      *
      * @param joinKey e.g. items
      * @param filterKey e.g. id
@@ -134,68 +139,28 @@ public class PGSubQueryExpression implements Expression {
             return "(1=0)";
         }
 
-        /** not work for integers, comment out
-        if(StringUtils.isEmpty(filterKey)){
-
-            // paramValue contains only 1 element, do a ARRAY_CONTAINS 1 element query
-            if(paramValue.size() == 1){
-                // Condition.filter("items ARRAY_CONTAINS_ANY", List.of("A"))
-                // INPUT: "items", "", "@items_009", ["id001"], params
-                // OUTPUT: " data->'items' ?? @items_009"
-                var singleValue = paramValue.iterator().next();
-                params.add(Condition.createSqlParameter(paramName, String.valueOf(singleValue)));
-                var format = (singleValue instanceof String) ? " (%s @> \"%s\"::jsonb)" : " (%s @> %s::jsonb)";
-                return String.format(format,
-                        PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), paramName);
-            }
-
-            // paramValue is a collection with multiple elements
-
-            // Condition.filter("items ARRAY_CONTAINS_ANY", List.of("A","B"))
-            // INPUT: "items", "", "@items_009", ["id001", "id002", "id005"], params
-            // OUTPUT: " data->'items' @> @items_009::jsonb"
-            // ??| only works for string arrays
-            params.add(Condition.createSqlParameter(paramName, JsonUtil.toJson(paramValue)));
-            return String.format(" (%s @> %s::jsonb)",
-                    PGKeyUtil.getFormattedKeyWithAlias(joinKey, selectAlias, paramValue), paramName);
-        }
-         */
-
-        // Condition.filter("items ARRAY_CONTAINS_ANY id", List.of("A","B"))
-        // INPUT: "items", "id", "@items_id_010", ["id001", "id002", "id005"], params
-        // OUTPUT:
-        // data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_id_010__0)
-        // OR data->'items' @> jsonb_build_array(jsonb_build_object('name', @items_id_010__1)
-
         var index = 0;
-        var subQueries = new ArrayList<String>();
+        var candidates = new ArrayList<String>();
 
-
-        for(var value : paramValue){
-            // break down the list values to multiple single value
+        for (var value : paramValue) {
             var subParamName = String.format("%s__%d", paramName, index);
 
-            if(StringUtils.isEmpty(filterKey)) {
-                //simple key
-                if(value instanceof Integer) {
-                    //for integer value
-                    params.add(Condition.createSqlParameter(subParamName, String.valueOf(value)));
-                } else {
-                    //for str value
-                    params.add(Condition.createSqlParameter(subParamName, "\"%s\"".formatted(value)));
-                }
-                subQueries.add(String.format("%s @> %s::jsonb", PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), subParamName));
+            if (StringUtils.isEmpty(filterKey)) {
+                // Preserve the existing conversion: Integer is numeric, other values are strings.
+                // Serialize strings so quotes and backslashes remain valid JSON parameter values.
+                var jsonValue = JsonUtil.toJson(value instanceof Integer ? value : String.valueOf(value));
+                params.add(Condition.createSqlParameter(subParamName, jsonValue));
+                candidates.add(subParamName + "::jsonb");
             } else {
-                //nested key
                 params.add(Condition.createSqlParameter(subParamName, value));
-                subQueries.add(String.format("%s @> %s", PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), buildNestedJsonbExpression(filterKey, subParamName)));
+                candidates.add(buildNestedJsonbExpression(filterKey, subParamName));
             }
-
 
             index++;
         }
 
-        return String.format(" (%s)", String.join(" OR ", subQueries));
+        return String.format(" (%s @> ANY(ARRAY[%s]::jsonb[]))",
+                PGKeyUtil.getFormattedKey4JsonWithAlias(joinKey, selectAlias), String.join(", ", candidates));
 
     }
 
