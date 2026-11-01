@@ -132,6 +132,13 @@ AND EXISTS (
 
 for returnAllSubArray=false, and both "name" and "no" in the same joinBaseKey("floors")
 
+`ARRAY_CONTAINS_ANY` uses `@> ANY(ARRAY[...]::jsonb[])` so each predicate reads
+its array field once, rather than once per candidate. The WHERE clause and the
+filtered SELECT clause reuse the same compiler with separate aliases and parameters.
+They retain their existing behavior: WHERE checks each condition with EXISTS,
+while SELECT keeps sub-array elements that satisfy both conditions. If none satisfy
+both, the existing COALESCE fallback returns the original sub-array.
+
 ```java
 
 var cond = Condition.filter(
@@ -150,10 +157,14 @@ SELECT id, jsonb_set(
       '{"floors"}',
       COALESCE(
          (
-       SELECT jsonb_agg(s1)
-       FROM jsonb_array_elements(data->'floors') AS s1
-       WHERE (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)) OR s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__1__for_select)))
-       AND (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param003_rooms__no__0__for_select)) OR s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param003_rooms__name__1__for_select)))
+       SELECT jsonb_agg(s2)
+       FROM jsonb_array_elements(data->'floors') AS s2
+       WHERE (s2->'rooms' @> ANY(ARRAY[
+         jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__0__for_select)),
+         jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__1__for_select))]::jsonb[]))
+       AND (s2->'rooms' @> ANY(ARRAY[
+         jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__0__for_select)),
+         jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__1__for_select))]::jsonb[]))
      ),
         data->'floors'
       )
@@ -163,12 +174,16 @@ SELECT id, jsonb_set(
      WHERE EXISTS (
         SELECT 1
         FROM jsonb_array_elements(data->'floors') AS j0
-        WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+        WHERE (j0->'rooms' @> ANY(ARRAY[
+          jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)),
+          jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1))]::jsonb[]))
       ) AND EXISTS (
         SELECT 1
-        FROM jsonb_array_elements(data->'floors') AS j2
-        WHERE (j2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param002_rooms__no__0)) OR j2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param002_rooms__no__1)))
-      ) OFFSET 0 LIMIT 100"
+        FROM jsonb_array_elements(data->'floors') AS j1
+        WHERE (j1->'rooms' @> ANY(ARRAY[
+          jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__0)),
+          jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__1))]::jsonb[]))
+      ) OFFSET 0 LIMIT 100
 ```
 
 

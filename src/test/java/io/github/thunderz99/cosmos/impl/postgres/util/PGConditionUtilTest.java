@@ -263,8 +263,7 @@ class PGConditionUtilTest {
         assertThat(querySpec.getQueryText())
                 .contains("FROM jsonb_array_elements(data->'monthWarningList') AS j2")
                 .contains("(NULLIF(j2->>'month','')::numeric = @param002_month)")
-                .contains("j2->'monthWarningTypes' @> @param003_monthWarningTypes__0::jsonb")
-                .contains("j2->'monthWarningTypes' @> @param003_monthWarningTypes__1::jsonb")
+                .contains("j2->'monthWarningTypes' @> ANY(ARRAY[@param003_monthWarningTypes__0::jsonb, @param003_monthWarningTypes__1::jsonb]::jsonb[])")
                 .contains("(data->'overtimeHours'->>'warningType' = ANY(@param004_overtimeHours__warningType))")
                 .contains("(data->'exceedingCount'->>'warningType' = ANY(@param005_exceedingCount__warningType))")
                 .doesNotContain("data->'$ELEM_MATCH'");
@@ -303,7 +302,7 @@ class PGConditionUtilTest {
         var expectedSQL = """
                 SELECT *
                  FROM schema1.table1
-                 WHERE (data->'targetIdList' @> @param000_targetIdList__0::jsonb OR data->'targetIdList' @> @param000_targetIdList__1::jsonb) OFFSET 0 LIMIT 100
+                 WHERE (data->'targetIdList' @> ANY(ARRAY[@param000_targetIdList__0::jsonb, @param000_targetIdList__1::jsonb]::jsonb[])) OFFSET 0 LIMIT 100
                 """;
         assertThat(querySpec.getQueryText().trim()).isEqualTo(expectedSQL.trim());
         assertThat(querySpec.getParameters()).containsExactly(
@@ -806,7 +805,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE (data->'rooms' @> @param000_rooms__0::jsonb OR data->'rooms' @> @param000_rooms__1::jsonb) OFFSET 0 LIMIT 100
+                     WHERE (data->'rooms' @> ANY(ARRAY[@param000_rooms__0::jsonb, @param000_rooms__1::jsonb]::jsonb[])) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(2);
@@ -823,7 +822,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE (data->'rooms' @> @param000_rooms__0::jsonb OR data->'rooms' @> @param000_rooms__1::jsonb) OFFSET 0 LIMIT 100
+                     WHERE (data->'rooms' @> ANY(ARRAY[@param000_rooms__0::jsonb, @param000_rooms__1::jsonb]::jsonb[])) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(2);
@@ -841,7 +840,7 @@ class PGConditionUtilTest {
             var expected = """
                     SELECT *
                      FROM schema1.table1
-                     WHERE (data->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param000_rooms__no__0)) OR data->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param000_rooms__no__1))) OFFSET 0 LIMIT 100
+                     WHERE (data->'rooms' @> ANY(ARRAY[jsonb_build_array(jsonb_build_object('no', @param000_rooms__no__0)), jsonb_build_array(jsonb_build_object('no', @param000_rooms__no__1))]::jsonb[])) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
             assertThat(q.getParameters()).hasSize(2);
@@ -916,8 +915,8 @@ class PGConditionUtilTest {
                          (
                        SELECT jsonb_agg(s2)
                        FROM jsonb_array_elements(data->'floors') AS s2
-                       WHERE ( (s2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__0__for_select)) OR s2->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__1__for_select)))
-                       AND (s2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__0__for_select)) OR s2->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__1__for_select))))
+                       WHERE ( (s2->'rooms' @> ANY(ARRAY[jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__0__for_select)), jsonb_build_array(jsonb_build_object('name', @param002_rooms__name__1__for_select))]::jsonb[]))
+                       AND (s2->'rooms' @> ANY(ARRAY[jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__0__for_select)), jsonb_build_array(jsonb_build_object('no', @param003_rooms__no__1__for_select))]::jsonb[])))
                      ),
                         data->'floors'
                       )
@@ -927,11 +926,11 @@ class PGConditionUtilTest {
                      WHERE EXISTS (
                        SELECT 1
                        FROM jsonb_array_elements(data->'floors') AS j0
-                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                       WHERE (j0->'rooms' @> ANY(ARRAY[jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)), jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1))]::jsonb[]))
                      ) AND EXISTS (
                        SELECT 1
                        FROM jsonb_array_elements(data->'floors') AS j1
-                       WHERE (j1->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__0)) OR j1->'rooms' @> jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__1)))
+                       WHERE (j1->'rooms' @> ANY(ARRAY[jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__0)), jsonb_build_array(jsonb_build_object('no', @param001_rooms__no__1))]::jsonb[]))
                      ) OFFSET 0 LIMIT 100
                     """;
 
@@ -1066,7 +1065,7 @@ class PGConditionUtilTest {
                      WHERE EXISTS (
                        SELECT 1
                        FROM jsonb_array_elements(data->'rooms') AS j0
-                       WHERE (j0->'no' @> @param000_no__0::jsonb OR j0->'no' @> @param000_no__1::jsonb)
+                       WHERE (j0->'no' @> ANY(ARRAY[@param000_no__0::jsonb, @param000_no__1::jsonb]::jsonb[]))
                      ) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
@@ -1087,7 +1086,7 @@ class PGConditionUtilTest {
                      WHERE EXISTS (
                        SELECT 1
                        FROM jsonb_array_elements(data->'floors') AS j0
-                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                       WHERE (j0->'rooms' @> ANY(ARRAY[jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)), jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1))]::jsonb[]))
                      ) OFFSET 0 LIMIT 100
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
@@ -1114,7 +1113,7 @@ class PGConditionUtilTest {
                          (
                        SELECT jsonb_agg(s1)
                        FROM jsonb_array_elements(data->'floors') AS s1
-                       WHERE ( (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)) OR s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__1__for_select))))
+                       WHERE ( (s1->'rooms' @> ANY(ARRAY[jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)), jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__1__for_select))]::jsonb[])))
                      ),
                         data->'floors'
                       )
@@ -1124,7 +1123,7 @@ class PGConditionUtilTest {
                      WHERE EXISTS (
                        SELECT 1
                        FROM jsonb_array_elements(data->'floors') AS j0
-                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                       WHERE (j0->'rooms' @> ANY(ARRAY[jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)), jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1))]::jsonb[]))
                      ) OFFSET 0 LIMIT 10
                     """;
             assertThat(q.getQueryText().trim()).isEqualTo(expected.trim());
@@ -1163,7 +1162,7 @@ class PGConditionUtilTest {
                          (
                        SELECT jsonb_agg(s1)
                        FROM jsonb_array_elements(data->'floors') AS s1
-                       WHERE ( (s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)) OR s1->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__1__for_select))))
+                       WHERE ( (s1->'rooms' @> ANY(ARRAY[jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__0__for_select)), jsonb_build_array(jsonb_build_object('name', @param001_rooms__name__1__for_select))]::jsonb[])))
                      ),
                         data->'floors'
                       )
@@ -1173,7 +1172,7 @@ class PGConditionUtilTest {
                      WHERE EXISTS (
                        SELECT 1
                        FROM jsonb_array_elements(data->'floors') AS j0
-                       WHERE (j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)) OR j0->'rooms' @> jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1)))
+                       WHERE (j0->'rooms' @> ANY(ARRAY[jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__0)), jsonb_build_array(jsonb_build_object('name', @param000_rooms__name__1))]::jsonb[]))
                      )
                     )
                     SELECT
