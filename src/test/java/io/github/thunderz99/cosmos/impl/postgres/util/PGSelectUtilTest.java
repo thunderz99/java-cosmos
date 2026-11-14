@@ -4,6 +4,7 @@ import com.google.common.collect.Sets;
 import io.github.thunderz99.cosmos.condition.Condition;
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -13,6 +14,67 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class PGSelectUtilTest {
+
+    @Test
+    void filtered_join_with_fields_should_materialize_even_for_small_projections() {
+        for (var count : List.of(1, 55)) {
+            var fields = IntStream.range(0, count).mapToObj(i -> "sheetContents.form.item" + i)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            fields.add("rooms");
+            var condition = Condition.filter("rooms.no", 1).join(Set.of("rooms"))
+                    .returnAllSubArray(false).fields(fields.toArray(String[]::new))
+                    .offset(2).limit(3);
+            var query = PGConditionUtil.toQuerySpec("schema1", condition, "table1");
+
+            assertThat(query.queryText).startsWith("WITH filtered_data AS MATERIALIZED (\n")
+                    .contains("jsonb_set(", "\nFROM filtered_data")
+                    .endsWith(" OFFSET 2 LIMIT 3");
+            assertThat(query.params).hasSize(2);
+        }
+    }
+
+    @Test
+    void queries_without_filtered_join_projection_should_not_materialize() {
+        var conditions = List.of(
+                Condition.filter("rooms.no", 1).fields("rooms").returnAllSubArray(false),
+                Condition.filter("rooms.no", 1).join(Set.of("rooms"))
+                        .returnAllSubArray(true).fields("rooms"),
+                Condition.filter("rooms.no", 1).join(Set.of("rooms"))
+                        .returnAllSubArray(false).fields(),
+                Condition.filter("id", "member1").join(Set.of("rooms"))
+                        .returnAllSubArray(false).fields("rooms"));
+
+        for (var condition : conditions) {
+            var query = PGConditionUtil.toQuerySpec("schema1", condition, "table1");
+            assertThat(query.queryText).doesNotContain("WITH filtered_data", "MATERIALIZED");
+        }
+    }
+
+    @Test
+    void fields_at_or_below_fifty_keys_should_keep_existing_sql() {
+        for (var count : List.of(49, 50)) {
+            var fields = IntStream.range(0, count).mapToObj(i -> "field" + i)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            var pairs = fields.stream().map(key -> "'" + key + "', data->'" + key + "'")
+                    .collect(Collectors.joining(", "));
+            assertThat(PGSelectUtil.generateSelectByFields(fields))
+                    .isEqualTo("id,\njsonb_build_object(" + pairs + ") AS \"data\"\n");
+        }
+    }
+
+    @Test
+    void oversized_nested_object_should_be_parenthesized() {
+        var fields = IntStream.range(0, 51).mapToObj(i -> "contents.form.field" + i)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        var firstGroup = IntStream.range(0, 50)
+                .mapToObj(i -> "'field" + i + "', data->'contents'->'form'->'field" + i + "'")
+                .collect(Collectors.joining(", "));
+
+        assertThat(PGSelectUtil.generateSelectByFields(fields)).isEqualTo(
+                "id,\njsonb_build_object('contents', jsonb_build_object('form', (jsonb_build_object("
+                        + firstGroup + ") || jsonb_build_object('field50', data->'contents'->'form'->'field50'))))"
+                        + " AS \"data\"\n");
+    }
 
     @Test
     void join_projection_should_keep_large_any_parameter_names_distinct() {

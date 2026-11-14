@@ -1791,6 +1791,116 @@ public class PostgresDatabaseImplTest {
     }
 
     @Test
+    void fields_should_support_more_than_fifty_root_keys() throws Exception {
+        var partition = "FieldTest";
+        var id = "wide_root_projection";
+        try {
+            for (var count : List.of(49, 50, 51, 55, 100, 101)) {
+                var data = new LinkedHashMap<String, Object>();
+                data.put("id", id);
+                data.put("unselected", "must not be returned");
+                var expected = new LinkedHashMap<String, Object>();
+                expected.put("id", id);
+                var fields = new LinkedHashSet<String>();
+                for (int i = 0; i < count; i++) {
+                    var key = "field" + i;
+                    fields.add(key);
+                    var value = projectionValue(i);
+                    // Keep the last requested field absent to verify SQL NULL projection.
+                    if (i < count - 1) {
+                        data.put(key, value);
+                    }
+                    expected.put(key, i < count - 1 ? value : null);
+                }
+                db.upsert(host, data, partition);
+                var condition = Condition.filter("id", id).fields(fields.toArray(String[]::new));
+                assertThat(db.find(host, condition, partition).toMap())
+                        .as("root keys: %s", count).containsExactly(expected);
+                assertThat(db.find(host, Condition.filter("id", "absent").fields(fields.toArray(String[]::new)), partition).toMap())
+                        .isEmpty();
+            }
+        } finally {
+            db.delete(host, id, partition);
+        }
+    }
+
+    @Test
+    void fields_should_support_wide_nested_objects() throws Exception {
+        for (var dimensions : List.of(List.of(1, 55), List.of(55, 2), List.of(55, 55))) {
+            assertWideNestedProjection(dimensions.get(0), dimensions.get(1), false);
+        }
+    }
+
+    @Test
+    void fields_should_support_wide_nested_objects_after_filtering_join_arrays() throws Exception {
+        assertWideNestedProjection(1, 55, true);
+        assertWideNestedProjection(55, 2, true);
+    }
+
+    @Test
+    void fields_should_support_55_by_55_objects_after_filtering_join_arrays() throws Exception {
+        assertWideNestedProjection(55, 55, true);
+    }
+
+    /**
+     * Verifies field pruning and JSON types at wide form/item levels through the find API.
+     */
+    void assertWideNestedProjection(int formCount, int itemCount, boolean filteredJoin) throws Exception {
+        var partition = "FieldTest";
+        var id = "wide_nested_projection";
+        var rooms = List.of(Map.of("no", 1), Map.of("no", 2));
+        try {
+            var contents = new LinkedHashMap<String, Object>();
+            var expectedContents = new LinkedHashMap<String, Object>();
+            var fields = new LinkedHashSet<String>();
+            fields.add("rooms");
+            for (int form = 0; form < formCount; form++) {
+                var formId = "form" + form;
+                var items = new LinkedHashMap<String, Object>();
+                var expectedItems = new LinkedHashMap<String, Object>();
+                items.put("unselected", "must not be returned");
+                for (int item = 0; item < itemCount; item++) {
+                    var itemId = "item" + item;
+                    var value = projectionValue(item);
+                    items.put(itemId, value);
+                    expectedItems.put(itemId, value);
+                    fields.add("sheetContents." + formId + "." + itemId);
+                }
+                contents.put(formId, items);
+                expectedContents.put(formId, expectedItems);
+            }
+            contents.put("unselectedForm", Map.of("value", "must not be returned"));
+            db.upsert(host, Map.of("id", id, "sheetContents", contents, "rooms", rooms), partition);
+            var condition = Condition.filter("id", id).fields(fields.toArray(String[]::new));
+            if (filteredJoin) {
+                condition.filter.put("rooms.no", 1);
+                condition.join(Set.of("rooms")).returnAllSubArray(false);
+            }
+            var expected = Map.of("id", id, "sheetContents", expectedContents,
+                    "rooms", filteredJoin ? List.of(rooms.get(0)) : rooms);
+            assertThat(db.find(host, condition, partition).toMap())
+                    .as("forms: %s, items: %s, filtered JOIN: %s", formCount, itemCount, filteredJoin)
+                    .containsExactly(expected);
+        } finally {
+            db.delete(host, id, partition);
+        }
+    }
+
+    /**
+     * Returns JSON values of different types to detect projection conversions or lost nulls.
+     */
+    static Object projectionValue(int index) {
+        return switch (index % 6) {
+            case 0 -> null;
+            case 1 -> false;
+            case 2 -> index;
+            case 3 -> "値-" + index;
+            case 4 -> List.of(index, "text");
+            default -> Map.of("value", index);
+        };
+    }
+
+    @Test
     void regex_should_work_with_filter() throws Exception {
 
         // test regex match

@@ -22,6 +22,9 @@ import org.apache.commons.lang3.StringUtils;
  */
 public class PGSelectUtil {
 
+    /** PostgreSQL allows 100 function arguments; each JSON object key/value pair uses two. */
+    static final int MAX_JSON_BUILD_OBJECT_PAIRS = 50;
+
     /**
      * select parts generate.
      *
@@ -80,7 +83,7 @@ public class PGSelectUtil {
                 var projectionPart = generateSelectByFields(cond.fields);
 
                 /**
-                 * WITH filtered_data AS (
+                 * WITH filtered_data AS MATERIALIZED (
                  * %s
                  * )
                  * SELECT
@@ -88,7 +91,8 @@ public class PGSelectUtil {
                  * FROM filtered_data
                  */
                 var withClause = new StringBuilder();
-                withClause.append("WITH filtered_data AS (\n");
+                // Avoid inlining the expensive JSON filtering expression into every projected field.
+                withClause.append("WITH filtered_data AS MATERIALIZED (\n");
                 withClause.append("%s\n");
                 withClause.append(")\n");
                 withClause.append("SELECT\n");
@@ -323,6 +327,7 @@ public class PGSelectUtil {
     /**
      * Recursively build a jsonb_build_object(...) expression from the Node tree.
      * The 'pathSoFar' indicates how we refer to this level in 'data', e.g. "data->'address'"
+     * Splits wide nodes into objects of at most 50 keys, merging disjoint keys at this level.
      */
     static String buildJsonBuildObject(String pathSoFar, Node node) {
         // If node has no children, it means this path is a leaf
@@ -349,9 +354,17 @@ public class PGSelectUtil {
             pairs.add(pair);
         }
 
-        // join pairs into "jsonb_build_object('key1', expr1, 'key2', expr2, ...)"
-        var joined = String.join(", ", pairs);
-        return "jsonb_build_object(" + joined + ")";
+        if (pairs.size() <= MAX_JSON_BUILD_OBJECT_PAIRS) {
+            return "jsonb_build_object(" + String.join(", ", pairs) + ")";
+        }
+
+        var objects = new ArrayList<String>();
+        for (int start = 0; start < pairs.size(); start += MAX_JSON_BUILD_OBJECT_PAIRS) {
+            var end = Math.min(start + MAX_JSON_BUILD_OBJECT_PAIRS, pairs.size());
+            objects.add("jsonb_build_object(" + String.join(", ", pairs.subList(start, end)) + ")");
+        }
+        // Treat the merged object as one expression when nested or followed by a cast/operator.
+        return "(" + String.join(" || ", objects) + ")";
     }
 
     /**
