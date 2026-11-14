@@ -22,7 +22,10 @@ import org.apache.commons.lang3.StringUtils;
  */
 public class PGSelectUtil {
 
-    /** PostgreSQL allows 100 function arguments; each JSON object key/value pair uses two. */
+    /**
+     * Maximum number of key/value pairs in one jsonb_build_object call.
+     * PostgreSQL's default limit is 100 function arguments, and each pair consumes two.
+     */
     static final int MAX_JSON_BUILD_OBJECT_PAIRS = 50;
 
     /**
@@ -91,7 +94,10 @@ public class PGSelectUtil {
                  * FROM filtered_data
                  */
                 var withClause = new StringBuilder();
-                // Avoid inlining the expensive JSON filtering expression into every projected field.
+                // Calculate the filtered JSON separately so each projected field can reuse it.
+                // Inlining the JSON reconstruction and its subqueries into thousands of field
+                // references can exhaust backend memory. Apply this to every filtered JOIN
+                // projection, since the 50-key function limit is not a safe OOM threshold.
                 withClause.append("WITH filtered_data AS MATERIALIZED (\n");
                 withClause.append("%s\n");
                 withClause.append(")\n");
@@ -325,9 +331,13 @@ public class PGSelectUtil {
 
 
     /**
-     * Recursively build a jsonb_build_object(...) expression from the Node tree.
-     * The 'pathSoFar' indicates how we refer to this level in 'data', e.g. "data->'address'"
-     * Splits wide nodes into objects of at most 50 keys, merging disjoint keys at this level.
+     * Recursively builds a JSONB projection while respecting the function argument limit.
+     * Each node is checked independently: its child count, rather than the total number
+     * of requested fields, determines whether its object must be split into groups.
+     *
+     * @param pathSoFar SQL expression referring to this node, e.g. {@code data->'address'}
+     * @param node projection subtree whose children are unique keys at this level
+     * @return the leaf expression, a single object, or a parenthesized merge of objects
      */
     static String buildJsonBuildObject(String pathSoFar, Node node) {
         // If node has no children, it means this path is a leaf
@@ -354,16 +364,20 @@ public class PGSelectUtil {
             pairs.add(pair);
         }
 
+        // Preserve the existing SQL text for nodes that fit in one function call.
         if (pairs.size() <= MAX_JSON_BUILD_OBJECT_PAIRS) {
             return "jsonb_build_object(" + String.join(", ", pairs) + ")";
         }
 
+        // Split complete key/value pairs so no function receives more than 100 arguments.
+        // Child expressions have already been built recursively, including any deeper splits.
         var objects = new ArrayList<String>();
         for (int start = 0; start < pairs.size(); start += MAX_JSON_BUILD_OBJECT_PAIRS) {
             var end = Math.min(start + MAX_JSON_BUILD_OBJECT_PAIRS, pairs.size());
             objects.add("jsonb_build_object(" + String.join(", ", pairs.subList(start, end)) + ")");
         }
-        // Treat the merged object as one expression when nested or followed by a cast/operator.
+        // Sibling keys are unique, so shallow JSONB concatenation cannot overwrite another group.
+        // Parentheses keep the entire merge together when nested or followed by a cast/operator.
         return "(" + String.join(" || ", objects) + ")";
     }
 

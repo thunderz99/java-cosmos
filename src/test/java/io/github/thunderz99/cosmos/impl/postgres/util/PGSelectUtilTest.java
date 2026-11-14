@@ -15,6 +15,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class PGSelectUtilTest {
 
+    /**
+     * Verifies that both small and oversized filtered JOIN projections use materialization,
+     * while pagination stays outside the CTE and both filter parameter sets are retained.
+     */
     @Test
     void filtered_join_with_fields_should_materialize_even_for_small_projections() {
         for (var count : List.of(1, 55)) {
@@ -33,14 +37,21 @@ class PGSelectUtilTest {
         }
     }
 
+    /**
+     * Keeps materialization limited to queries that actually filter JOIN arrays and project fields.
+     */
     @Test
     void queries_without_filtered_join_projection_should_not_materialize() {
         var conditions = List.of(
+                // No JOIN: ordinary field projection does not need the filtered-data CTE.
                 Condition.filter("rooms.no", 1).fields("rooms").returnAllSubArray(false),
+                // Returning complete arrays does not require JSON reconstruction.
                 Condition.filter("rooms.no", 1).join(Set.of("rooms"))
                         .returnAllSubArray(true).fields("rooms"),
+                // Without fields, the filtered JSON can be returned directly.
                 Condition.filter("rooms.no", 1).join(Set.of("rooms"))
                         .returnAllSubArray(false).fields(),
+                // A declared JOIN alone is insufficient when its array has no filter.
                 Condition.filter("id", "member1").join(Set.of("rooms"))
                         .returnAllSubArray(false).fields("rooms"));
 
@@ -50,6 +61,9 @@ class PGSelectUtilTest {
         }
     }
 
+    /**
+     * Protects the existing SQL text immediately below and at the 50-key boundary.
+     */
     @Test
     void fields_at_or_below_fifty_keys_should_keep_existing_sql() {
         for (var count : List.of(49, 50)) {
@@ -62,6 +76,10 @@ class PGSelectUtilTest {
         }
     }
 
+    /**
+     * Verifies the 51st sibling starts a second object and the complete merge is parenthesized
+     * before it is passed as a value to the enclosing objects.
+     */
     @Test
     void oversized_nested_object_should_be_parenthesized() {
         var fields = IntStream.range(0, 51).mapToObj(i -> "contents.form.field" + i)

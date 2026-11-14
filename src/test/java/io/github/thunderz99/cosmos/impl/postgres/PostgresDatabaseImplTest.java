@@ -1790,6 +1790,10 @@ public class PostgresDatabaseImplTest {
         }
     }
 
+    /**
+     * Exercises single-call and multi-group boundaries through PostgreSQL find, including
+     * missing fields, JSON value types, and queries that return no rows.
+     */
     @Test
     void fields_should_support_more_than_fifty_root_keys() throws Exception {
         var partition = "FieldTest";
@@ -1816,6 +1820,7 @@ public class PostgresDatabaseImplTest {
                 var condition = Condition.filter("id", id).fields(fields.toArray(String[]::new));
                 assertThat(db.find(host, condition, partition).toMap())
                         .as("root keys: %s", count).containsExactly(expected);
+                // PostgreSQL must accept the projection even when no record matches the filter.
                 assertThat(db.find(host, Condition.filter("id", "absent").fields(fields.toArray(String[]::new)), partition).toMap())
                         .isEmpty();
             }
@@ -1824,6 +1829,9 @@ public class PostgresDatabaseImplTest {
         }
     }
 
+    /**
+     * Checks wide item levels, wide form levels, and both levels together without a filtered JOIN.
+     */
     @Test
     void fields_should_support_wide_nested_objects() throws Exception {
         for (var dimensions : List.of(List.of(1, 55), List.of(55, 2), List.of(55, 55))) {
@@ -1831,12 +1839,20 @@ public class PostgresDatabaseImplTest {
         }
     }
 
+    /**
+     * Verifies that splitting either nested level also works after nonmatching array elements
+     * have been removed by a JOIN with returnAllSubArray(false).
+     */
     @Test
     void fields_should_support_wide_nested_objects_after_filtering_join_arrays() throws Exception {
         assertWideNestedProjection(1, 55, true);
         assertWideNestedProjection(55, 2, true);
     }
 
+    /**
+     * Covers a regression where a 55-by-55 filtered JOIN projection exhausted backend memory in a
+     * memory-constrained PostgreSQL instance when the filtered-data CTE was inlined.
+     */
     @Test
     void fields_should_support_55_by_55_objects_after_filtering_join_arrays() throws Exception {
         assertWideNestedProjection(55, 55, true);
@@ -1844,6 +1860,11 @@ public class PostgresDatabaseImplTest {
 
     /**
      * Verifies field pruning and JSON types at wide form/item levels through the find API.
+     *
+     * @param formCount number of sibling form objects under sheetContents
+     * @param itemCount number of requested sibling items in each form
+     * @param filteredJoin whether rooms must be filtered before projecting the requested fields
+     * @throws Exception if fixture persistence or querying fails
      */
     void assertWideNestedProjection(int formCount, int itemCount, boolean filteredJoin) throws Exception {
         var partition = "FieldTest";
@@ -1858,6 +1879,7 @@ public class PostgresDatabaseImplTest {
                 var formId = "form" + form;
                 var items = new LinkedHashMap<String, Object>();
                 var expectedItems = new LinkedHashMap<String, Object>();
+                // Extra items and forms detect accidental inclusion of unrequested data.
                 items.put("unselected", "must not be returned");
                 for (int item = 0; item < itemCount; item++) {
                     var itemId = "item" + item;
@@ -1873,6 +1895,7 @@ public class PostgresDatabaseImplTest {
             db.upsert(host, Map.of("id", id, "sheetContents", contents, "rooms", rooms), partition);
             var condition = Condition.filter("id", id).fields(fields.toArray(String[]::new));
             if (filteredJoin) {
+                // Keep only room 1 while still projecting all requested sheet fields.
                 condition.filter.put("rooms.no", 1);
                 condition.join(Set.of("rooms")).returnAllSubArray(false);
             }
@@ -1888,6 +1911,9 @@ public class PostgresDatabaseImplTest {
 
     /**
      * Returns JSON values of different types to detect projection conversions or lost nulls.
+     *
+     * @param index deterministic fixture position used to select a JSON value type
+     * @return a null, boolean, number, string, array, or object value
      */
     static Object projectionValue(int index) {
         return switch (index % 6) {
