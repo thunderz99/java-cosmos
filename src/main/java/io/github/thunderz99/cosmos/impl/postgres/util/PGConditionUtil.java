@@ -68,7 +68,7 @@ public class PGConditionUtil {
             /**
              * withClause:
              *
-             * WITH filtered_data AS (
+             * WITH filtered_data AS MATERIALIZED (
              * %s
              * )
              * SELECT

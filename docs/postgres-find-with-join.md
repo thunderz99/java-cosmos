@@ -192,7 +192,9 @@ SELECT id, jsonb_set(
 
 
 
-with fields
+With fields, `filtered_data` is materialized to prevent PostgreSQL from inlining
+the JSON filtering expression into every projected field. This applies to filtered
+JOIN projections regardless of the number of fields.
 
 
 
@@ -211,7 +213,7 @@ var cond = Condition.filter(
 
 
 ```SQL
-WITH filtered_data AS (
+WITH filtered_data AS MATERIALIZED (
   SELECT 
     id,
     jsonb_set(

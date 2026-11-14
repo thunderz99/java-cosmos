@@ -11,7 +11,7 @@ public class SelectClause {
      * <p>
      *     {@code
      *
-     *     WITH filtered_data AS (
+     *     WITH filtered_data AS MATERIALIZED (
      *       SELECT * FROM schema1.table1
      *     )
      *     SELECT id,
@@ -43,7 +43,7 @@ public class SelectClause {
      *  select sql text for with clause. will be empty "" if with clause is not used.
      *
      *  <p>
-     *      withClause = "WITH filtered_data AS (SELECT * FROM schema1.table1)"
+     *      withClause = "WITH filtered_data AS MATERIALIZED (SELECT * FROM schema1.table1)"
      *  </p>
      */
     public String withClause = "";

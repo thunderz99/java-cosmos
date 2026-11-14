@@ -985,7 +985,7 @@ class PGConditionUtilTest {
             var q = PGConditionUtil.toQuerySpec(coll, cond, partition);
 
             var expected = """
-                    WITH filtered_data AS (
+                    WITH filtered_data AS MATERIALIZED (
                     SELECT id, jsonb_set(
                       data,
                       '{"floors"}',
@@ -1154,7 +1154,7 @@ class PGConditionUtilTest {
             // collate not specified, so default to COLLATE "en_US" .
             // the sort should be simply " ORDER BY data->>'_ts' DESC,  data->'address'->'street' ASC"
             var expected = """
-                    WITH filtered_data AS (
+                    WITH filtered_data AS MATERIALIZED (
                     SELECT id, jsonb_set(
                       data,
                       '{"floors"}',
