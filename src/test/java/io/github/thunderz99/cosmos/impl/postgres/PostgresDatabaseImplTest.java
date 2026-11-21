@@ -2296,6 +2296,34 @@ public class PostgresDatabaseImplTest {
 
 
     @Test
+    void aggregate_should_apply_shorthand_or_to_jsonb_and_text_group_keys() throws Exception {
+        var partition = "Users2";
+        var prefix = "aggregate_or_" + RandomStringUtils.randomAlphanumeric(8);
+        var ids = List.of(prefix + "_1", prefix + "_2", prefix + "_3", prefix + "_4");
+        try {
+            db.upsert(host, Map.of("id", ids.get(0), "sheetContentId", "B12", "name", "A"), partition);
+            db.upsert(host, Map.of("id", ids.get(1), "sheetContentId", "A", "name", "B34"), partition);
+            db.upsert(host, Map.of("id", ids.get(2), "sheetContentId", "C", "name", "A"), partition);
+            db.upsert(host, Map.of("id", ids.get(3), "sheetContentId", "A", "name", "A"), partition);
+            var before = Condition.filter("id", ids);
+            var aggregate = Aggregate.function("c.sheetContentId AS sheetKey").groupBy("sheetContentId", "name");
+
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey OR name >=", "B"));
+            assertThat(db.aggregate(host, aggregate, before, partition).toMap()).containsExactlyInAnyOrder(
+                    Map.of("sheetKey", "B12", "name", "A"), Map.of("sheetKey", "A", "name", "B34"),
+                    Map.of("sheetKey", "C", "name", "A"));
+
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey OR name STARTSWITH", "B"));
+            assertThat(db.aggregate(host, aggregate, before, partition).toMap()).containsExactlyInAnyOrder(
+                    Map.of("sheetKey", "B12", "name", "A"), Map.of("sheetKey", "A", "name", "B34"));
+        } finally {
+            for (var id : ids) {
+                db.delete(host, id, partition);
+            }
+        }
+    }
+
+    @Test
     void aggregate_should_filter_jsonb_scalars_using_parameter_types() throws Exception {
         var partition = "Users2";
         var prefix = "aggregate_jsonb_scalars_" + RandomStringUtils.randomAlphanumeric(8) + "_";

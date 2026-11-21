@@ -118,9 +118,14 @@ public class PGKeyUtil {
      */
     public static String formatJsonbScalarForComparison(String column, Object value) {
         if (value instanceof String || value instanceof Boolean || isNumericFilterValue(value)) {
-            return formatScalarForComparison(column + " #>> '{}'", value);
+            return formatScalarForComparison(getJsonbRootText(column), value);
         }
         return column;
+    }
+
+    /** Extract the JSONB root value as SQL text, removing JSON string quotes. */
+    public static String getJsonbRootText(String column) {
+        return column + " #>> '{}'";
     }
 
     /**

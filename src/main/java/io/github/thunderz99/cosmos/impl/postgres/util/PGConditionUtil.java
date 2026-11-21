@@ -820,7 +820,7 @@ public class PGConditionUtil {
      */
     static Expression parseExpression4SimpleMatcher(String key, String parsedKey, Object value, String operator, Set<String> join, QueryContext queryContext) {
         if (key.contains(" OR ")) {
-            return new PGOrExpressions(parsedKey, value, "", queryContext.jsonbAggregateAliases);
+            return new PGOrExpressions(parsedKey, value, operator, queryContext.jsonbAggregateAliases);
         } else {
             if (CollectionUtils.isEmpty(join)) {
                 return new PGSimpleExpression(parsedKey, value, operator, queryContext.jsonbAggregateAliases);

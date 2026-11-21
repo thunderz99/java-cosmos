@@ -1378,6 +1378,34 @@ class PGConditionUtilTest {
     }
 
     @Test
+    void shorthand_or_should_apply_the_explicit_operator_to_each_field() {
+        var query = PGConditionUtil.toQuerySpec(coll, Condition.filter("sheetContentId OR name >=", "B"), partition);
+
+        assertThat(query.queryText).contains(
+                "(data->>'sheetContentId' >= @param000_sheetContentId) OR (data->>'name' >= @param001_name)");
+        assertThat(query.getParameters()).extracting(CosmosSqlParameter::getValue).containsExactly("B", "B");
+    }
+
+    @Test
+    void aggregate_text_functions_should_extract_the_jsonb_alias_and_bind_the_pattern() {
+        var after = Condition.filter("sheetKey STARTSWITH", "B", "sheetKey ENDSWITH", "12",
+                "sheetKey CONTAINS", "1", "sheetKey RegexMatch", "^B[0-9]+$");
+        var aggregate = Aggregate.function("c.sheetContentId AS sheetKey").groupBy("sheetContentId")
+                .conditionAfterAggregate(after);
+
+        var query = PGConditionUtil.toQuerySpec4Aggregate(coll, Condition.filter(), aggregate, partition,
+                QueryContext.create());
+
+        assertThat(query.queryText).contains(
+                "(\"sheetKey\" #>> '{}') LIKE @param000_sheetKey",
+                "(\"sheetKey\" #>> '{}') LIKE @param001_sheetKey",
+                "(\"sheetKey\" #>> '{}') LIKE @param002_sheetKey",
+                "(\"sheetKey\" #>> '{}') ~ @param003_sheetKey");
+        assertThat(query.getParameters()).extracting(CosmosSqlParameter::getValue)
+                .containsExactly("B%", "%12", "%1%", "^B[0-9]+$");
+    }
+
+    @Test
     void aggregate_after_filter_should_infer_type_per_nested_predicate() {
         var after = Condition.filter(SubConditionType.AND, List.of(
                 Condition.filter(SubConditionType.OR, List.of(

@@ -278,7 +278,7 @@ public class PGSimpleExpression implements Expression {
         switch (this.operator.toUpperCase()) {
             case "STARTSWITH"-> {
                 // use LIKE
-                querySpec.setQueryText(String.format(" (%s LIKE %s)", formattedKey, valuePart));
+                querySpec.setQueryText(String.format(" (%s LIKE %s)", textFunctionOperand(formattedKey), valuePart));
 
                 // modify the paramValue to "%paramValue%"
                 var currentIndex = params.size() - 1;
@@ -287,7 +287,7 @@ public class PGSimpleExpression implements Expression {
             }
             case "ENDSWITH"-> {
                 // use LIKE
-                querySpec.setQueryText(String.format(" (%s LIKE %s)", formattedKey, valuePart));
+                querySpec.setQueryText(String.format(" (%s LIKE %s)", textFunctionOperand(formattedKey), valuePart));
 
                 // modify the paramValue to "%paramValue%"
                 var currentIndex = params.size() - 1;
@@ -296,7 +296,7 @@ public class PGSimpleExpression implements Expression {
             }
             case "CONTAINS" -> {
                 // use LIKE
-                querySpec.setQueryText(String.format(" (%s LIKE %s)", formattedKey, valuePart));
+                querySpec.setQueryText(String.format(" (%s LIKE %s)", textFunctionOperand(formattedKey), valuePart));
 
                 // modify the paramValue to "%paramValue%"
                 var currentIndex = params.size() - 1;
@@ -305,7 +305,7 @@ public class PGSimpleExpression implements Expression {
             }
             case "REGEXMATCH" -> {
                 // use `text_field ~ '^abc'`
-                querySpec.setQueryText(String.format(" (%s ~ %s)", formattedKey, valuePart));
+                querySpec.setQueryText(String.format(" (%s ~ %s)", textFunctionOperand(formattedKey), valuePart));
             }
             case "ARRAY_CONTAINS" -> {
                 // use data->'skills' ?? 'Java'
@@ -342,6 +342,11 @@ public class PGSimpleExpression implements Expression {
         }
 
 
+    }
+
+    /** LIKE and regex predicates consume the text value of a projected JSONB group key. */
+    String textFunctionOperand(String formattedKey) {
+        return jsonbAggregateOutput ? "(" + PGKeyUtil.getJsonbRootText(formattedKey) + ")" : formattedKey;
     }
 
     @Override

@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-<version>0.8.39</version>
+<version>0.8.42</version>
 </dependency>
 ```
 
@@ -384,6 +384,12 @@ Using this iterator can reduce memory consumption compared to the normal find me
 Pass Java strings, numbers, or booleans to `conditionAfterAggregate` to filter
 JSONB group keys. String lists match any of their values. Use the output alias
 in the outer condition when the grouping field is projected with `AS`.
+
+`STARTSWITH`, `ENDSWITH`, `CONTAINS`, and `RegexMatch` match the text of a
+JSONB group key. In a shorthand `OR` filter, the trailing operator applies to
+each field. For example, when grouping by `sheetContentId` (projected as
+`sheetKey`) and `name`, `Condition.filter("sheetKey OR name STARTSWITH", "B")`
+returns groups where either value starts with `B`.
 
 ```java
 var bySheet = Aggregate.function("c.sheetContentId AS sheetKey, COUNT(*) AS counts")
