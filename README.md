@@ -23,7 +23,7 @@ java-cosmos is a client for Azure CosmosDB 's SQL API (also called documentdb fo
 <dependency>
   <groupId>com.github.thunderz99</groupId>
     <artifactId>java-cosmos</artifactId>
-<version>0.8.39</version>
+<version>0.8.42</version>
 </dependency>
 ```
 
@@ -378,6 +378,51 @@ Using this iterator can reduce memory consumption compared to the normal find me
     .conditionAfterAggregate(Condition.filter("facetCount >",1)) // filter after aggregation
     ;
 ```
+
+#### Filtering PostgreSQL aggregate results
+
+Pass Java strings, numbers, or booleans to `conditionAfterAggregate` to filter
+JSONB group keys. String lists match any of their values. Use the output alias
+in the outer condition when the grouping field is projected with `AS`.
+
+`STARTSWITH`, `ENDSWITH`, `CONTAINS`, and `RegexMatch` match the text of a
+JSONB group key. In a shorthand `OR` filter, the trailing operator applies to
+each field. For example, when grouping by `sheetContentId` (projected as
+`sheetKey`) and `name`, `Condition.filter("sheetKey OR name STARTSWITH", "B")`
+returns groups where either value starts with `B`.
+
+```java
+var bySheet = Aggregate.function("c.sheetContentId AS sheetKey, COUNT(*) AS counts")
+        .groupBy("sheetContentId")
+        .conditionAfterAggregate(Condition.filter("sheetKey", List.of("010", "100"))
+                .sort("sheetKey", "DESC"));
+
+var byAge = Aggregate.function("COUNT(*) AS counts")
+        .groupBy("age")
+        .conditionAfterAggregate(Condition.filter("age >", 20));
+```
+
+PostgreSQL infers the comparison type from each filter value and applies the
+same conversions as ordinary filters. The outer predicates for these examples
+are:
+
+```sql
+WHERE ("sheetKey" #>> '{}') = ANY(@param000_sheetKey)
+WHERE NULLIF("age" #>> '{}', '')::numeric > @param000_age
+```
+
+A string parameter like `"010"` keeps its leading zero. Both JSON number
+`21` and JSON string `"21"` match a numeric condition `> 20`. Numeric
+comparisons treat an empty string as SQL `NULL`. Boolean parameters use
+`::boolean`, including PostgreSQL's conversion of strings such as `"true"`.
+Invalid numeric or boolean conversions cause the query to fail.
+
+Grouping, result values and sorting use the projected column type, so a JSON
+number and its string representation remain separate groups even when both
+match the same filter. An explicit `=` with a list compares the whole JSON
+array, and null filters keep their existing behavior. Cross-type scalar
+conversion follows PostgreSQL's rules and can produce different results from
+Cosmos DB.
 
 ### Multi-bucket conditional aggregates
 

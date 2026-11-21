@@ -2296,6 +2296,131 @@ public class PostgresDatabaseImplTest {
 
 
     @Test
+    void aggregate_should_apply_shorthand_or_to_jsonb_and_text_group_keys() throws Exception {
+        var partition = "Users2";
+        var prefix = "aggregate_or_" + RandomStringUtils.randomAlphanumeric(8);
+        var ids = List.of(prefix + "_1", prefix + "_2", prefix + "_3", prefix + "_4");
+        try {
+            db.upsert(host, Map.of("id", ids.get(0), "sheetContentId", "B12", "name", "A"), partition);
+            db.upsert(host, Map.of("id", ids.get(1), "sheetContentId", "A", "name", "B34"), partition);
+            db.upsert(host, Map.of("id", ids.get(2), "sheetContentId", "C", "name", "A"), partition);
+            db.upsert(host, Map.of("id", ids.get(3), "sheetContentId", "A", "name", "A"), partition);
+            var before = Condition.filter("id", ids);
+            var aggregate = Aggregate.function("c.sheetContentId AS sheetKey").groupBy("sheetContentId", "name");
+
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey OR name >=", "B"));
+            assertThat(db.aggregate(host, aggregate, before, partition).toMap()).containsExactlyInAnyOrder(
+                    Map.of("sheetKey", "B12", "name", "A"), Map.of("sheetKey", "A", "name", "B34"),
+                    Map.of("sheetKey", "C", "name", "A"));
+
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey OR name STARTSWITH", "B"));
+            assertThat(db.aggregate(host, aggregate, before, partition).toMap()).containsExactlyInAnyOrder(
+                    Map.of("sheetKey", "B12", "name", "A"), Map.of("sheetKey", "A", "name", "B34"));
+        } finally {
+            for (var id : ids) {
+                db.delete(host, id, partition);
+            }
+        }
+    }
+
+    @Test
+    void aggregate_should_filter_jsonb_scalars_using_parameter_types() throws Exception {
+        var partition = "Users2";
+        var prefix = "aggregate_jsonb_scalars_" + RandomStringUtils.randomAlphanumeric(8) + "_";
+        var values = List.of("001", "010", "010", "100", 10, 21, "21", "unknown",
+                true, "true", List.of("010"), Map.of("number", 30), "", "yes");
+        var ids = new ArrayList<String>();
+
+        try {
+            for (var value : values) {
+                var id = prefix + ids.size();
+                ids.add(id);
+                db.upsert(host, Map.of("id", id, "sheetContentId", value), partition);
+            }
+
+            var before = Condition.filter("id STARTSWITH", prefix);
+            var aggregate = Aggregate.function("c.sheetContentId AS sheetKey, COUNT(*) AS counts")
+                    .groupBy("sheetContentId");
+
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey IN", List.of("010", "100"))
+                    .sort("sheetKey", "DESC"));
+            assertThat(db.aggregate(host, aggregate, before, partition).toMap()).containsExactly(
+                    Map.of("sheetKey", "100", "counts", 1), Map.of("sheetKey", "010", "counts", 2));
+
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey >=", "010", "sheetKey <=", "100"));
+            assertThat(db.aggregate(host, aggregate, before, partition).toMap()).containsExactly(
+                    Map.of("sheetKey", "010", "counts", 2), Map.of("sheetKey", "100", "counts", 1),
+                    Map.of("sheetKey", 10, "counts", 1));
+
+            // Numeric strings participate in comparison, while their groups remain distinct.
+            var numericInputs = Condition.filter("id", List.of(ids.get(4), ids.get(5), ids.get(6), ids.get(12)));
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey >", 20));
+            assertThat(db.aggregate(host, aggregate, numericInputs, partition).toMap()).containsExactlyInAnyOrder(
+                    Map.of("sheetKey", 21, "counts", 1), Map.of("sheetKey", "21", "counts", 1));
+            assertThat(db.find(host, Condition.filter(
+                    "id", List.of(ids.get(4), ids.get(5), ids.get(6), ids.get(12)),
+                    "sheetContentId >", 20), partition).toMap())
+                    .extracting(row -> row.get("id")).containsExactlyInAnyOrder(ids.get(5), ids.get(6));
+
+            // Compare nested predicates using only values convertible to both numeric and text.
+            aggregate.conditionAfterAggregate(Condition.filter(AND, List.of(
+                    Condition.filter("sheetKey >", 20),
+                    Condition.filter(SubConditionType.NOT, Condition.filter("sheetKey", "10")))));
+            assertThat(db.aggregate(host, aggregate, numericInputs, partition).toMap()).containsExactlyInAnyOrder(
+                    Map.of("sheetKey", 21, "counts", 1), Map.of("sheetKey", "21", "counts", 1));
+
+            var booleanInputs = Condition.filter("id", List.of(ids.get(8), ids.get(9), ids.get(13)));
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey", true));
+            assertThat(db.aggregate(host, aggregate, booleanInputs, partition).toMap()).containsExactlyInAnyOrder(
+                    Map.of("sheetKey", true, "counts", 1), Map.of("sheetKey", "true", "counts", 1),
+                    Map.of("sheetKey", "yes", "counts", 1));
+            assertThat(db.find(host, Condition.filter(
+                    "id", List.of(ids.get(8), ids.get(9), ids.get(13)),
+                    "sheetContentId", true), partition).toMap())
+                    .extracting(row -> row.get("id"))
+                    .containsExactlyInAnyOrder(ids.get(8), ids.get(9), ids.get(13));
+
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey", "true"));
+            assertThat(db.aggregate(host, aggregate, before, partition).toMap()).containsExactlyInAnyOrder(
+                    Map.of("sheetKey", "true", "counts", 1), Map.of("sheetKey", true, "counts", 1));
+
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey >", 20).not());
+            assertThat(db.aggregate(host, aggregate, numericInputs, partition).toMap())
+                    .containsExactly(Map.of("sheetKey", 10, "counts", 1));
+
+            // Conversion failures follow the same contract as ordinary PostgreSQL filters.
+            var invalidInput = Condition.filter("id", ids.get(7));
+            assertThatThrownBy(() -> db.aggregate(host, aggregate, invalidInput, partition))
+                    .hasMessageContaining("invalid input syntax for type numeric");
+            assertThatThrownBy(() -> db.find(host,
+                    Condition.filter("id", ids.get(7), "sheetContentId >", 20), partition))
+                    .hasMessageContaining("invalid input syntax for type numeric");
+
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey", true));
+            assertThatThrownBy(() -> db.aggregate(host, aggregate, invalidInput, partition))
+                    .hasMessageContaining("invalid input syntax for type boolean");
+
+            // Null and missing keys retain separate JSONB groups and yield no scalar match.
+            var nullId = prefix + "null";
+            var missingId = prefix + "missing";
+            ids.add(nullId);
+            ids.add(missingId);
+            var nullDocument = new LinkedHashMap<String, Object>();
+            nullDocument.put("id", nullId);
+            nullDocument.put("sheetContentId", null);
+            db.upsert(host, nullDocument, partition);
+            db.upsert(host, Map.of("id", missingId), partition);
+            aggregate.conditionAfterAggregate(Condition.filter("sheetKey >", 20));
+            assertThat(db.aggregate(host, aggregate,
+                    Condition.filter("id", List.of(nullId, missingId, ids.get(12))), partition).toMap()).isEmpty();
+        } finally {
+            for (var id : ids) {
+                db.delete(host, id, partition);
+            }
+        }
+    }
+
+    @Test
     void aggregate_should_work_without_group_by() throws Exception {
 
         // test count(without group by)

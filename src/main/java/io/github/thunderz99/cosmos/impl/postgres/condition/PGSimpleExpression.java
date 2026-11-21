@@ -13,7 +13,11 @@ import io.github.thunderz99.cosmos.util.ParamUtil;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
@@ -31,6 +35,8 @@ public class PGSimpleExpression implements Expression {
 	public String key;
 	public Object value;
 	public OperatorType type = OperatorType.BINARY_OPERATOR;
+
+    private final boolean jsonbAggregateOutput;
 
 	/**
 	 * Default is empty, which means the default operator based on filter's key and value
@@ -58,17 +64,25 @@ public class PGSimpleExpression implements Expression {
     );
 
     public PGSimpleExpression() {
+        this(null, null);
     }
 
     public PGSimpleExpression(String key, Object value) {
-        this.key = key;
-        this.value = value;
+        this(key, value, "");
     }
 
     public PGSimpleExpression(String key, Object value, String operator) {
+        this(key, value, operator, Set.of());
+    }
+
+    /**
+     * Create a predicate with the actual JSONB aliases from the aggregate projection.
+     */
+    public PGSimpleExpression(String key, Object value, String operator, Set<String> jsonbAggregateAliases) {
         this.key = key;
         this.value = value;
         this.operator = operator;
+        this.jsonbAggregateOutput = key != null && jsonbAggregateAliases.contains(StringUtils.unwrap(key, '"'));
         if(!StringUtils.isEmpty(operator)){
             this.type = binaryOperatorPattern.asPredicate().test(operator) ? OperatorType.BINARY_OPERATOR
                     : OperatorType.BINARY_FUNCTION;
@@ -111,7 +125,8 @@ public class PGSimpleExpression implements Expression {
                     ret.setQueryText(" (1=0)");
 				} else {
 					// use IN array
-					ret.setQueryText(buildInArray(this.key, paramName, coll, params, selectAlias));
+                    boolean jsonbMembership = jsonbAggregateOutput && StringUtils.equalsAny(this.operator, "", "IN");
+					ret.setQueryText(buildInArray(this.key, paramName, coll, params, selectAlias, jsonbMembership));
 				}
 			}
 
@@ -142,6 +157,9 @@ public class PGSimpleExpression implements Expression {
             // other types
             var formattedKey = PGKeyUtil.getFormattedKeyWithAlias(this.key, selectAlias, paramValue);
             if (this.type == OperatorType.BINARY_OPERATOR) { // operators, e.g. =, !=, <, >, LIKE
+                if (jsonbAggregateOutput) {
+                    formattedKey = PGKeyUtil.formatJsonbScalarForComparison(formattedKey, paramValue);
+                }
                 //use c["key"] for cosmosdb reserved words
                 ret.setQueryText(String.format(" (%s %s %s)", formattedKey, this.operator, valueString));
                 params.add(Condition.createSqlParameter(paramName, paramValue));
@@ -260,7 +278,7 @@ public class PGSimpleExpression implements Expression {
         switch (this.operator.toUpperCase()) {
             case "STARTSWITH"-> {
                 // use LIKE
-                querySpec.setQueryText(String.format(" (%s LIKE %s)", formattedKey, valuePart));
+                querySpec.setQueryText(String.format(" (%s LIKE %s)", textFunctionOperand(formattedKey), valuePart));
 
                 // modify the paramValue to "%paramValue%"
                 var currentIndex = params.size() - 1;
@@ -269,7 +287,7 @@ public class PGSimpleExpression implements Expression {
             }
             case "ENDSWITH"-> {
                 // use LIKE
-                querySpec.setQueryText(String.format(" (%s LIKE %s)", formattedKey, valuePart));
+                querySpec.setQueryText(String.format(" (%s LIKE %s)", textFunctionOperand(formattedKey), valuePart));
 
                 // modify the paramValue to "%paramValue%"
                 var currentIndex = params.size() - 1;
@@ -278,7 +296,7 @@ public class PGSimpleExpression implements Expression {
             }
             case "CONTAINS" -> {
                 // use LIKE
-                querySpec.setQueryText(String.format(" (%s LIKE %s)", formattedKey, valuePart));
+                querySpec.setQueryText(String.format(" (%s LIKE %s)", textFunctionOperand(formattedKey), valuePart));
 
                 // modify the paramValue to "%paramValue%"
                 var currentIndex = params.size() - 1;
@@ -287,7 +305,7 @@ public class PGSimpleExpression implements Expression {
             }
             case "REGEXMATCH" -> {
                 // use `text_field ~ '^abc'`
-                querySpec.setQueryText(String.format(" (%s ~ %s)", formattedKey, valuePart));
+                querySpec.setQueryText(String.format(" (%s ~ %s)", textFunctionOperand(formattedKey), valuePart));
             }
             case "ARRAY_CONTAINS" -> {
                 // use data->'skills' ?? 'Java'
@@ -326,6 +344,11 @@ public class PGSimpleExpression implements Expression {
 
     }
 
+    /** LIKE and regex predicates consume the text value of a projected JSONB group key. */
+    String textFunctionOperand(String formattedKey) {
+        return jsonbAggregateOutput ? "(" + PGKeyUtil.getJsonbRootText(formattedKey) + ")" : formattedKey;
+    }
+
     @Override
     public String toString() {
         return JsonUtil.toJson(this);
@@ -340,11 +363,16 @@ public class PGSimpleExpression implements Expression {
      * paramsValue into params
      * </p>
      */
-    static String buildInArray(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params, String selectAlias) {
+    static String buildInArray(String key, String paramName, Collection<?> paramValue, List<CosmosSqlParameter> params,
+                               String selectAlias, boolean jsonbAggregateOutput) {
 
-        var ret = String.format(" (%s = ANY(%s))", PGKeyUtil.getFormattedKeyWithAlias(key, selectAlias, getTypicalValue(paramValue)), paramName);
+        var formattedKey = PGKeyUtil.getFormattedKeyWithAlias(key, selectAlias, getTypicalValue(paramValue));
+        if (jsonbAggregateOutput && paramValue.stream().allMatch(value -> value == null || value instanceof String)) {
+            // PostgreSQL binds string lists, including null elements, as text[].
+            formattedKey = PGKeyUtil.formatJsonbScalarForComparison(formattedKey, "");
+        }
         params.add(Condition.createSqlParameter(paramName, paramValue));
-        return ret;
+        return String.format(" (%s = ANY(%s))", formattedKey, paramName);
     }
 
 

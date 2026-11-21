@@ -104,24 +104,50 @@ public class PGKeyUtil {
         // We'll wrap it with parentheses and add a cast if needed
         var basePath = sb.toString();
 
-        if (value instanceof Boolean) {
-            return "(" + basePath + ")::boolean";
-        } else if (value instanceof Integer
-                || value instanceof Double
-                || value instanceof Long
-                || value instanceof Float
-                || value instanceof java.math.BigDecimal )  {
-            // cast to numeric. if empty string, return null
-            return "NULLIF(" + basePath + ",'')::numeric";
-        } else if (value instanceof String) {
-            return basePath;
-        } else if (value instanceof Collection<?>) {
+        if (value instanceof Collection<?>) {
             // treat it as json
             return basePath.replace("->>", "->");
-        } else {
-            // Fallback: treat it as String (no cast at all, depending on your preference)
-            return basePath;
         }
+        return formatScalarForComparison(basePath, value);
+    }
+
+    /**
+     * Format a JSONB aggregate column using the scalar conversions of ordinary filters.
+     * Convertible JSON strings participate in numeric and boolean comparisons. Invalid
+     * conversions are reported by PostgreSQL, just as for a filter on a document field.
+     */
+    public static String formatJsonbScalarForComparison(String column, Object value) {
+        if (value instanceof String || value instanceof Boolean || isNumericFilterValue(value)) {
+            return formatScalarForComparison(getJsonbRootText(column), value);
+        }
+        return column;
+    }
+
+    /** Extract the JSONB root value as SQL text, removing JSON string quotes. */
+    public static String getJsonbRootText(String column) {
+        return column + " #>> '{}'";
+    }
+
+    /**
+     * Apply the parameter's SQL comparison type to a text expression. Numeric filters
+     * treat an empty string as SQL NULL for compatibility with existing document filters.
+     */
+    static String formatScalarForComparison(String text, Object value) {
+        if (value instanceof Boolean) {
+            return "(" + text + ")::boolean";
+        }
+        if (isNumericFilterValue(value)) {
+            return "NULLIF(" + text + ",'')::numeric";
+        }
+        return text;
+    }
+
+    /**
+     * Java numeric types bound as SQL numbers by the PostgreSQL statement binder.
+     */
+    static boolean isNumericFilterValue(Object value) {
+        return value instanceof Integer || value instanceof Double || value instanceof Long
+                || value instanceof Float || value instanceof java.math.BigDecimal;
     }
 
     /**
@@ -178,15 +204,17 @@ public class PGKeyUtil {
      * @return formatted key
      */
     public static String getFormattedKey4AggregateUsingTextKeys(String key, String selectAlias) {
-
-        if(textKeys.contains(key)){
-            // group by string, using data->>'key' (text format to utilize index)
-            return getFormattedKeyWithAlias(key, selectAlias, "");
+        if (isJsonbAggregateKey(key)) {
+            return getFormattedKey4JsonWithAlias(key, selectAlias);
         }
+        // Use the text expression to retain compatibility with text indexes.
+        return getFormattedKeyWithAlias(key, selectAlias, "");
+    }
 
-        // default to json
-        // return data->'key'
-        return getFormattedKey4JsonWithAlias(key, selectAlias);
-
+    /**
+     * Whether the grouped field is projected as JSONB by the aggregate key formatter.
+     */
+    static boolean isJsonbAggregateKey(String key) {
+        return !textKeys.contains(key);
     }
 }
