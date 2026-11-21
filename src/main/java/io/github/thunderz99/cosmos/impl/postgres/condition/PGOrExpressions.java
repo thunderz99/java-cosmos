@@ -2,11 +2,11 @@ package io.github.thunderz99.cosmos.impl.postgres.condition;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import io.github.thunderz99.cosmos.condition.Expression;
-import io.github.thunderz99.cosmos.condition.SimpleExpression;
 import io.github.thunderz99.cosmos.dto.CosmosSqlQuerySpec;
 
 /**
@@ -27,21 +27,24 @@ public class PGOrExpressions implements Expression {
 	}
 
     public PGOrExpressions(String key, Object value) {
-        var keys = key.split(" OR ");
-
-        if (keys == null || keys.length == 0) {
-            return;
-        }
-        this.simpleExps = List.of(keys).stream().map(k -> new PGSimpleExpression(k, value)).collect(Collectors.toList());
+        this(key, value, "");
     }
 
     public PGOrExpressions(String key, Object value, String operator) {
+        this(key, value, operator, Set.of());
+    }
+
+    /**
+     * Give each shorthand OR branch the JSONB aliases from the aggregate projection.
+     */
+    public PGOrExpressions(String key, Object value, String operator, Set<String> jsonbAggregateAliases) {
         var keys = key.split(" OR ");
 
-        if (keys == null || keys.length == 0) {
+        if (keys.length == 0) {
             return;
         }
-        this.simpleExps = List.of(keys).stream().map(k -> new PGSimpleExpression(k, value, operator))
+        this.simpleExps = List.of(keys).stream()
+                .map(k -> new PGSimpleExpression(k, value, operator, jsonbAggregateAliases))
                 .collect(Collectors.toList());
     }
 

@@ -1,8 +1,9 @@
 package io.github.thunderz99.cosmos.impl.postgres.dto;
 
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.github.thunderz99.cosmos.dto.RecordData;
@@ -64,6 +65,11 @@ public class QueryContext extends RecordData {
      * </p>
      */
     public boolean afterAggregation = false;
+
+    /**
+     * Output column names whose projected SQL type is JSONB. Set only for the outer aggregate filter.
+     */
+    public Set<String> jsonbAggregateAliases = Set.of();
 
     public String schemaName;
 

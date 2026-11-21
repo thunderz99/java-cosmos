@@ -121,9 +121,9 @@ public class PGConditionUtil {
         queryContext.tableName = table;
 
         // select
-        var select = generateAggregateSelect(aggregate, queryContext);
+        var projection = generateAggregateSelect(aggregate, queryContext);
 
-        var initialText = String.format("SELECT %s\n FROM %s.%s\n", select, schema, table);
+        var initialText = String.format("SELECT %s\n FROM %s.%s\n", projection.sql(), schema, table);
         var initialParams = new ArrayList<CosmosSqlParameter>();
         var initialConditionIndex = new AtomicInteger(0);
         var initialParamIndex = new AtomicInteger(0);
@@ -178,42 +178,18 @@ public class PGConditionUtil {
 
                 var initialConditionIndexAgg = new AtomicInteger();
 
-                // note that the afterAggregation is set to true in QueryContext. see QueryContext.afterAggregation for details
+                var afterContext = QueryContext.create().afterAggregation(true);
+                afterContext.jsonbAggregateAliases = projection.jsonbAliases();
                 filterQueryAgg = PGConditionUtil.generateFilterQuery(condAfter, queryText.toString(), params, initialConditionIndexAgg, initialParamIndex,
-                        QueryContext.create().afterAggregation(true));
+                        afterContext);
 
-                // special logic for aggregate with cross-partition=true and sort is empty
-                // We have to add a default sort to overcome a bug.
-                // see https://social.msdn.microsoft.com/Forums/en-US/535c7e4a-f5cb-4aa3-90f5-39a2c8024191/group-by-fails-for-crosspartition-queries?forum=azurecosmosdb
-
-                if (CollectionUtils.isEmpty(condAfter.sort)) {
-                    // use the groupBy's first field to sort
-                    condAfter.sort = new ArrayList<>();
-                    condAfter.sort.add(aggregate.groupBy.stream().collect(Collectors.toList()).get(0));
-                    condAfter.sort.add("ASC");
+                var sort = condAfter.sort;
+                if (CollectionUtils.isEmpty(sort)) {
+                    // Use the projected alias of the first group key for the default order.
+                    var firstGroup = FieldNameUtil.convertToDotFieldName(aggregate.groupBy.iterator().next());
+                    sort = List.of(projection.groupAliases().getOrDefault(firstGroup, firstGroup), "ASC");
                 }
-
-                // sort after agg
-                // Note that only field like "status" "name" can be sort after group by.
-                // aggregation value like "count" cannot be used in sort after group by in CosmosDB, but can be used in postgres.
-
-                if (!CollectionUtils.isEmpty(condAfter.sort) && condAfter.sort.size() > 1) {
-                    // sort after aggregation, should use alias after "AS" ("lastName" / "facetCount"), instead of data->>'lastName'
-
-                    /**
-                     * SELECT * FROM (
-                     * SELECT COUNT(1) AS "facetCount", data->>'lastName' AS "lastName"
-                     *  FROM unittest_postgres_5bwo.families
-                     *  GROUP BY data->>'lastName'
-                     * ) agg
-                     *  WHERE "facetCount" > 1
-                     *  ORDER BY "lastName" ASC NULLS FIRST
-                     *  OFFSET 0 LIMIT 10
-                     */
-
-
-                    filterQueryAgg.queryText.append(buildAggregateSorts(condAfter.sort));
-                }
+                filterQueryAgg.queryText.append(buildAggregateSorts(sort));
 
                 // offset and limit after agg
                 filterQueryAgg.queryText.append(String.format("\n OFFSET %d LIMIT %d", condAfter.offset, condAfter.limit));
@@ -232,12 +208,15 @@ public class PGConditionUtil {
     }
 
     /**
-     * generate select parts for aggregate
-     *
-     * @param aggregate
-     * @return
+     * SQL and output names of the aggregate SELECT. JSONB aliases belong to this projection only.
      */
-    static String generateAggregateSelect(Aggregate aggregate, QueryContext queryContext) {
+    record AggregateProjection(String sql, Map<String, String> groupAliases, Set<String> jsonbAliases) {
+    }
+
+    /**
+     * Generate the aggregate projection and capture the output names of grouped fields.
+     */
+    static AggregateProjection generateAggregateSelect(Aggregate aggregate, QueryContext queryContext) {
 
         Checker.checkNotNull(aggregate, "aggregate");
 
@@ -246,7 +225,8 @@ public class PGConditionUtil {
         // $1 $2 $3... used for aggregate function or group by that without alias "e.g. COUNT(1)" without " AS facetCount"
         var columnIndex = 1;
 
-        var processedGroupBy = new HashSet<String>();
+        var groupAliases = new HashMap<String, String>();
+        var jsonbAliases = new HashSet<String>();
 
         // set to hold the dotFieldName format of group by fields
         var dotFieldNameGroupBy = aggregate.groupBy.stream()
@@ -297,9 +277,11 @@ public class PGConditionUtil {
                     // c['address']['state'] as result
 
                     if(dotFieldNameGroupBy.contains(dotFieldName)){
-                        // the field is used in group by. we record it, so we can skip it in the group by part
                         formattedKey = PGKeyUtil.getFormattedKey4AggregateUsingTextKeys(dotFieldName, TableUtil.DATA);
-                        processedGroupBy.add(dotFieldName);
+                        groupAliases.putIfAbsent(dotFieldName, alias);
+                        if (PGKeyUtil.isJsonbAggregateKey(dotFieldName)) {
+                            jsonbAliases.add(alias);
+                        }
                     } else {
                         // just a simple query without aggregate function
                         // data->'address'->>'state'
@@ -369,7 +351,7 @@ public class PGConditionUtil {
         if (CollectionUtils.isNotEmpty(dotFieldNameGroupBy)) {
 
             for(var groupBy : dotFieldNameGroupBy){
-                if(StringUtils.isBlank(groupBy) || processedGroupBy.contains(groupBy)){
+                if(StringUtils.isBlank(groupBy) || groupAliases.containsKey(groupBy)){
                     // if already done this field in the aggregate function, skip
                     continue;
                 }
@@ -378,6 +360,10 @@ public class PGConditionUtil {
                 // group by should use json. because you can do a groupBy on a jsonb field.
                 var formattedKey = PGKeyUtil.getFormattedKey4AggregateUsingTextKeys(groupBy, TableUtil.DATA);
                 select.add("%s AS \"%s\"".formatted(formattedKey, simpleName));
+                groupAliases.put(groupBy, simpleName);
+                if (PGKeyUtil.isJsonbAggregateKey(groupBy)) {
+                    jsonbAliases.add(simpleName);
+                }
             }
 
         }
@@ -386,7 +372,7 @@ public class PGConditionUtil {
             throw new IllegalArgumentException("aggregate and function cannot both be empty");
         }
 
-        return select.stream().collect(Collectors.joining(", "));
+        return new AggregateProjection(String.join(", ", select), groupAliases, jsonbAliases);
     }
 
     /**
@@ -834,10 +820,10 @@ public class PGConditionUtil {
      */
     static Expression parseExpression4SimpleMatcher(String key, String parsedKey, Object value, String operator, Set<String> join, QueryContext queryContext) {
         if (key.contains(" OR ")) {
-            return new PGOrExpressions(parsedKey, value);
+            return new PGOrExpressions(parsedKey, value, "", queryContext.jsonbAggregateAliases);
         } else {
             if (CollectionUtils.isEmpty(join)) {
-                return new PGSimpleExpression(parsedKey, value, operator);
+                return new PGSimpleExpression(parsedKey, value, operator, queryContext.jsonbAggregateAliases);
             } else {
                 return new PGSimpleExpression4Join(parsedKey, value, operator, join, queryContext);
             }

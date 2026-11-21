@@ -1287,29 +1287,26 @@ class PGConditionUtilTest {
     }
 
     @Test
-    void generateAggregateSelect_should_work() throws Exception {
+    void generateAggregateSelect_should_work() {
 
-        if(PostgresDatabaseImplTest.db == null) {
-            PostgresDatabaseImplTest.beforeAll();
-        }
-        var queryContext = QueryContext.create().databaseImpl(PostgresDatabaseImplTest.db);
+        var queryContext = QueryContext.create();
 
         {
             // normal count
             var aggregate = Aggregate.function("COUNT(1)");
-            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext))
+            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext).sql())
                     .isEqualTo("COUNT(1) AS \"$1\"");
         }
         {
             // count with group by
             var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("status", "location.state");
-            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext))
+            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext).sql())
                     .isEqualTo("COUNT(1) AS \"facetCount\", data->'location'->'state' AS \"state\", data->'status' AS \"status\"");
         }
         {
             // count with group by formId
             var aggregate = Aggregate.function("COUNT(1) AS facetCount").groupBy("formId");
-            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext))
+            assertThat(PGConditionUtil.generateAggregateSelect(aggregate, queryContext).sql())
                     .isEqualTo("COUNT(1) AS \"facetCount\", data->>'formId' AS \"formId\"");
 
             var querySpec = PGConditionUtil.toQuerySpec4Aggregate("schema1", Condition.filter("formId IN", List.of("id1", "id2")), aggregate, "table1", queryContext);
@@ -1356,6 +1353,84 @@ class PGConditionUtilTest {
 
         }
 
+    }
+
+    @Test
+    void aggregate_after_filter_should_use_jsonb_alias_and_keep_parameter_values() {
+        var after = Condition.filter("sheetKey", List.of("010", "100"));
+        var aggregate = Aggregate.function("c.sheetContentId AS sheetKey, COUNT(*) AS counts")
+                .groupBy("sheetContentId")
+                .conditionAfterAggregate(after);
+
+        var query = PGConditionUtil.toQuerySpec4Aggregate(coll, Condition.filter(), aggregate, partition,
+                QueryContext.create());
+
+        assertThat(query.queryText)
+                .contains("data->'sheetContentId' AS \"sheetKey\"",
+                        "GROUP BY data->'sheetContentId'",
+                        "\"sheetKey\" #>> '{}'",
+                        "= ANY(@param000_sheetKey)",
+                        "ORDER BY \"sheetKey\" ASC NULLS FIRST")
+                .doesNotContain("CASE", "jsonb_typeof");
+        assertThat(query.getParameters()).extracting(CosmosSqlParameter::getValue)
+                .containsExactly(List.of("010", "100"));
+        assertThat(after.sort).isEmpty();
+    }
+
+    @Test
+    void aggregate_after_filter_should_infer_type_per_nested_predicate() {
+        var after = Condition.filter(SubConditionType.AND, List.of(
+                Condition.filter(SubConditionType.OR, List.of(
+                        Condition.filter("value >=", 20),
+                        Condition.filter("value", true))),
+                Condition.filter(SubConditionType.NOT, Condition.filter("value", "20"))));
+        var aggregate = Aggregate.function("COUNT(*) AS counts").groupBy("value")
+                .conditionAfterAggregate(after);
+
+        var query = PGConditionUtil.toQuerySpec4Aggregate(coll, Condition.filter(), aggregate, partition,
+                QueryContext.create());
+
+        assertThat(query.queryText)
+                .contains("NULLIF(\"value\" #>> '{}','')::numeric",
+                        "(\"value\" #>> '{}')::boolean",
+                        "\"value\" #>> '{}'",
+                        " OR ", "NOT(")
+                .doesNotContain("CASE", "jsonb_typeof");
+        assertThat(query.getParameters()).extracting(CosmosSqlParameter::getValue)
+                .containsExactly(20, true, "20");
+    }
+
+    @Test
+    void aggregate_after_filter_should_keep_jsonb_array_and_null_predicates() {
+        var aggregate = Aggregate.function("COUNT(*) AS counts").groupBy("tags")
+                .conditionAfterAggregate(Condition.filter(
+                        "tags =", List.of("A"), "tags ARRAY_CONTAINS", "A", "tags !=", null,
+                        "tags IN", List.of()));
+
+        var query = PGConditionUtil.toQuerySpec4Aggregate(coll, Condition.filter(), aggregate, partition,
+                QueryContext.create());
+
+        assertThat(query.queryText)
+                .contains("(\"tags\" = (@param000_tags)::jsonb)", "(\"tags\" ?? @param001_tags)",
+                        "(\"tags\" IS NOT NULL)", "(1=0)")
+                .doesNotContain("jsonb_typeof");
+    }
+
+    @Test
+    void aggregate_after_filter_should_keep_text_and_numeric_outputs_when_context_is_reused() {
+        var context = QueryContext.create();
+        var first = Aggregate.function("c.sheetContentId AS key").groupBy("sheetContentId", "formId")
+                .conditionAfterAggregate(Condition.filter("key OR formId", "010"));
+        var firstQuery = PGConditionUtil.toQuerySpec4Aggregate(coll, Condition.filter(), first, partition, context);
+        assertThat(firstQuery.queryText).contains("\"key\" #>> '{}'", "\"formId\" = @param001_formId")
+                .doesNotContain("CASE", "jsonb_typeof");
+
+        var second = Aggregate.function("c.name AS key, COUNT(*) AS counts").groupBy("name")
+                .conditionAfterAggregate(Condition.filter("key", "010", "counts >", 1));
+        var secondQuery = PGConditionUtil.toQuerySpec4Aggregate(coll, Condition.filter(), second, partition, context);
+        assertThat(secondQuery.queryText)
+                .contains("data->>'name' AS \"key\"", "\"key\" = @param000_key", "\"counts\" > @param001_counts")
+                .doesNotContain("jsonb_typeof");
     }
 
 }
